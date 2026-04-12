@@ -1,0 +1,6 @@
+submit_all_steps*
+*.err
+*.out
+*.log
+.DS_Store
+run_R_functions.R

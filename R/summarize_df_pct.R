@@ -1,5 +1,4 @@
 summarize_df_pct <- function(feather_path, feather_path2 = NULL, want = c("zero_percentage"), quantiles = NULL) {
-    # Load Libraries
     suppressPackageStartupMessages({
         library(arrow)
     })
@@ -25,6 +24,22 @@ summarize_df_pct <- function(feather_path, feather_path2 = NULL, want = c("zero_
             cat("\n=== Zero Percentage at Given Quantiles ===\n")
             for (i in seq_along(quantiles)) {
                 cat(sprintf("  %s percentile: %.2f%% zeros\n",
+                            names(q_vals)[i], q_vals[i]))
+            }
+        }
+        cat("\n")
+    }
+
+    # --- library_size ---
+    if ("library_size" %in% want) {
+        lib_sizes <- colSums(mat)
+        cat("=== Library Size Summary (per column) ===\n")
+        print(summary(lib_sizes))
+        if (!is.null(quantiles)) {
+            q_vals <- quantile(lib_sizes, probs = quantiles)
+            cat("\n=== Library Size at Given Quantiles ===\n")
+            for (i in seq_along(quantiles)) {
+                cat(sprintf("  %s percentile: %.2f\n",
                             names(q_vals)[i], q_vals[i]))
             }
         }

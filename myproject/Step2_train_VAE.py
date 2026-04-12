@@ -146,16 +146,45 @@ def train_one_epoch(model, loader, optimizer, device, beta, weight_strategy='spa
     model.train()
     total = 0.0
     n = 0
-    for (x,) in loader:
+    for batch_idx, (x,) in enumerate(loader):
         x = x.to(device)
+        
+        # Check input
+        if torch.isnan(x).any() or torch.isinf(x).any():
+            print(f"  [ERROR] NaN/Inf in input batch {batch_idx}")
+            return float('inf')
+        
         optimizer.zero_grad()
         recon, mu, logvar = model(x)
+        
+        # Check outputs
+        if torch.isnan(recon).any() or torch.isinf(recon).any():
+            print(f"  [ERROR] NaN/Inf in reconstruction at batch {batch_idx}")
+            return float('inf')
+        if torch.isnan(mu).any() or torch.isinf(mu).any():
+            print(f"  [ERROR] NaN/Inf in mu at batch {batch_idx}")
+            return float('inf')
+        
         loss = vae_loss(recon, x, mu, logvar, beta, weight_strategy, zero_weight, nonzero_weight, trans)
+        
+        # Check loss
+        if torch.isnan(loss) or torch.isinf(loss):
+            print(f"  [ERROR] NaN/Inf loss at batch {batch_idx}: {loss.item()}")
+            print(f"    recon range: [{recon.min().item():.4f}, {recon.max().item():.4f}]")
+            print(f"    x range: [{x.min().item():.4f}, {x.max().item():.4f}]")
+            return float('inf')
+        
         loss.backward()
+        
+        # Gradient clipping
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        
         optimizer.step()
         total += loss.item()
         n += x.size(0)
+    
     return total / max(n, 1)
+
 
 @torch.no_grad()
 def eval_loss(model, loader, device, beta, weight_strategy='sparsity_aware',
@@ -296,6 +325,8 @@ def filter_and_transform(df1, df2, threshold_value, trans1, trans2, data_path1=N
         filtered_df1.iloc[:, 1:] = np.sqrt(filtered_df1.iloc[:, 1:] + 1) - 1
     elif trans1 == "count+1":
         filtered_df1.iloc[:, 1:] = filtered_df1.iloc[:, 1:] + 1
+    elif trans1 == "log(count+2)":  
+        filtered_df1.iloc[:, 1:] = np.log(filtered_df1.iloc[:, 1:] + 2)
     elif trans1 == "log2(count+2)":  
         filtered_df1.iloc[:, 1:] = np.log2(filtered_df1.iloc[:, 1:] + 2)
     elif trans1 == "log2(count+1)+1":  
@@ -320,12 +351,29 @@ def filter_and_transform(df1, df2, threshold_value, trans1, trans2, data_path1=N
         filtered_df2.iloc[:, 1:] = np.sqrt(filtered_df2.iloc[:, 1:] + 1) - 1
     elif trans2 == "count+1":
         filtered_df2.iloc[:, 1:] = filtered_df2.iloc[:, 1:] + 1
+    elif trans2 == "log(count+2)":  
+        filtered_df2.iloc[:, 1:] = np.log(filtered_df2.iloc[:, 1:] + 2)
     elif trans2 == "log2(count+2)":  
         filtered_df2.iloc[:, 1:] = np.log2(filtered_df2.iloc[:, 1:] + 2)
     elif trans2 == "log2(count+1)+1":  
         filtered_df2.iloc[:, 1:] = np.log2(filtered_df2.iloc[:, 1:] + 1) + 1
     elif trans2 == "no_trans":
         pass
+    
+    # Ensure all data columns are numeric
+    for col in filtered_df1.columns[1:]:
+        if filtered_df1[col].dtype == 'object':
+            print(f"Warning: Column {col} in df1 has object dtype, converting to numeric")
+            filtered_df1[col] = pd.to_numeric(filtered_df1[col], errors='coerce')
+    
+    for col in filtered_df2.columns[1:]:
+        if filtered_df2[col].dtype == 'object':
+            print(f"Warning: Column {col} in df2 has object dtype, converting to numeric")
+            filtered_df2[col] = pd.to_numeric(filtered_df2[col], errors='coerce')
+    
+    # Replace any NaN values with 0
+    filtered_df1.iloc[:, 1:] = filtered_df1.iloc[:, 1:].fillna(0)
+    filtered_df2.iloc[:, 1:] = filtered_df2.iloc[:, 1:].fillna(0)
         
     if save:
         if data_path1 is not None:
@@ -344,6 +392,7 @@ def filter_and_transform(df1, df2, threshold_value, trans1, trans2, data_path1=N
     
     return filtered_df1, filtered_df2
 
+
 def outer10_inner_holdout(
     df1_raw, df2_raw, device,
     hidden_grid1, hidden_grid2, latent_grid, lr_grid, bs_grid, beta_grid,
@@ -357,6 +406,58 @@ def outer10_inner_holdout(
         raise ValueError("save_dir must be provided")
     os.makedirs(save_dir, exist_ok=True)
 
+    print("\n" + "="*60)
+    print("[DATA VALIDATION]")
+    print("="*60)
+    print(f"  df1_raw shape: {df1_raw.shape}")
+    print(f"  df2_raw shape: {df2_raw.shape}")
+    
+    # Check for NaN/Inf in raw data
+    df1_numeric = df1_raw.drop(columns=['pos'], errors='ignore').select_dtypes(include=[np.number])
+    df2_numeric = df2_raw.drop(columns=['pos'], errors='ignore').select_dtypes(include=[np.number])
+    
+    df1_nan_count = df1_numeric.isna().sum().sum()
+    df1_inf_count = np.isinf(df1_numeric).sum().sum()
+    df1_min = df1_numeric.min().min()
+    df1_max = df1_numeric.max().max()
+    df1_mean = df1_numeric.mean().mean()
+    
+    print(f"\n  df1_raw statistics:")
+    print(f"    NaN count: {df1_nan_count}")
+    print(f"    Inf count: {df1_inf_count}")
+    print(f"    Range: [{df1_min:.4f}, {df1_max:.4f}]")
+    print(f"    Mean: {df1_mean:.4f}")
+    
+    df2_nan_count = df2_numeric.isna().sum().sum()
+    df2_inf_count = np.isinf(df2_numeric).sum().sum()
+    df2_min = df2_numeric.min().min()
+    df2_max = df2_numeric.max().max()
+    df2_mean = df2_numeric.mean().mean()
+    
+    print(f"\n  df2_raw statistics:")
+    print(f"    NaN count: {df2_nan_count}")
+    print(f"    Inf count: {df2_inf_count}")
+    print(f"    Range: [{df2_min:.4f}, {df2_max:.4f}]")
+    print(f"    Mean: {df2_mean:.4f}")
+    
+    # Check variance
+    df1_variance = df1_numeric.var().mean()
+    df2_variance = df2_numeric.var().mean()
+    print(f"\n  df1_raw mean variance: {df1_variance:.6f}")
+    print(f"  df2_raw mean variance: {df2_variance:.6f}")
+    
+    # Warnings
+    if df1_nan_count > 0 or df2_nan_count > 0:
+        print("\n  [WARNING] NaN values found in input data!")
+    if df1_inf_count > 0 or df2_inf_count > 0:
+        print("  [WARNING] Inf values found in input data!")
+    if df1_variance == 0 or df2_variance == 0:
+        print("  [WARNING] No variance in data!")
+    if df1_max > 1e6 or df2_max > 1e6:
+        print("  [WARNING] Very large values detected! Consider normalization.")
+    
+    print("="*60 + "\n")
+
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=seed)
 
     fold_best_cfgs = []
@@ -365,9 +466,8 @@ def outer10_inner_holdout(
     fold_val_metrics = []
     fold_test_metrics = []
     
-    # Store ALL hyperparameter combinations results
-    all_val_results = []  # Store validation results for all combinations across all folds
-    all_test_results = []  # Store test results for ALL combinations across all folds
+    all_val_results = []
+    all_test_results = []
 
     for fold_id, (outer_train_idx, outer_test_idx) in enumerate(kf.split(df1_raw), 1):
         print(f"\n========== Fold {fold_id}/{n_splits} ==========")
@@ -392,8 +492,33 @@ def outer10_inner_holdout(
             
             if 'pos' in filtered_df1.columns:
                 filtered_df1 = filtered_df1.drop(columns=['pos'])
+            elif 'barcode' in filtered_df1.columns:
+                filtered_df1 = filtered_df1.drop(columns=['barcode'])
             if 'pos' in filtered_df2.columns:
                 filtered_df2 = filtered_df2.drop(columns=['pos'])
+            elif 'barcode' in filtered_df2.columns:
+                filtered_df2 = filtered_df2.drop(columns=['barcode'])
+
+            # Extra safety check: ensure all columns are numeric before tensor conversion
+            for col in filtered_df1.columns:
+                if filtered_df1[col].dtype == 'object':
+                    print(f"[WARNING] Converting object column {col} in filtered_df1")
+                    filtered_df1[col] = pd.to_numeric(filtered_df1[col], errors='coerce')
+            
+            for col in filtered_df2.columns:
+                if filtered_df2[col].dtype == 'object':
+                    print(f"[WARNING] Converting object column {col} in filtered_df2")
+                    filtered_df2[col] = pd.to_numeric(filtered_df2[col], errors='coerce')
+            
+            # Fill any NaN that resulted from coercion
+            filtered_df1 = filtered_df1.fillna(0)
+            filtered_df2 = filtered_df2.fillna(0)
+            
+            # Final check
+            if not all(filtered_df1.dtypes.apply(lambda x: np.issubdtype(x, np.number))):
+                print(f"[ERROR] Non-numeric columns still present in filtered_df1:")
+                print(filtered_df1.dtypes[~filtered_df1.dtypes.apply(lambda x: np.issubdtype(x, np.number))])
+                raise ValueError("Cannot convert to tensor: non-numeric data present")
             
             X = torch.tensor(filtered_df1.to_numpy(), dtype=torch.float32)
             X2 = filtered_df2.to_numpy()
@@ -470,8 +595,33 @@ def outer10_inner_holdout(
             filtered_df1, filtered_df2 = filter_and_transform(df1_raw, df2_raw, threshold, trans1, trans2)
             if 'pos' in filtered_df1.columns:
                 filtered_df1 = filtered_df1.drop(columns=['pos'])
+            elif 'barcode' in filtered_df1.columns:
+                filtered_df1 = filtered_df1.drop(columns=['barcode'])
             if 'pos' in filtered_df2.columns:
                 filtered_df2 = filtered_df2.drop(columns=['pos'])
+            elif 'barcode' in filtered_df2.columns:
+                filtered_df2 = filtered_df2.drop(columns=['barcode'])
+
+            # Extra safety check: ensure all columns are numeric before tensor conversion
+            for col in filtered_df1.columns:
+                if filtered_df1[col].dtype == 'object':
+                    print(f"[WARNING] Converting object column {col} in filtered_df1")
+                    filtered_df1[col] = pd.to_numeric(filtered_df1[col], errors='coerce')
+            
+            for col in filtered_df2.columns:
+                if filtered_df2[col].dtype == 'object':
+                    print(f"[WARNING] Converting object column {col} in filtered_df2")
+                    filtered_df2[col] = pd.to_numeric(filtered_df2[col], errors='coerce')
+            
+            # Fill any NaN that resulted from coercion
+            filtered_df1 = filtered_df1.fillna(0)
+            filtered_df2 = filtered_df2.fillna(0)
+            
+            # Final check
+            if not all(filtered_df1.dtypes.apply(lambda x: np.issubdtype(x, np.number))):
+                print(f"[ERROR] Non-numeric columns still present in filtered_df1:")
+                print(filtered_df1.dtypes[~filtered_df1.dtypes.apply(lambda x: np.issubdtype(x, np.number))])
+                raise ValueError("Cannot convert to tensor: non-numeric data present")
             
             X = torch.tensor(filtered_df1.to_numpy(), dtype=torch.float32)
             X2 = filtered_df2.to_numpy()
@@ -622,7 +772,7 @@ def outer10_inner_holdout(
         "eval_metric": eval_metric,
         "validation_df": val_df_grouped,
         "test_df": test_df_grouped
-    }
+    }   
 
 def main(args):
     torch.manual_seed(args.seed)
