@@ -13,6 +13,7 @@ from sklearn.model_selection import KFold, train_test_split
 from scipy.stats import pearsonr, spearmanr
 import json 
 from pathlib import Path
+import copy
 
 class VAE(nn.Module):
     def __init__(self, input_dim, hidden_dim1, hidden_dim2, latent_dim):
@@ -57,32 +58,26 @@ def weighted_reconstruction_loss(recon_x, x, weight_strategy='sparsity_aware', z
     if weight_strategy == 'fixed':
         # Adjust masking based on transformation
         if trans == 'sqrt+1':
-            # After sqrt+1, original zeros become 1
-            zero_mask = torch.abs(x - 1.0) < 1e-6  # Values close to 1 are original zeros
-            nonzero_mask = x > 1.0 + 1e-6  # Values > 1 are original non-zeros
+            zero_mask = torch.abs(x - 1.0) < 1e-6
+            nonzero_mask = x > 1.0 + 1e-6
         elif trans == 'log2_then_add_1':
-            # After log2(x+1)+1, original zeros become 1
             zero_mask = torch.abs(x - 1.0) < 1e-6
             nonzero_mask = x > 1.0 + 1e-6
         elif trans == 'sqrt+0.00001':
-            # After sqrt(x+0.00001), original zeros become sqrt(0.00001)
             zero_value = np.sqrt(0.00001)
             zero_mask = torch.abs(x - zero_value) < 1e-8
             nonzero_mask = x > zero_value + 1e-8
         elif trans == 'sqrt+10':
-            # After sqrt(x+10), original zeros become sqrt(10)
             zero_value = np.sqrt(10)
             zero_mask = torch.abs(x - zero_value) < 1e-6
             nonzero_mask = x > zero_value + 1e-6
         else:
-            # Default behavior for no_trans, sqrt, log2
             zero_mask = (x == 0).float()
             nonzero_mask = (x > 0).float()
         
         weights = zero_mask.float() * zero_weight + nonzero_mask.float() * nonzero_weight
         
     elif weight_strategy == 'sparsity_aware':
-        # Adjust sparsity calculation based on transformation
         if trans == 'sqrt+1':
             sparsity = torch.abs(x - 1.0) < 1e-6
         elif trans == 'log2_then_add_1':
@@ -100,7 +95,6 @@ def weighted_reconstruction_loss(recon_x, x, weight_strategy='sparsity_aware', z
         zero_weight_dynamic = 1.0
         nonzero_weight_dynamic = 1.0 / (1.0 - sparsity + 1e-8)
         
-        # Apply the same masking logic as in 'fixed' strategy
         if trans == 'sqrt+1':
             zero_mask = torch.abs(x - 1.0) < 1e-6
             nonzero_mask = x > 1.0 + 1e-6
@@ -149,7 +143,6 @@ def train_one_epoch(model, loader, optimizer, device, beta, weight_strategy='spa
     for batch_idx, (x,) in enumerate(loader):
         x = x.to(device)
         
-        # Check input
         if torch.isnan(x).any() or torch.isinf(x).any():
             print(f"  [ERROR] NaN/Inf in input batch {batch_idx}")
             return float('inf')
@@ -157,7 +150,6 @@ def train_one_epoch(model, loader, optimizer, device, beta, weight_strategy='spa
         optimizer.zero_grad()
         recon, mu, logvar = model(x)
         
-        # Check outputs
         if torch.isnan(recon).any() or torch.isinf(recon).any():
             print(f"  [ERROR] NaN/Inf in reconstruction at batch {batch_idx}")
             return float('inf')
@@ -167,7 +159,6 @@ def train_one_epoch(model, loader, optimizer, device, beta, weight_strategy='spa
         
         loss = vae_loss(recon, x, mu, logvar, beta, weight_strategy, zero_weight, nonzero_weight, trans)
         
-        # Check loss
         if torch.isnan(loss) or torch.isinf(loss):
             print(f"  [ERROR] NaN/Inf loss at batch {batch_idx}: {loss.item()}")
             print(f"    recon range: [{recon.min().item():.4f}, {recon.max().item():.4f}]")
@@ -175,10 +166,7 @@ def train_one_epoch(model, loader, optimizer, device, beta, weight_strategy='spa
             return float('inf')
         
         loss.backward()
-        
-        # Gradient clipping
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        
         optimizer.step()
         total += loss.item()
         n += x.size(0)
@@ -204,12 +192,9 @@ def eval_loss(model, loader, device, beta, weight_strategy='sparsity_aware',
 def eval_correlation_residual(model, loader, v2_data, indices, device, corr_type='pearson'):
     """
     Compute average residual between correlations of (v1, v2) and (vae_output, v2).
-    Assumes v1 and v2 are always valid. If VAE reconstruction is invalid (zero variance),
-    treat corr_vae_v2 as 0, effectively penalizing the VAE for poor reconstruction.
     """
     model.eval()
     
-    # Collect all v1 data and VAE reconstructions
     all_v1 = []
     all_recon = []
     
@@ -219,14 +204,10 @@ def eval_correlation_residual(model, loader, v2_data, indices, device, corr_type
         all_v1.append(x.cpu().numpy())
         all_recon.append(recon.cpu().numpy())
     
-    # Concatenate all batches
     v1_array = np.vstack(all_v1)
     vae_array = np.vstack(all_recon)
-    
-    # Get corresponding v2 data
     v2_subset = v2_data[indices]
     
-    # Calculate correlations for each column (sample)
     n_cols = v1_array.shape[1]
     residuals = []
     
@@ -235,7 +216,6 @@ def eval_correlation_residual(model, loader, v2_data, indices, device, corr_type
         vae_col = vae_array[:, col_idx]
         v2_col = v2_subset[:, col_idx]
         
-        # Compute v1-v2 correlation (assume always valid)
         if corr_type == 'pearson':
             corr_v1_v2, _ = pearsonr(v1_col, v2_col)
         elif corr_type == 'spearman':
@@ -243,13 +223,10 @@ def eval_correlation_residual(model, loader, v2_data, indices, device, corr_type
         else:
             raise ValueError(f"Unknown correlation type: {corr_type}")
         
-        # Handle potential NaN in v1-v2 correlation (shouldn't happen but be safe)
         if np.isnan(corr_v1_v2):
             corr_v1_v2 = 0
         
-        # Compute vae-v2 correlation, treat as 0 if VAE reconstruction is invalid
         if np.any(np.isnan(vae_col)) or np.std(vae_col) == 0:
-            # VAE reconstruction failed - penalize by setting correlation to 0
             corr_vae_v2 = 0
         else:
             if corr_type == 'pearson':
@@ -257,15 +234,12 @@ def eval_correlation_residual(model, loader, v2_data, indices, device, corr_type
             elif corr_type == 'spearman':
                 corr_vae_v2, _ = spearmanr(vae_col, v2_col)
             
-            # Handle NaN result
             if np.isnan(corr_vae_v2):
                 corr_vae_v2 = 0
         
-        # Calculate residual: positive means VAE lost correlation
         residual = corr_v1_v2 - corr_vae_v2
         residuals.append(residual)
     
-    # Return mean residual over all columns
     return np.mean(residuals) if residuals else 0.0
 
 class EarlyStopping:
@@ -393,6 +367,33 @@ def filter_and_transform(df1, df2, threshold_value, trans1, trans2, data_path1=N
     return filtered_df1, filtered_df2
 
 
+def _prepare_tensors(filtered_df1, filtered_df2):
+    """Drop pos/barcode columns, validate dtypes, return (X_tensor, X2_numpy)."""
+    df1 = filtered_df1.copy()
+    df2 = filtered_df2.copy()
+    
+    for df in [df1, df2]:
+        if 'pos' in df.columns:
+            df.drop(columns=['pos'], inplace=True)
+        elif 'barcode' in df.columns:
+            df.drop(columns=['barcode'], inplace=True)
+    
+    # Extra safety check: ensure all columns are numeric
+    for df, name in [(df1, 'df1'), (df2, 'df2')]:
+        for col in df.columns:
+            if df[col].dtype == 'object':
+                print(f"[WARNING] Converting object column {col} in {name}")
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        df.fillna(0, inplace=True)
+        
+        if not all(df.dtypes.apply(lambda x: np.issubdtype(x, np.number))):
+            raise ValueError(f"Cannot convert to tensor: non-numeric data present in {name}")
+    
+    X = torch.tensor(df1.to_numpy(), dtype=torch.float32)
+    X2 = df2.to_numpy()
+    return X, X2
+
+
 def outer10_inner_holdout(
     df1_raw, df2_raw, device,
     hidden_grid1, hidden_grid2, latent_grid, lr_grid, bs_grid, beta_grid,
@@ -412,7 +413,6 @@ def outer10_inner_holdout(
     print(f"  df1_raw shape: {df1_raw.shape}")
     print(f"  df2_raw shape: {df2_raw.shape}")
     
-    # Check for NaN/Inf in raw data
     df1_numeric = df1_raw.drop(columns=['pos'], errors='ignore').select_dtypes(include=[np.number])
     df2_numeric = df2_raw.drop(columns=['pos'], errors='ignore').select_dtypes(include=[np.number])
     
@@ -440,13 +440,11 @@ def outer10_inner_holdout(
     print(f"    Range: [{df2_min:.4f}, {df2_max:.4f}]")
     print(f"    Mean: {df2_mean:.4f}")
     
-    # Check variance
     df1_variance = df1_numeric.var().mean()
     df2_variance = df2_numeric.var().mean()
     print(f"\n  df1_raw mean variance: {df1_variance:.6f}")
     print(f"  df2_raw mean variance: {df2_variance:.6f}")
     
-    # Warnings
     if df1_nan_count > 0 or df2_nan_count > 0:
         print("\n  [WARNING] NaN values found in input data!")
     if df1_inf_count > 0 or df2_inf_count > 0:
@@ -458,6 +456,17 @@ def outer10_inner_holdout(
     
     print("="*60 + "\n")
 
+    # --- Pre-compute all (threshold, trans1, trans2) combinations ---
+    transform_cache = {}
+    tensor_cache = {}
+    for threshold, trans1, trans2 in product(threshold_grid, trans1_grid, trans2_grid):
+        cache_key = (threshold, trans1, trans2)
+        if cache_key not in transform_cache:
+            fdf1, fdf2 = filter_and_transform(df1_raw, df2_raw, threshold, trans1, trans2)
+            transform_cache[cache_key] = (fdf1, fdf2)
+            tensor_cache[cache_key] = _prepare_tensors(fdf1, fdf2)
+    print(f"[CACHE] Pre-computed {len(transform_cache)} (threshold, trans1, trans2) combinations.\n")
+
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=seed)
 
     fold_best_cfgs = []
@@ -467,7 +476,6 @@ def outer10_inner_holdout(
     fold_test_metrics = []
     
     all_val_results = []
-    all_test_results = []
 
     for fold_id, (outer_train_idx, outer_test_idx) in enumerate(kf.split(df1_raw), 1):
         print(f"\n========== Fold {fold_id}/{n_splits} ==========")
@@ -477,10 +485,7 @@ def outer10_inner_holdout(
         best_val = float("inf")
         best_val_loss = float("inf")
         
-        # Store validation results for this fold
         fold_val_combinations = []
-        # Store test results for this fold
-        fold_test_combinations = []
 
         # First pass: evaluate all configs on validation set
         print(f"[Fold {fold_id}] Evaluating all hyperparameter combinations on validation set...")
@@ -488,40 +493,8 @@ def outer10_inner_holdout(
             threshold_grid, trans1_grid, trans2_grid, hidden_grid1, hidden_grid2, latent_grid, lr_grid, bs_grid, beta_grid, 
             zero_weight_grid, nonzero_weight_grid):
             
-            filtered_df1, filtered_df2 = filter_and_transform(df1_raw, df2_raw, threshold, trans1, trans2)
-            
-            if 'pos' in filtered_df1.columns:
-                filtered_df1 = filtered_df1.drop(columns=['pos'])
-            elif 'barcode' in filtered_df1.columns:
-                filtered_df1 = filtered_df1.drop(columns=['barcode'])
-            if 'pos' in filtered_df2.columns:
-                filtered_df2 = filtered_df2.drop(columns=['pos'])
-            elif 'barcode' in filtered_df2.columns:
-                filtered_df2 = filtered_df2.drop(columns=['barcode'])
-
-            # Extra safety check: ensure all columns are numeric before tensor conversion
-            for col in filtered_df1.columns:
-                if filtered_df1[col].dtype == 'object':
-                    print(f"[WARNING] Converting object column {col} in filtered_df1")
-                    filtered_df1[col] = pd.to_numeric(filtered_df1[col], errors='coerce')
-            
-            for col in filtered_df2.columns:
-                if filtered_df2[col].dtype == 'object':
-                    print(f"[WARNING] Converting object column {col} in filtered_df2")
-                    filtered_df2[col] = pd.to_numeric(filtered_df2[col], errors='coerce')
-            
-            # Fill any NaN that resulted from coercion
-            filtered_df1 = filtered_df1.fillna(0)
-            filtered_df2 = filtered_df2.fillna(0)
-            
-            # Final check
-            if not all(filtered_df1.dtypes.apply(lambda x: np.issubdtype(x, np.number))):
-                print(f"[ERROR] Non-numeric columns still present in filtered_df1:")
-                print(filtered_df1.dtypes[~filtered_df1.dtypes.apply(lambda x: np.issubdtype(x, np.number))])
-                raise ValueError("Cannot convert to tensor: non-numeric data present")
-            
-            X = torch.tensor(filtered_df1.to_numpy(), dtype=torch.float32)
-            X2 = filtered_df2.to_numpy()
+            cache_key = (threshold, trans1, trans2)
+            X, X2 = tensor_cache[cache_key]
             input_dim = X.shape[1]
             
             tr_loader  = make_loader(X, tr_idx, batch_size=bs, shuffle=True)
@@ -533,7 +506,6 @@ def outer10_inner_holdout(
             if early_stop:
                 es_inner = EarlyStopping(patience=patience, min_delta=min_delta)
             for ep in range(1, epochs_inner + 1):
-                # Pass trans1 parameter to train_one_epoch (since we train on V1)
                 train_one_epoch(model, tr_loader, optimizer, device, beta, weight_strategy, zero_w, nonzero_w, trans1)
                 if early_stop and (ep % check_every == 0):
                     if eval_metric == 'val_loss':
@@ -558,7 +530,6 @@ def outer10_inner_holdout(
             else:
                 raise ValueError(f"Unknown eval_metric: {eval_metric}")
             
-            # Create config_name string with both transformations
             config_name = f"{zero_w}_{nonzero_w}_{trans1}_{trans2}_{threshold}_{hidden_dim1}_{hidden_dim2}_{latent_dim}_{beta}"
             fold_val_combinations.append({
                 'config_name': config_name,
@@ -573,7 +544,6 @@ def outer10_inner_holdout(
                               latent_dim=latent_dim, lr=lr, batch_size=bs, beta=beta, 
                               zero_weight=zero_w, nonzero_weight=nonzero_w)
         
-        # Add all validation combinations from this fold to the overall list
         all_val_results.extend(fold_val_combinations)
         if best_cfg is None:
             raise ValueError(f"[Fold {fold_id}] No valid config found. Check if val_metric returns NaN/inf.")
@@ -584,145 +554,105 @@ def outer10_inner_holdout(
         fold_val_losses.append(best_val_loss)
         fold_val_metrics.append(best_val)
 
-        # Second pass: retrain ALL configs on full training set and evaluate on test set
-        print(f"[Fold {fold_id}] Retraining all hyperparameter combinations on full training set and evaluating on test...")
+        # Second pass: retrain ONLY the best config on full training set, evaluate on test
+        print(f"[Fold {fold_id}] Retraining best config on full training set and evaluating on test...")
         train_idx_full = outer_train_idx
         
-        for threshold, trans1, trans2, hidden_dim1, hidden_dim2, latent_dim, lr, bs, beta, zero_w, nonzero_w in product(
-            threshold_grid, trans1_grid, trans2_grid, hidden_grid1, hidden_grid2, latent_grid, lr_grid, bs_grid, beta_grid, 
-            zero_weight_grid, nonzero_weight_grid):
-            
-            filtered_df1, filtered_df2 = filter_and_transform(df1_raw, df2_raw, threshold, trans1, trans2)
-            if 'pos' in filtered_df1.columns:
-                filtered_df1 = filtered_df1.drop(columns=['pos'])
-            elif 'barcode' in filtered_df1.columns:
-                filtered_df1 = filtered_df1.drop(columns=['barcode'])
-            if 'pos' in filtered_df2.columns:
-                filtered_df2 = filtered_df2.drop(columns=['pos'])
-            elif 'barcode' in filtered_df2.columns:
-                filtered_df2 = filtered_df2.drop(columns=['barcode'])
-
-            # Extra safety check: ensure all columns are numeric before tensor conversion
-            for col in filtered_df1.columns:
-                if filtered_df1[col].dtype == 'object':
-                    print(f"[WARNING] Converting object column {col} in filtered_df1")
-                    filtered_df1[col] = pd.to_numeric(filtered_df1[col], errors='coerce')
-            
-            for col in filtered_df2.columns:
-                if filtered_df2[col].dtype == 'object':
-                    print(f"[WARNING] Converting object column {col} in filtered_df2")
-                    filtered_df2[col] = pd.to_numeric(filtered_df2[col], errors='coerce')
-            
-            # Fill any NaN that resulted from coercion
-            filtered_df1 = filtered_df1.fillna(0)
-            filtered_df2 = filtered_df2.fillna(0)
-            
-            # Final check
-            if not all(filtered_df1.dtypes.apply(lambda x: np.issubdtype(x, np.number))):
-                print(f"[ERROR] Non-numeric columns still present in filtered_df1:")
-                print(filtered_df1.dtypes[~filtered_df1.dtypes.apply(lambda x: np.issubdtype(x, np.number))])
-                raise ValueError("Cannot convert to tensor: non-numeric data present")
-            
-            X = torch.tensor(filtered_df1.to_numpy(), dtype=torch.float32)
-            X2 = filtered_df2.to_numpy()
-            input_dim = X.shape[1]
-            
-            use_outer_val = (outer_es_val_frac > 0.0)
-            if use_outer_val:
-                tr_full_idx, outer_val_idx = train_test_split(train_idx_full, test_size=outer_es_val_frac, random_state=seed, shuffle=True)
-            else:
-                tr_full_idx = train_idx_full
-
-            train_loader_full = make_loader(X, tr_full_idx, batch_size=bs, shuffle=True)
-            if use_outer_val:
-                outer_val_loader = make_loader(X, outer_val_idx, batch_size=bs, shuffle=False)
-
-            model = VAE(input_dim, hidden_dim1, hidden_dim2, latent_dim).to(device)
-            optimizer = optim.Adam(model.parameters(), lr=lr)
-
-            if early_stop:
-                es_outer = EarlyStopping(patience=patience, min_delta=min_delta)
-            for ep in range(1, epochs_outer + 1):
-                # Pass trans1 parameter
-                tr_loss = train_one_epoch(model, train_loader_full, optimizer, device, beta, 
-                                        weight_strategy, zero_w, nonzero_w, trans1)
-                if early_stop and (ep % check_every == 0):
-                    if use_outer_val:
-                        if eval_metric == 'val_loss':
-                            monitor = eval_loss(model, outer_val_loader, device, beta, 
-                                              weight_strategy, zero_w, nonzero_w, trans1)
-                        elif eval_metric in ['pearson', 'spearman']:
-                            monitor = eval_correlation_residual(model, outer_val_loader, X2, outer_val_idx, device, eval_metric)
-                    else:
-                        monitor = tr_loss
-                        
-                    if es_outer.step(monitor, model):
-                        tag = "val" if use_outer_val else "train"
-                        print(f"[outer retrain] early-stopped at epoch {ep}, best_{tag}={es_outer.best:.4f}", flush=True)
-                        if es_outer.best_state is not None:
-                            model.load_state_dict(es_outer.best_state)
-                        break
-
-            # Evaluate on test set
-            test_loader = make_loader(X, outer_test_idx, batch_size=bs, shuffle=False)
-            test_loss = eval_loss(model, test_loader, device, beta, 
-                                weight_strategy, zero_w, nonzero_w, trans1)
-            
-            if eval_metric == 'val_loss':
-                test_metric = test_loss
-            elif eval_metric in ['pearson', 'spearman']:
-                test_metric = eval_correlation_residual(model, test_loader, X2, outer_test_idx, device, eval_metric)
-            else:
-                test_metric = test_loss
-            
-            # Store test result for this config  
-            config_name = f"{zero_w}_{nonzero_w}_{trans1}_{trans2}_{threshold}_{hidden_dim1}_{hidden_dim2}_{latent_dim}_{beta}"
-            fold_test_combinations.append({
-                'config_name': config_name,
-                'test_metric': test_metric,
-                'fold': fold_id
-            })
-            
-            # Save model if this is the best config
-            if (threshold == best_cfg["threshold"] and trans1 == best_cfg["trans1"] and trans2 == best_cfg["trans2"] and 
-                hidden_dim1 == best_cfg["hidden_dim1"] and hidden_dim2 == best_cfg["hidden_dim2"] and
-                latent_dim == best_cfg["latent_dim"] and lr == best_cfg["lr"] and
-                bs == best_cfg["batch_size"] and beta == best_cfg["beta"] and
-                zero_w == best_cfg["zero_weight"] and nonzero_w == best_cfg["nonzero_weight"]):
-                
-                fold_test_losses.append(test_loss)
-                fold_test_metrics.append(test_metric)
-                
-                fold_dir = os.path.join(save_dir, f"fold_{fold_id}")
-                os.makedirs(fold_dir, exist_ok=True)
-                torch.save(model.state_dict(), os.path.join(fold_dir, "vae_weights.pt"))
-                with open(os.path.join(fold_dir, "vae_config.json"), "w") as f:
-                    json.dump({
-                        "input_dim": int(input_dim),
-                        "threshold": float(best_cfg["threshold"]),
-                        "trans1": str(best_cfg["trans1"]),
-                        "trans2": str(best_cfg["trans2"]),
-                        "hidden_dim1": int(best_cfg["hidden_dim1"]),
-                        "hidden_dim2": int(best_cfg["hidden_dim2"]),
-                        "latent_dim": int(best_cfg["latent_dim"]),
-                        "lr": float(best_cfg["lr"]),
-                        "batch_size": int(best_cfg["batch_size"]),
-                        "beta": float(best_cfg["beta"]),
-                        "zero_weight": float(best_cfg["zero_weight"]),
-                        "nonzero_weight": float(best_cfg["nonzero_weight"]),
-                        "weight_strategy": weight_strategy,
-                        "eval_metric": eval_metric,
-                        "inner_val_loss": float(best_val_loss),
-                        "inner_val_metric": float(best_val),
-                        "outer_test_loss": float(test_loss),
-                        "outer_test_metric": float(test_metric),
-                        "seed": int(seed)
-                    }, f)
-                print(f"[Test - Best Config] Test_loss={test_loss:.4f}, Test_metric({eval_metric})={test_metric:.4f}")
-                print(f"[SAVE] saved to: {fold_dir}")
+        threshold = best_cfg["threshold"]
+        trans1 = best_cfg["trans1"]
+        trans2 = best_cfg["trans2"]
+        hidden_dim1 = best_cfg["hidden_dim1"]
+        hidden_dim2 = best_cfg["hidden_dim2"]
+        latent_dim = best_cfg["latent_dim"]
+        lr = best_cfg["lr"]
+        bs = best_cfg["batch_size"]
+        beta = best_cfg["beta"]
+        zero_w = best_cfg["zero_weight"]
+        nonzero_w = best_cfg["nonzero_weight"]
         
-        # Add all test combinations from this fold to the overall list
-        all_test_results.extend(fold_test_combinations)
+        cache_key = (threshold, trans1, trans2)
+        X, X2 = tensor_cache[cache_key]
+        input_dim = X.shape[1]
+        
+        use_outer_val = (outer_es_val_frac > 0.0)
+        if use_outer_val:
+            tr_full_idx, outer_val_idx = train_test_split(train_idx_full, test_size=outer_es_val_frac, random_state=seed, shuffle=True)
+        else:
+            tr_full_idx = train_idx_full
+
+        train_loader_full = make_loader(X, tr_full_idx, batch_size=bs, shuffle=True)
+        if use_outer_val:
+            outer_val_loader = make_loader(X, outer_val_idx, batch_size=bs, shuffle=False)
+
+        model = VAE(input_dim, hidden_dim1, hidden_dim2, latent_dim).to(device)
+        optimizer = optim.Adam(model.parameters(), lr=lr)
+
+        if early_stop:
+            es_outer = EarlyStopping(patience=patience, min_delta=min_delta)
+        for ep in range(1, epochs_outer + 1):
+            tr_loss = train_one_epoch(model, train_loader_full, optimizer, device, beta, 
+                                    weight_strategy, zero_w, nonzero_w, trans1)
+            if early_stop and (ep % check_every == 0):
+                if use_outer_val:
+                    if eval_metric == 'val_loss':
+                        monitor = eval_loss(model, outer_val_loader, device, beta, 
+                                          weight_strategy, zero_w, nonzero_w, trans1)
+                    elif eval_metric in ['pearson', 'spearman']:
+                        monitor = eval_correlation_residual(model, outer_val_loader, X2, outer_val_idx, device, eval_metric)
+                else:
+                    monitor = tr_loss
+                    
+                if es_outer.step(monitor, model):
+                    tag = "val" if use_outer_val else "train"
+                    print(f"[outer retrain] early-stopped at epoch {ep}, best_{tag}={es_outer.best:.4f}", flush=True)
+                    if es_outer.best_state is not None:
+                        model.load_state_dict(es_outer.best_state)
+                    break
+
+        # Evaluate on test set
+        test_loader = make_loader(X, outer_test_idx, batch_size=bs, shuffle=False)
+        test_loss = eval_loss(model, test_loader, device, beta, 
+                            weight_strategy, zero_w, nonzero_w, trans1)
+        
+        if eval_metric == 'val_loss':
+            test_metric = test_loss
+        elif eval_metric in ['pearson', 'spearman']:
+            test_metric = eval_correlation_residual(model, test_loader, X2, outer_test_idx, device, eval_metric)
+        else:
+            test_metric = test_loss
+        
+        fold_test_losses.append(test_loss)
+        fold_test_metrics.append(test_metric)
+        
+        print(f"[Test - Best Config] Test_loss={test_loss:.4f}, Test_metric({eval_metric})={test_metric:.4f}")
+        
+        # Save model
+        fold_dir = os.path.join(save_dir, f"fold_{fold_id}")
+        os.makedirs(fold_dir, exist_ok=True)
+        torch.save(model.state_dict(), os.path.join(fold_dir, "vae_weights.pt"))
+        with open(os.path.join(fold_dir, "vae_config.json"), "w") as f:
+            json.dump({
+                "input_dim": int(input_dim),
+                "threshold": float(best_cfg["threshold"]),
+                "trans1": str(best_cfg["trans1"]),
+                "trans2": str(best_cfg["trans2"]),
+                "hidden_dim1": int(best_cfg["hidden_dim1"]),
+                "hidden_dim2": int(best_cfg["hidden_dim2"]),
+                "latent_dim": int(best_cfg["latent_dim"]),
+                "lr": float(best_cfg["lr"]),
+                "batch_size": int(best_cfg["batch_size"]),
+                "beta": float(best_cfg["beta"]),
+                "zero_weight": float(best_cfg["zero_weight"]),
+                "nonzero_weight": float(best_cfg["nonzero_weight"]),
+                "weight_strategy": weight_strategy,
+                "eval_metric": eval_metric,
+                "inner_val_loss": float(best_val_loss),
+                "inner_val_metric": float(best_val),
+                "outer_test_loss": float(test_loss),
+                "outer_test_metric": float(test_metric),
+                "seed": int(seed)
+            }, f)
+        print(f"[SAVE] saved to: {fold_dir}")
 
     # Create validation results dataframe
     val_df = pd.DataFrame(all_val_results)
@@ -733,23 +663,9 @@ def outer10_inner_holdout(
     val_df_grouped.to_csv(val_path, index=False)
     print(f"\n[SAVE] All validation results saved to: {val_path}")
     
-    # Create test results dataframe
-    test_df = pd.DataFrame(all_test_results)
-    test_df_grouped = test_df.groupby('config_name')['test_metric'].mean().reset_index()
-    test_df_grouped.columns = ['config_name', 'mean_test_metric']
-    test_df_grouped = test_df_grouped.sort_values('mean_test_metric')
-    test_path = os.path.join(save_dir, 'all_test_results.csv')
-    test_df_grouped.to_csv(test_path, index=False)
-    print(f"[SAVE] All test results saved to: {test_path}")
-    
-    # Print summary of best configurations
     print(f"\n{'='*60}")
     print("TOP 5 CONFIGURATIONS BY VALIDATION METRIC:")
     print(val_df_grouped.head())
-    
-    print(f"\n{'='*60}")
-    print("TOP 5 CONFIGURATIONS BY TEST METRIC (TRUE BEST):")
-    print(test_df_grouped.head())
 
     mean_test = float(np.mean(fold_test_losses))
     std_test  = float(np.std(fold_test_losses, ddof=1)) if len(fold_test_losses) > 1 else 0.0
@@ -771,7 +687,6 @@ def outer10_inner_holdout(
         "test_metric_sd": std_test_metric,
         "eval_metric": eval_metric,
         "validation_df": val_df_grouped,
-        "test_df": test_df_grouped
     }   
 
 def main(args):

@@ -1,41 +1,29 @@
-build_and_normalize <- function(filtered_bam_files, out_dir, bam_dir_name, norm_factors, keep_rows = NULL, keep_cols = NULL, transpose = FALSE) {
+# For file input (gene x cell): filter rows (genes) → normalize cols (cells) → transpose → save
+normalize_and_save <- function(count_data, out_dir, sub_dir_name, norm_factors, keep_rows = NULL, transpose = FALSE) {
     suppressPackageStartupMessages({ library(arrow) })
 
-    save_dir <- file.path(out_dir, bam_dir_name)
+    save_dir <- file.path(out_dir, sub_dir_name)
     dir.create(save_dir, recursive = TRUE, showWarnings = FALSE)
 
-    count_matrix_function_with_qc(
-        bam_path = filtered_bam_files,
-        regions = 800,
-        save_dir = save_dir,
-        do_qc = FALSE,
-        apply_transformation = FALSE
-    )
-
-    count_path <- file.path(save_dir, "Count_Matrix_orig.feather")
-    count_data <- read_feather(count_path)
-
-    if (is.null(keep_rows)) {
-        keep_rows <- rowSums(count_data[, -1] > 0, na.rm = TRUE) >= 2
+    # filter rows (genes)
+    if (!is.null(keep_rows)) {
+        count_data <- count_data[keep_rows, , drop = FALSE]
     }
-    count_data <- count_data[keep_rows, ]
-
-    if (!is.null(keep_cols)) {
-        count_data <- count_data[, c(TRUE, keep_cols), drop = FALSE]
-    }
-
+    
     for (norm_val in norm_factors) {
         out_path <- file.path(save_dir, paste0("Count_Matrix_norm_by_", norm_val, ".feather"))
 
-        pos_col <- count_data[[1]]
+        id_col <- count_data[[1]]
         count_matrix <- as.matrix(count_data[, -1])
-        rownames(count_matrix) <- pos_col
+        rownames(count_matrix) <- id_col
 
         if (norm_val == "no_norm") {
             result_matrix <- count_matrix
+
         } else if (norm_val == "standardize") {
             result_matrix <- scale(count_matrix)
             result_matrix[is.na(result_matrix)] <- 0
+
         } else {
             lib_sizes <- colSums(count_matrix)
             if (norm_val == "maximum") {
@@ -56,5 +44,5 @@ build_and_normalize <- function(filtered_bam_files, out_dir, bam_dir_name, norm_
         write_feather(out_data, out_path)
     }
 
-    return(invisible(list(keep_rows = keep_rows, keep_cols = keep_cols, count_data = count_data)))
+    return(invisible(list(count_data = count_data)))
 }

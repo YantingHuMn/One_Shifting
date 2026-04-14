@@ -52,7 +52,6 @@ count_matrix_function_with_qc <- function(bam_path, regions, save_dir, ref = "hg
         library(rtracklayer)
     })
 
-    library(BiocParallel)
     num_cores <- as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", unset = 1))
     register(MulticoreParam(workers = num_cores))
 
@@ -248,7 +247,7 @@ count_matrix_function_with_qc <- function(bam_path, regions, save_dir, ref = "hg
 
     if (is.null(datasetName_full)) {
         if (is.numeric(regions)) {
-            datasetName_full <- paste0("Count_Matrix_", BINSIZE)
+            datasetName_full <- paste0("Count_Matrix")
         } else if (is.character(regions)) {
             ext <- tools::file_ext(regions)
             add <- ext[1]
