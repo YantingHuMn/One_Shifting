@@ -48,7 +48,42 @@ class VAE(nn.Module):
         z = self.reparameterize(mu, logvar)
         return self.decode(z), mu, logvar
 
-def weighted_reconstruction_loss(recon_x, x, weight_strategy='sparsity_aware', zero_weight=1.0, nonzero_weight=5.0, trans=None):
+def _transformed_zero(trans):
+    """
+    Compute what count=0 becomes after the given transformation.
+    Returns (zero_value, tolerance).
+    """
+    _TRANS_ZERO = {
+        'no_trans':              (0.0,                    1e-8),
+        'sqrt':                  (0.0,                    1e-8),
+        'sqrt+1':                (np.sqrt(0 + 1),         1e-6), # = 1.0
+        'sqrt+0.00001':          (np.sqrt(0.00001),       1e-8),
+        'sqrt+10':               (np.sqrt(10),            1e-6),
+        'sqrt+1_then_minus_1':   (np.sqrt(0 + 1) - 1,     1e-8), # = 0.0
+        'log2':                  (np.log2(0 + 1),         1e-8), # = 0.0
+        'log2_then_add_1':       (np.log2(0 + 1) + 1,     1e-6), # = 1.0
+        'log2(count+2)':         (np.log2(0 + 2),         1e-6), # = 1.0
+        'log2(count+1)+1':       (np.log2(0 + 1) + 1,     1e-6), # = 1.0
+        'log(count+2)':          (np.log(0 + 2),          1e-6), # ≈ 0.693
+        'count+1':               (1.0,                    1e-6),
+    }
+    if trans in _TRANS_ZERO:
+        return _TRANS_ZERO[trans]
+    return (0.0, 1e-8)
+
+def _get_zero_nonzero_masks(x, trans):
+    """Return (zero_mask, nonzero_mask) as float tensors."""
+    zv, tol = _transformed_zero(trans)
+    if zv == 0.0 and tol <= 1e-8:
+        # exact zero comparison (no transform or transform that maps 0→0)
+        zero_mask = (x == 0).float()
+        nonzero_mask = (x > 0).float()
+    else:
+        zero_mask = (torch.abs(x - zv) < tol).float()
+        nonzero_mask = (x > zv + tol).float()
+    return zero_mask, nonzero_mask
+
+def weighted_reconstruction_loss(recon_x, x, weight_strategy='fixed', zero_weight=1.0, nonzero_weight=5.0, trans=None,):
     """
     Modified weighted reconstruction loss that handles different transformations.
     
@@ -56,86 +91,37 @@ def weighted_reconstruction_loss(recon_x, x, weight_strategy='sparsity_aware', z
         trans: The transformation applied to the data (e.g., 'sqrt+1', 'log2', etc.)
     """
     if weight_strategy == 'fixed':
-        # Adjust masking based on transformation
-        if trans == 'sqrt+1':
-            zero_mask = torch.abs(x - 1.0) < 1e-6
-            nonzero_mask = x > 1.0 + 1e-6
-        elif trans == 'log2_then_add_1':
-            zero_mask = torch.abs(x - 1.0) < 1e-6
-            nonzero_mask = x > 1.0 + 1e-6
-        elif trans == 'sqrt+0.00001':
-            zero_value = np.sqrt(0.00001)
-            zero_mask = torch.abs(x - zero_value) < 1e-8
-            nonzero_mask = x > zero_value + 1e-8
-        elif trans == 'sqrt+10':
-            zero_value = np.sqrt(10)
-            zero_mask = torch.abs(x - zero_value) < 1e-6
-            nonzero_mask = x > zero_value + 1e-6
-        else:
-            zero_mask = (x == 0).float()
-            nonzero_mask = (x > 0).float()
-        
-        weights = zero_mask.float() * zero_weight + nonzero_mask.float() * nonzero_weight
-        
+        zero_mask, nonzero_mask = _get_zero_nonzero_masks(x, trans)
+        weights = zero_mask * zero_weight + nonzero_mask * nonzero_weight
+
     elif weight_strategy == 'sparsity_aware':
-        if trans == 'sqrt+1':
-            sparsity = torch.abs(x - 1.0) < 1e-6
-        elif trans == 'log2_then_add_1':
-            sparsity = torch.abs(x - 1.0) < 1e-6
-        elif trans == 'sqrt+0.00001':
-            zero_value = np.sqrt(0.00001)
-            sparsity = torch.abs(x - zero_value) < 1e-8
-        elif trans == 'sqrt+10':
-            zero_value = np.sqrt(10)
-            sparsity = torch.abs(x - zero_value) < 1e-6
-        else:
-            sparsity = (x == 0)
-        
-        sparsity = sparsity.float().mean()
+        zero_mask, nonzero_mask = _get_zero_nonzero_masks(x, trans)
+        sparsity = zero_mask.mean()
         zero_weight_dynamic = 1.0
         nonzero_weight_dynamic = 1.0 / (1.0 - sparsity + 1e-8)
-        
-        if trans == 'sqrt+1':
-            zero_mask = torch.abs(x - 1.0) < 1e-6
-            nonzero_mask = x > 1.0 + 1e-6
-        elif trans == 'log2_then_add_1':
-            zero_mask = torch.abs(x - 1.0) < 1e-6
-            nonzero_mask = x > 1.0 + 1e-6
-        elif trans == 'sqrt+0.00001':
-            zero_value = np.sqrt(0.00001)
-            zero_mask = torch.abs(x - zero_value) < 1e-8
-            nonzero_mask = x > zero_value + 1e-8
-        elif trans == 'sqrt+10':
-            zero_value = np.sqrt(10)
-            zero_mask = torch.abs(x - zero_value) < 1e-6
-            nonzero_mask = x > zero_value + 1e-6
-        else:
-            zero_mask = (x == 0)
-            nonzero_mask = (x > 0)
-        
-        weights = zero_mask.float() * zero_weight_dynamic + nonzero_mask.float() * nonzero_weight_dynamic
-        
+        weights = zero_mask * zero_weight_dynamic + nonzero_mask * nonzero_weight_dynamic
+
     elif weight_strategy == 'magnitude':
         weights = 1.0 / (torch.abs(x) + 1.0)
-        
+
     elif weight_strategy == 'focal':
-        mse = (recon_x - x)**2
+        mse = (recon_x - x) ** 2
         weights = torch.pow(mse + 1e-8, 0.5)
-        
+
     else:
         raise ValueError(f"Unknown weight_strategy: {weight_strategy}")
-    
-    weighted_mse = weights * (recon_x - x)**2
+
+    weighted_mse = weights * (recon_x - x) ** 2
     return torch.mean(weighted_mse)
 
-def vae_loss(recon_x, x, mu, logvar, beta, weight_strategy='sparsity_aware', zero_weight=1.0, nonzero_weight=5.0, trans=None):
+def vae_loss(recon_x, x, mu, logvar, beta, weight_strategy='fixed', zero_weight=1.0, nonzero_weight=5.0, trans=None):
     recon_loss = weighted_reconstruction_loss(
         recon_x, x, weight_strategy, zero_weight, nonzero_weight, trans
     )
     KLD = -0.5 * torch.mean(torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1))
     return recon_loss + beta * KLD
 
-def train_one_epoch(model, loader, optimizer, device, beta, weight_strategy='sparsity_aware',
+def train_one_epoch(model, loader, optimizer, device, beta, weight_strategy='fixed',
                    zero_weight=1.0, nonzero_weight=5.0, trans=None):
     model.train()
     total = 0.0
@@ -175,7 +161,7 @@ def train_one_epoch(model, loader, optimizer, device, beta, weight_strategy='spa
 
 
 @torch.no_grad()
-def eval_loss(model, loader, device, beta, weight_strategy='sparsity_aware',
+def eval_loss(model, loader, device, beta, weight_strategy='fixed',
               zero_weight=1.0, nonzero_weight=5.0, trans=None):
     model.eval()
     total = 0.0
@@ -187,6 +173,7 @@ def eval_loss(model, loader, device, beta, weight_strategy='sparsity_aware',
         total += loss.item()
         n += x.size(0)
     return total / max(n, 1)
+
 
 @torch.no_grad()
 def eval_correlation_residual(model, loader, v2_data, indices, device, corr_type='pearson'):
@@ -270,7 +257,6 @@ def make_loader(X, idx, batch_size, shuffle):
     subset = Subset(TensorDataset(X), idx)
     return DataLoader(subset, batch_size=batch_size, shuffle=shuffle)
 
-
 def filter_and_transform(df1, df2, threshold_value, trans1, trans2, data_path1=None, data_path2=None, save=False):
     data_cols = df1.columns[1:]
     zero_percentage = (df1[data_cols] == 0).mean()
@@ -287,10 +273,6 @@ def filter_and_transform(df1, df2, threshold_value, trans1, trans2, data_path1=N
         filtered_df1.iloc[:, 1:] = np.sqrt(filtered_df1.iloc[:, 1:] + 1)
     elif trans1 == "sqrt":
         filtered_df1.iloc[:, 1:] = np.sqrt(filtered_df1.iloc[:, 1:])
-    elif trans1 == "log2":
-        filtered_df1.iloc[:, 1:] = np.log2(filtered_df1.iloc[:, 1:] + 1)
-    elif trans1 == "log2_then_add_1":
-        filtered_df1.iloc[:, 1:] = np.log2(filtered_df1.iloc[:, 1:] + 1) + 1
     elif trans1 == "sqrt+0.00001":
         filtered_df1.iloc[:, 1:] = np.sqrt(filtered_df1.iloc[:, 1:] + 0.00001)
     elif trans1 == "sqrt+10":
@@ -299,6 +281,10 @@ def filter_and_transform(df1, df2, threshold_value, trans1, trans2, data_path1=N
         filtered_df1.iloc[:, 1:] = np.sqrt(filtered_df1.iloc[:, 1:] + 1) - 1
     elif trans1 == "count+1":
         filtered_df1.iloc[:, 1:] = filtered_df1.iloc[:, 1:] + 1
+    elif trans1 == "log2":
+        filtered_df1.iloc[:, 1:] = np.log2(filtered_df1.iloc[:, 1:] + 1)
+    elif trans1 == "log2_then_add_1":
+        filtered_df1.iloc[:, 1:] = np.log2(filtered_df1.iloc[:, 1:] + 1) + 1
     elif trans1 == "log(count+2)":  
         filtered_df1.iloc[:, 1:] = np.log(filtered_df1.iloc[:, 1:] + 2)
     elif trans1 == "log2(count+2)":  
@@ -313,10 +299,6 @@ def filter_and_transform(df1, df2, threshold_value, trans1, trans2, data_path1=N
         filtered_df2.iloc[:, 1:] = np.sqrt(filtered_df2.iloc[:, 1:] + 1)
     elif trans2 == "sqrt":
         filtered_df2.iloc[:, 1:] = np.sqrt(filtered_df2.iloc[:, 1:])
-    elif trans2 == "log2":
-        filtered_df2.iloc[:, 1:] = np.log2(filtered_df2.iloc[:, 1:] + 1)
-    elif trans2 == "log2_then_add_1":
-        filtered_df2.iloc[:, 1:] = np.log2(filtered_df2.iloc[:, 1:] + 1) + 1
     elif trans2 == "sqrt+0.00001":
         filtered_df2.iloc[:, 1:] = np.sqrt(filtered_df2.iloc[:, 1:] + 0.00001)
     elif trans2 == "sqrt+10":
@@ -325,6 +307,10 @@ def filter_and_transform(df1, df2, threshold_value, trans1, trans2, data_path1=N
         filtered_df2.iloc[:, 1:] = np.sqrt(filtered_df2.iloc[:, 1:] + 1) - 1
     elif trans2 == "count+1":
         filtered_df2.iloc[:, 1:] = filtered_df2.iloc[:, 1:] + 1
+    elif trans2 == "log2":
+        filtered_df2.iloc[:, 1:] = np.log2(filtered_df2.iloc[:, 1:] + 1)
+    elif trans2 == "log2_then_add_1":
+        filtered_df2.iloc[:, 1:] = np.log2(filtered_df2.iloc[:, 1:] + 1) + 1
     elif trans2 == "log(count+2)":  
         filtered_df2.iloc[:, 1:] = np.log(filtered_df2.iloc[:, 1:] + 2)
     elif trans2 == "log2(count+2)":  
@@ -400,7 +386,7 @@ def outer10_inner_holdout(
     threshold_grid, trans1_grid, trans2_grid,
     epochs_inner, epochs_outer, inner_val_frac, seed,
     early_stop=False, patience=10, min_delta=0.0, check_every=1, outer_es_val_frac=0.1,
-    n_splits=10, weight_strategy='sparsity_aware', zero_weight_grid=[1.0], nonzero_weight_grid=[5.0],
+    n_splits=10, weight_strategy='fixed', zero_weight_grid=[1.0], nonzero_weight_grid=[5.0],
     save_dir=None, eval_metric='val_loss'):
 
     if save_dir is None:
