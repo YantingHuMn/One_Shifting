@@ -1,5 +1,5 @@
 #!/bin/bash
-source ../One_Shifting/config/config_run_scVI_mse.sh
+source ../One_Shifting/inst/config/config_run_scVI_mse.sh
 
 echo "INPUT_FILE: $INPUT_FILE"
 echo "INPUT_CATEGORY: $V1"
