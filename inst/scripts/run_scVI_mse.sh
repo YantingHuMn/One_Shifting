@@ -17,12 +17,13 @@ norm_factor_string=$(IFS=','; echo "${norm_factor[*]}")
 module load conda_R
 
 # V1: rna; V2: atac gene activity
-Rscript /dcs10/hongkai/data/yhu1/Autoencoder/artificial_ground_truth_compare_km/final_model_2_0/RNA_ATAC/Step1_build_count_matri_norm_by_factor_remove2.R \
+Rscript ../One_Shifting/R/Step1_build_count_matrix.R \
   $INPUT_FILE \
   $GROUND_TRUTH_FILE \
   "$READ_DIR" \
   "$norm_factor_string" \
-  "$norm_factor_string"
+  "$norm_factor_string" \
+  "TRUE"
 
 # dim: 10412 1393
 
@@ -66,11 +67,12 @@ for this_trans_factor in "${trans_factor[@]}"; do
         --data_path2 "$DATA_PATH2" \
         --out_summary "$SUMMARY_FILE" \
         --early_stop \
-        --hidden_grid 128 \
+        --hidden_grid "128" \
         --patience 5 \
         --n_splits 2 \
         --eval_metric val_loss \
-        --trans_grid "$this_trans_factor" \
+        --trans1_grid "$this_trans_factor" \
+        --trans2_grid "$V2_trans_factor" \
         --nonzero_weight_grid 1.0
 
         # reconstruct
@@ -157,7 +159,15 @@ Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
   "log(count+2)"
 
 Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
+  "${OUTPUT_DIR}/plots_summary_pearson_col_gene_noGTzero.csv" \
+  "log(count+2)"
+
+Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
   "${OUTPUT_DIR}/plots_summary_spearman_col_gene.csv" \
+  "log(count+2)"
+
+Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
+  "${OUTPUT_DIR}/plots_summary_spearman_col_gene_noGTzero.csv" \
   "log(count+2)"
 
 Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
@@ -165,5 +175,13 @@ Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
   "log(count+2)"
 
 Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
+  "${OUTPUT_DIR}/plots_summary_pearson_row_cell_noGTzero.csv" \
+  "log(count+2)"
+
+Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
   "${OUTPUT_DIR}/plots_summary_spearman_row_cell.csv" \
+  "log(count+2)"
+
+Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
+  "${OUTPUT_DIR}/plots_summary_spearman_row_cell_noGTzero.csv" \
   "log(count+2)"

@@ -1,12 +1,13 @@
-# Transformation Function
-# Post: Transformation: accept transformation -- "remove0", "libnorm", "log2p1", "minmaxnorm", "sqrt", "sqrt_minmaxnorm", "qnorm".
-# Parameter: df: Data frame used for transformation
-#            libnorm_type1: Type of library normalization ("libnorm", "libnorm-mean", "libnorm-median")
-#            transformations: Vector of transformation steps to apply, default to ("remove0", "libnorm", "log2p1", "qnorm")
-#            save_each_step: Boolean flag to save intermediate results after each transformation
-#            save_dir: Folder path for saving output files
-#            datasetName_full: Output file name prefix
-# Output: a step/overall transformed df and save.
+# Apply Transformations
+# Post: Apply a sequence of transformations to a count data frame and save results as Feather files.
+# Parameter:
+#   df                : Data frame of counts with rows as features and columns as samples. May include a "pos" column for row IDs.
+#   save_dir          : Directory where output Feather files will be written.
+#   datasetName_full  : Output file name prefix.
+#   libnorm_type1     : Library normalization type. One of "libnorm" (1E6), "libnorm-mean" (51633), or "libnorm-median" (5704). Default "libnorm".
+#   transformations   : Character vector of transformation steps to apply in order. Supported: "remove0", "libnorm", "log2p1", "minmaxnorm", "sqrt", "sqrt_minmaxnorm", "qnorm". Default c("remove0", "libnorm", "log2p1", "qnorm").
+#   save_each_step    : Logical. If TRUE, save intermediate Feather file after each transformation step. Default TRUE.
+# Output: Returns the transformed data frame (invisibly). Also writes per-step and final Feather files to save_dir.
 apply_transformations <- function(df, save_dir, datasetName_full, libnorm_type1 = "libnorm", transformations = NULL, save_each_step = TRUE) {
     suppressPackageStartupMessages({
         library(arrow)

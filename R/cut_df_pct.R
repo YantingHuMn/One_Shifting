@@ -1,3 +1,13 @@
+# Cut Columns by Quality Metrics
+# Post: Filter columns (features) of a count matrix based on zero percentage, library size, Pearson correlation, and/or Spearman correlation thresholds. Thresholds can be absolute numeric values or percentile strings (e.g. "p25").
+# Parameter:
+#   mat_num       : Numeric matrix (samples x features) to filter columns from.
+#   mat2_num      : Optional second numeric matrix of same dimensions, required when pearson_min or spearman_min is used.
+#   zero_pct_max  : Maximum allowed zero percentage per column. Numeric or percentile string (e.g. "p75"). Default NULL (no filter).
+#   pearson_min   : Minimum Pearson correlation between corresponding columns of mat_num and mat2_num. Numeric or percentile string. Default NULL.
+#   spearman_min  : Minimum Spearman correlation between corresponding columns of mat_num and mat2_num. Numeric or percentile string. Default NULL.
+#   lib_size_min  : Minimum library size (column sum) threshold. Numeric or percentile string. Default NULL.
+# Output: Logical vector of length ncol(mat_num) indicating which columns to keep.
 cut_df_pct <- function(mat_num, mat2_num = NULL, zero_pct_max = NULL, pearson_min = NULL, spearman_min = NULL, lib_size_min = NULL) {
     keep <- rep(TRUE, ncol(mat_num))
 

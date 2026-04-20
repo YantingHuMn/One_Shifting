@@ -1,22 +1,29 @@
-# Count Matrix Function With QC
-# Post: build count matrix from bam file with pre-specified genomic regions.
-# Parameter: bam_path: A vector of bam file path.
-#            regions: Regions should be either an integer or a (vector of) file path ending with .tsv, .txt, .csv, or .bed.
-#            libnorm_type: Default to "libnorm" for 1E6 normalization.
-#            transformation: Default to "remove0", "libnorm", "log2p1", "qnorm" in order.
-#            save_dir: Folder path for saving output files.
-#            datasetName_full: the file name, default to "Count_matrix" + region type.
-#            save_each_step: Whether save each step, default to TRUE.
-#            do_qc: Whether to perform quality control filtering on BAM files.
-#            qc_filtered_percentile: Percentile threshold for QC filtering.
-# Output: None (saves count matrix and transformed data to files).
+source("../One_Shifting/R/apply_transformations.R")
+
+# Build Count Matrix Function
+# Post: Build a fragment-overlap count matrix from paired-end BAM files over user-specified genomic regions and save it as a Feather file.
+# Parameter:
+#   bam_path          : Character vector of BAM file paths. Each BAM file becomes one column in the output matrix.
+#   regions           : Either
+#                       – a single integer (bin size in bp), e.g. regions = 5000, which tiles the genome into fixed-size bins; or
+#                       – a single file path to a BED / TSV / TXT / CSV file containing custom genomic regions.
+#   save_dir          : Directory where the output Feather file will be written. Default "./".
+#   ref               : Reference genome used when regions is numeric. One of "hg38" or "mm10". Ignored when custom regions are provided.
+#   libnorm_type      : Library normalization type passed to apply_transformations. One of "libnorm", "libnorm-mean", "libnorm-median". Default "libnorm".
+#   apply_transformation : Logical. Whether to run apply_transformations on the count matrix after building. Default FALSE.
+#   transformations   : Character vector of transformation steps forwarded to apply_transformations. Default NULL (uses that function's defaults).
+#   save_each_step    : Logical. Whether to save intermediate results after each transformation step. Default TRUE.
+#   datasetName_full  : Optional character. Output file name prefix. If NULL, auto-generated as "Count_Matrix" plus region type.
+#   do_qc             : Logical. Whether to perform quality control filtering on BAM files. Default FALSE.
+#   qc_filtered_percentile : Numeric in (0, 1); percentile threshold for filtering low-count BAM files. Default 0.25.
+# Output: None (saves count matrix and optionally transformed data as Feather files to save_dir).
 count_matrix_function_with_qc <- function(bam_path, regions, save_dir, ref = "hg38", libnorm_type = "libnorm", apply_transformation = FALSE, transformations = NULL, save_each_step = TRUE, datasetName_full = NULL, do_qc = FALSE, qc_filtered_percentile = 0.25) {
-  # Create folder
+    # Create folder
     if (!dir.exists(save_dir)) {
         dir.create(save_dir, recursive = TRUE)
     }
 
-  # initiate packages
+    # initiate packages
     start_time <- Sys.time()
 
     list.of.packages <- c("data.table", "arrow") # libraries from CRAN
@@ -35,6 +42,7 @@ count_matrix_function_with_qc <- function(bam_path, regions, save_dir, ref = "hg
         BiocManager::install(listOfBiocPackages[notInstalled])
     }
 
+    # Load Libraries
     suppressPackageStartupMessages({
         library(R.utils)
         library(GenomicAlignments)
@@ -55,7 +63,7 @@ count_matrix_function_with_qc <- function(bam_path, regions, save_dir, ref = "hg
     num_cores <- as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", unset = 1))
     register(MulticoreParam(workers = num_cores))
 
-  # Define Regions
+    # Define Regions
     if (is.numeric(regions)) {
         BINSIZE <- regions
         use_custom_region <- FALSE
@@ -80,7 +88,7 @@ count_matrix_function_with_qc <- function(bam_path, regions, save_dir, ref = "hg
     }
 
 
-  # Variables set
+    # Variables set
     pos_colname = "pos"
     # qc
     if (do_qc == TRUE) {
@@ -255,7 +263,7 @@ count_matrix_function_with_qc <- function(bam_path, regions, save_dir, ref = "hg
         }
     }
 
-  # Report
+    # Report
     print(warnings())
     print(datasetName_full)
 
@@ -275,7 +283,7 @@ count_matrix_function_with_qc <- function(bam_path, regions, save_dir, ref = "hg
     col2idx_time_taken <- round(col2idx_time - saving_time_0, 2)
     print(c("col2idx time taken: ", col2idx_time_taken))
 
-  # Transformation
+    # Transformation
     if (apply_transformation == TRUE) {
         rownames(binChriDataframe_full) <- NULL
         binChriDataframe_full = column_to_rownames(binChriDataframe_full, var=pos_colname)
@@ -283,5 +291,4 @@ count_matrix_function_with_qc <- function(bam_path, regions, save_dir, ref = "hg
 
         apply_transformations(df = binChriDataframe_full, libnorm_type1 = libnorm_type, transformations = transformations, save_each_step = save_each_step, save_dir = save_dir, datasetName_full = datasetName_full)
     }
-
 }

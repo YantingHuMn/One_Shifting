@@ -1,3 +1,14 @@
+# Build Count Matrix and Normalize
+# Post: Build a count matrix from BAM files using count_matrix_function_with_qc, apply row/column filtering, normalize by specified factors, optionally transpose, and save as Feather files.
+# Parameter:
+#   filtered_bam_files : Character vector of BAM file paths (already QC-filtered).
+#   out_dir            : Base output directory.
+#   bam_dir_name       : Subdirectory name created under out_dir for this dataset.
+#   norm_factors       : Character vector of normalization methods. Supported: "no_norm", "standardize", "maximum", or a numeric string (e.g. "10000").
+#   keep_rows          : Optional logical vector for row filtering. If NULL, rows with fewer than 2 nonzero values are removed. Default NULL.
+#   keep_cols          : Optional logical vector for column filtering. Default NULL.
+#   transpose          : Logical. If TRUE, transpose the result before saving. Default FALSE.
+# Output: Returns (invisibly) a list with keep_rows, keep_cols, and count_data. Saves normalized Feather files to the subdirectory.
 build_and_normalize <- function(filtered_bam_files, out_dir, bam_dir_name, norm_factors, keep_rows = NULL, keep_cols = NULL, transpose = FALSE) {
     suppressPackageStartupMessages({ library(arrow) })
 

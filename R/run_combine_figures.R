@@ -8,8 +8,8 @@ if (is.na(col_or_row) || col_or_row == "") {
   col_or_row <- "col"
 }
 
-source(file.path(dirname(sys.frame(1)$ofile), "extract_title.R"))
-source(file.path(dirname(sys.frame(1)$ofile), "create_no_data_plot.R"))
+source("../One_Shifting/R/extract_title.R")
+source("../One_Shifting/R/create_no_data_plot.R")
 
 run_combine_figures <- function(input_dir, way, num, col_or_row = "col") {
     # Load libraries

@@ -1,6 +1,19 @@
 # For file input (gene x cell): filter rows (genes) → normalize cols (cells) → transpose → save
+# Normalize and Save (File Input)
+# Post: For file-input mode (gene x cell): filter rows (genes), normalize columns (cells) by specified factors, optionally transpose to cell x gene, and save as Feather files.
+# Parameter:
+#   count_data    : Data frame with first column as row IDs and remaining columns as numeric counts (gene x cell).
+#   out_dir       : Base output directory.
+#   sub_dir_name  : Subdirectory name created under out_dir for this dataset.
+#   norm_factors  : Character vector of normalization methods. Supported: "no_norm", "standardize", "maximum", or a numeric string.
+#   keep_rows     : Optional logical vector for row (gene) filtering. Default NULL.
+#   transpose     : Logical. If TRUE, transpose the result before saving. Default FALSE.
+# Output: Returns (invisibly) a list with count_data. Saves normalized Feather files to the subdirectory.
 normalize_and_save <- function(count_data, out_dir, sub_dir_name, norm_factors, keep_rows = NULL, transpose = FALSE) {
-    suppressPackageStartupMessages({ library(arrow) })
+    # Load Libraries
+    suppressPackageStartupMessages({ 
+        library(arrow) 
+    })
 
     save_dir <- file.path(out_dir, sub_dir_name)
     dir.create(save_dir, recursive = TRUE, showWarnings = FALSE)

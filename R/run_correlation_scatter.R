@@ -15,9 +15,9 @@ y_title <- if (length(args) >= 12) args[12] else NULL
 x_title <- if (length(args) >= 13) args[13] else NULL
 # corr_method <- if (length(args) >= 14) args[14] else "pearson"  # "pearson" or "spearman"
 
-source(file.path(dirname(sys.frame(1)$ofile), "row_cor_generic.R"))
-source(file.path(dirname(sys.frame(1)$ofile), "col_cor_generic.R"))
-source(file.path(dirname(sys.frame(1)$ofile), "cal_corr_remove_zero.R"))
+source("../One_Shifting/R/row_cor_generic.R")
+source("../One_Shifting/R/col_cor_generic.R")
+source("../One_Shifting/R/cal_corr_remove_zero.R")
 
 
 #  Main function: correlation scatter plot between reconstruction and original
@@ -25,7 +25,8 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
                                     factor, V2_norm_factor, this_trans_factor,
                                     V2_trans_factor, save_csv_dir, corr,
                                     y_title = NULL, x_title = NULL,
-                                    corr_method = "pearson") {
+                                    corr_method = "pearson",
+                                    filter_zero_gt = FALSE) {
 
     suppressPackageStartupMessages({
         library(jsonlite)
@@ -44,7 +45,10 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
     if (!corr_method %in% c("pearson", "spearman")) {
         stop("Error: corr_method must be either 'pearson' or 'spearman'")
     }
-    cat(paste("Calculating", corr_method, "correlation between:", corr, "\n"))
+
+    filter_tag <- if (filter_zero_gt) "filtered" else "unfiltered"
+    cat(paste("Calculating", corr_method, "correlation between:", corr,
+              "| filter_zero_gt:", filter_zero_gt, "\n"))
 
     # Create Label
     label3 <- "Input"
@@ -133,6 +137,31 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
     if ("pos" %in% names(df2)) df2 <- df2[, !(names(df2) %in% "pos")]
     if ("pos" %in% names(df3)) df3 <- df3 %>% dplyr::select(-pos)
 
+    # Filter out all-zero columns/rows in ground truth (df1), sync df2 & df3
+    n_before <- if (corr == "col") ncol(df1) else nrow(df1)
+
+    if (filter_zero_gt) {
+        if (corr == "col") {
+            # Remove columns where ground truth is all zero
+            non_zero_cols <- colSums(df1 != 0, na.rm = TRUE) > 0
+            df1 <- df1[, non_zero_cols, drop = FALSE]
+            df2 <- df2[, non_zero_cols, drop = FALSE]
+            df3 <- df3[, non_zero_cols, drop = FALSE]
+        } else {
+            # Remove rows where ground truth is all zero
+            non_zero_rows <- rowSums(df1 != 0, na.rm = TRUE) > 0
+            df1 <- df1[non_zero_rows, , drop = FALSE]
+            df2 <- df2[non_zero_rows, , drop = FALSE]
+            df3 <- df3[non_zero_rows, , drop = FALSE]
+        }
+    }
+
+    n_after <- if (corr == "col") ncol(df1) else nrow(df1)
+    n_removed <- n_before - n_after
+    cat(paste("filter_zero_gt:", filter_zero_gt,
+              "| Before:", n_before, "| After:", n_after,
+              "| Removed:", n_removed, "\n"))
+
     # Count columns with non-zero values in reconstruction
     not_zero_counts <- colSums(df3 != 0, na.rm = TRUE)
     non_zero_column_count <- sum(not_zero_counts > 0)
@@ -213,6 +242,14 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
         " | Residual_mean: ", round(residual_avg, 4)
     )
 
+    # Add filter info to subtitle
+    if (filter_zero_gt) {
+        subtitle_text_with_stats <- paste0(
+            subtitle_text_with_stats,
+            "\n| GT_zero_filtered: removed ", n_removed, " all-zero ", corr, "s (", n_before, " -> ", n_after, ")"
+        )
+    }
+
     # Count points above, below, and on the diagonal
     intersection_df$position <- case_when(
         intersection_df$ORIG > intersection_df$VAE ~ "above",
@@ -231,7 +268,7 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
     #  Method-specific plot styling
     if (corr_method == "pearson") {
         point_color <- "blue"
-        point_alpha <- 1
+        point_alpha <- 0.7
         file_prefix <- "d_pearson_"
         method_label <- "Pearson"
     } else {
@@ -239,6 +276,11 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
         point_alpha <- 0.7
         file_prefix <- "g_spearman_"
         method_label <- "Spearman"
+    }
+
+    # Add filter tag to file prefix
+    if (filter_zero_gt) {
+        file_prefix <- paste0(file_prefix, "noGTzero_")
     }
 
     #  Generate scatter plot
@@ -249,7 +291,8 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
         geom_text(data = intersection_df %>% filter(Value %in% highlight_points),
                   aes(label = Value),
                   hjust = 0.5, vjust = -0.5, size = 3, color = "red") +
-        labs(title = paste0(method_label, " (", corr, ") V1: ", this_trans_factor, ",", factor, " V2: ", V2_trans_factor, ",", V2_norm_factor),
+        labs(title = paste0(method_label, " (", corr, ") V1: ", this_trans_factor, ",", factor, " V2: ", V2_trans_factor, ",", V2_norm_factor,
+                            if (filter_zero_gt) " [GT-zero filtered]" else ""),
              subtitle = subtitle_text_with_stats,
              x = label3, y = label4) +
         scale_x_continuous(limits = c(-0.05, 1)) +
@@ -276,6 +319,8 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
         corr_type = corr,
         x_mean = round(x_avg, 4),
         residual_mean = round(residual_avg, 4),
+        filter_zero_gt = filter_zero_gt,
+        n_removed = n_removed,
         stringsAsFactors = FALSE
     )
 
@@ -287,50 +332,64 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
         stop("Error: `corr` direction must be 'col' or 'row'")
     }
 
-    save_csv_dir <- paste0(save_csv_dir, "/plots_summary_", corr_method, "_", corr, "_", obj, ".csv")
+    save_csv_path <- paste0(save_csv_dir, "/plots_summary_", corr_method, "_", corr, "_", obj,
+                            if (filter_zero_gt) "_noGTzero" else "",
+                            ".csv")
 
-    if (file.exists(save_csv_dir)) {
-        existing_data <- read.csv(save_csv_dir, stringsAsFactors = FALSE)
+    if (file.exists(save_csv_path)) {
+        existing_data <- read.csv(save_csv_path, stringsAsFactors = FALSE)
         updated_data  <- rbind(existing_data, summary_row)
-        write.csv(updated_data, save_csv_dir, row.names = FALSE)
+        write.csv(updated_data, save_csv_path, row.names = FALSE)
     } else {
-        write.csv(summary_row, save_csv_dir, row.names = FALSE)
+        write.csv(summary_row, save_csv_path, row.names = FALSE)
     }
 
-    print(paste0("Summary statistics saved to ", save_csv_dir))
+    print(paste0("Summary statistics saved to ", save_csv_path))
 }
 
 
+# Run all 4 combinations: {pearson, spearman} x {unfiltered, filtered} 
+
+# 1. Pearson, unfiltered (original)
 run_correlation_scatter(
-    path1 = path1,
-    path2 = path2,
-    path3 = path3,
-    out_dir = out_dir,
-    saved_models_dir = saved_models_dir,
-    factor = factor,
-    V2_norm_factor = V2_norm_factor,
-    this_trans_factor = this_trans_factor,
-    V2_trans_factor = V2_trans_factor,
-    save_csv_dir = save_csv_dir,
-    corr = corr,
-    y_title = y_title,
-    x_title = x_title,
-    corr_method = "pearson"
+    path1 = path1, path2 = path2, path3 = path3,
+    out_dir = out_dir, saved_models_dir = saved_models_dir,
+    factor = factor, V2_norm_factor = V2_norm_factor,
+    this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
+    save_csv_dir = save_csv_dir, corr = corr,
+    y_title = y_title, x_title = x_title,
+    corr_method = "pearson", filter_zero_gt = FALSE
 )
 
+# 2. Pearson, GT-zero filtered
 run_correlation_scatter(
-    path1 = path1,
-    path2 = path2,
-    path3 = path3,
-    out_dir = out_dir,
-    saved_models_dir = saved_models_dir,
-    factor = factor,
-    V2_norm_factor = V2_norm_factor,
-    this_trans_factor = this_trans_factor,
-    V2_trans_factor = V2_trans_factor,
-    save_csv_dir = save_csv_dir,
-    corr = corr,
-    y_title = y_title,
-    x_title = x_title,
-    corr_method = "spearman"
+    path1 = path1, path2 = path2, path3 = path3,
+    out_dir = out_dir, saved_models_dir = saved_models_dir,
+    factor = factor, V2_norm_factor = V2_norm_factor,
+    this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
+    save_csv_dir = save_csv_dir, corr = corr,
+    y_title = y_title, x_title = x_title,
+    corr_method = "pearson", filter_zero_gt = TRUE
+)
+
+# 3. Spearman, unfiltered (original)
+run_correlation_scatter(
+    path1 = path1, path2 = path2, path3 = path3,
+    out_dir = out_dir, saved_models_dir = saved_models_dir,
+    factor = factor, V2_norm_factor = V2_norm_factor,
+    this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
+    save_csv_dir = save_csv_dir, corr = corr,
+    y_title = y_title, x_title = x_title,
+    corr_method = "spearman", filter_zero_gt = FALSE
+)
+
+# 4. Spearman, GT-zero filtered
+run_correlation_scatter(
+    path1 = path1, path2 = path2, path3 = path3,
+    out_dir = out_dir, saved_models_dir = saved_models_dir,
+    factor = factor, V2_norm_factor = V2_norm_factor,
+    this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
+    save_csv_dir = save_csv_dir, corr = corr,
+    y_title = y_title, x_title = x_title,
+    corr_method = "spearman", filter_zero_gt = TRUE
 )

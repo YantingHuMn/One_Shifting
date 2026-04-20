@@ -1,16 +1,17 @@
 # Qualification Control
 # Post: Perform QC by counting reads/peaks from input BAM/BED files.
-# Parameter: file_paths: A character vector of BAM or BED file paths.
-#            filtered_percentile: Percentile threshold (0–1) for filtering low-count samples (default 0.25).
-#            output_path_dir: Directory to save output CSVs if save == TRUE.
-#            save: Logical. If TRUE, save full and filtered count tables as CSV in output_path_dir.
+# Parameter:
+#   file_paths         : Character vector of BAM or BED file paths.
+#   filtered_percentile: Numeric in (0, 1); percentile threshold for filtering low-count samples. Default 0.25.
+#   output_path_dir    : Directory to save output CSVs if save == TRUE.
+#   save               : Logical. If TRUE, save full and filtered count tables as CSV in output_path_dir. Default TRUE.
 # Output: A list containing:
-#            - all_df: Data frame of all files and their read/peak counts.
-#            - filtered_df: Data frame after filtering by read count threshold.
-#            - filtered_crf: Vector of file names after filtering.
-#            - total_reads: Total read/peak count across all files.
+#   - all_df       : Data frame of all files and their read/peak counts.
+#   - filtered_df  : Data frame after filtering by read count threshold.
+#   - filtered_crf : Character vector of file names passing the filter.
+#   - total_reads  : Total read/peak count across all files.
 qc <- function(file_paths, filtered_percentile = 0.25, output_path_dir = NULL, save = TRUE) {
-  # load library
+    # load library
     suppressPackageStartupMessages({
         library(ChIPseeker)
         library(ComplexHeatmap)

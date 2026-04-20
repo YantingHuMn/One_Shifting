@@ -1,20 +1,33 @@
 
-source(file.path(dirname(sys.frame(1)$ofile), "count_matrix_function_with_qc.R"))
-source(file.path(dirname(sys.frame(1)$ofile), "qc.R"))
+source("../One_Shifting/R/count_matrix_function_with_qc.R")
+source("../One_Shifting/R/qc.R")
 
-source(file.path(dirname(sys.frame(1)$ofile), "cut_df_pct.R"))
-source(file.path(dirname(sys.frame(1)$ofile), "get_filtered_samples.R"))
-source(file.path(dirname(sys.frame(1)$ofile), "match_bam_files.R"))
-source(file.path(dirname(sys.frame(1)$ofile), "build_and_normalize.R"))
-source(file.path(dirname(sys.frame(1)$ofile), "normalize_and_save.R"))
-source(file.path(dirname(sys.frame(1)$ofile), "apply_transformations.R"))
+source("../One_Shifting/R/cut_df_pct.R")
+source("../One_Shifting/R/get_filtered_samples.R")
+source("../One_Shifting/R/match_bam_files.R")
+source("../One_Shifting/R/build_and_normalize.R")
+source("../One_Shifting/R/normalize_and_save.R")
+source("../One_Shifting/R/apply_transformations.R")
 
 
-# Main Function: filter col → remove 0 row → cut col → normalize
-#
-# Two input modes:
-#   file input (gene x cell): filter rows(gene) → cut rows(gene) → norm cols(cell) → transpose → save as cell x gene
-#   dir  input (cell x gene): build from bam → filter rows(cell) → cut cols(gene) → norm cols(gene) → save as cell x gene
+# path1: INPUT
+# path2: Ground Truth
+# Build-Normalize-Filter Pipeline
+# Post: End-to-end pipeline that reads two datasets (V1 and V2), applies QC filtering, builds count matrices, cuts low-quality features, normalizes, and saves final outputs. Supports both file input (gene x cell Feather) and directory input (BAM files producing cell x gene).
+# Parameter:
+#   path1               : Path to V1 data. Either a Feather file (gene x cell) or a directory of BAM files.
+#   path2               : Path to V2 (ground truth) data. Either a Feather file or a directory of BAM files.
+#   out_dir             : Base output directory for all results.
+#   norm_factor1        : Character vector of normalization methods for V1.
+#   norm_factor2        : Character vector of normalization methods for V2.
+#   filtered_percentile : Numeric in (0, 1); QC percentile threshold for BAM filtering. Default 0.25.
+#   zero_pct_max        : Maximum zero percentage for column cutting. Numeric, percentile string, or NULL. Default NULL.
+#   pearson_min         : Minimum Pearson correlation for column cutting. Numeric, percentile string, or NULL. Default NULL.
+#   spearman_min        : Minimum Spearman correlation for column cutting. Numeric, percentile string, or NULL. Default NULL.
+#   lib_size_min        : Minimum library size for column cutting. Numeric, percentile string, or NULL. Default NULL.
+#   histone_only        : Logical. If TRUE, keep only histone-marked CRF pairs. Default FALSE.
+#   transpose           : Logical. If TRUE, transpose final output. Default FALSE.
+# Output: A list with v1 and v2, each containing the final count data frame.
 run_build_norm_filter_pipeline <- function(path1, path2, out_dir, norm_factor1, norm_factor2, filtered_percentile = 0.25,
                          zero_pct_max = NULL, pearson_min = NULL, spearman_min = NULL, lib_size_min = NULL,
                          histone_only = FALSE, transpose = FALSE) {
@@ -49,7 +62,7 @@ run_build_norm_filter_pipeline <- function(path1, path2, out_dir, norm_factor1, 
             cat("After histone filter:", length(filtered_crf), "CRF pairs remaining\n")
         }
 
-        cat("\n=== Processing V1 (initial, cell x gene) ===\n")
+        cat("\n=== Processing V1 (initial, locus x CRF pairs) ===\n")
         v1_bam_files <- match_bam_files(path1, filtered_crf)
         v1_init <- build_and_normalize(v1_bam_files, out_dir, basename(path1), "no_norm", keep_rows = NULL, keep_cols = NULL)
         keep_rows <- v1_init$keep_rows
@@ -123,5 +136,5 @@ run_build_norm_filter_pipeline <- function(path1, path2, out_dir, norm_factor1, 
     }
 
     cat("\n=== Pipeline complete ===\n")
-    return(list(v1 = v1_result$count_data, v2 = v2_result$count_data))
+    return(invisible(list(v1 = v1_result$count_data, v2 = v2_result$count_data)))
 }

@@ -1,3 +1,9 @@
+# Match BAM Files
+# Post: Match BAM files in a directory to a vector of filtered sample names, handling "_downsampled" suffix mismatches automatically.
+# Parameter:
+#   bam_path      : Directory path containing BAM files (searched recursively).
+#   filtered_crf  : Character vector of sample names to match against.
+# Output: Character vector of full BAM file paths that match the filtered sample names.
 match_bam_files <- function(bam_path, filtered_crf) {
     bam_files <- list.files(path = bam_path, pattern = "\\.bam$", recursive = TRUE, full.names = TRUE)
     bam_files <- bam_files[!grepl("unknown|IgG|is", bam_files, ignore.case = TRUE)]
