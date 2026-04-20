@@ -1,10 +1,3 @@
-this_script <- tryCatch(
-    sys.frame(1)$ofile,
-    error = function(e) {
-        args_all <- commandArgs(trailingOnly = FALSE)
-        sub("--file=", "", args_all[grep("--file=", args_all)])
-    }
-)
 
 source(file.path(dirname(sys.frame(1)$ofile), "count_matrix_function_with_qc.R"))
 source(file.path(dirname(sys.frame(1)$ofile), "qc.R"))

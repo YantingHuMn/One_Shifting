@@ -1,0 +1,7 @@
+INPUT_FILE="/dcs10/hongkai/data/yhu1/Autoencoder/artificial_ground_truth_compare_km/final_model_2_0/seurat_all_genes/RNA/rna_counts_75per.feather"
+GROUND_TRUTH_FILE="/dcs10/hongkai/data/yhu1/Autoencoder/artificial_ground_truth_compare_km/final_model_2_0/seurat_all_genes/ATAC/activity_counts_75per.feather"
+READ_DIR="../Thesis_Paper/PBMC"
+V1="RNA"
+V2="ATAC"
+V2_norm_factor="no_norm"
+V2_trans_factor="no_trans"
