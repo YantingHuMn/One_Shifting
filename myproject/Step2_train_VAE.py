@@ -257,6 +257,29 @@ def make_loader(X, idx, batch_size, shuffle):
     subset = Subset(TensorDataset(X), idx)
     return DataLoader(subset, batch_size=batch_size, shuffle=shuffle)
 
+def _apply_trans(df, trans):
+    if trans == "sqrt+1":
+        df.iloc[:, 1:] = np.sqrt(df.iloc[:, 1:] + 1)
+    elif trans == "sqrt":
+        df.iloc[:, 1:] = np.sqrt(df.iloc[:, 1:])
+    elif trans == "log2":
+        df.iloc[:, 1:] = np.log2(df.iloc[:, 1:] + 1)
+    elif trans == "log2_then_add_1":
+        df.iloc[:, 1:] = np.log2(df.iloc[:, 1:] + 1) + 1
+    elif trans == "sqrt+0.00001":
+        df.iloc[:, 1:] = np.sqrt(df.iloc[:, 1:] + 0.00001)
+    elif trans == "sqrt+10":
+        df.iloc[:, 1:] = np.sqrt(df.iloc[:, 1:] + 10)
+    elif trans == "sqrt+1_then_minus_1":
+        df.iloc[:, 1:] = np.sqrt(df.iloc[:, 1:] + 1) - 1
+    elif trans == "log2(count+2)":
+        df.iloc[:, 1:] = np.log2(df.iloc[:, 1:] + 2)
+    elif trans == "log2(count+1)+1":
+        df.iloc[:, 1:] = np.log2(df.iloc[:, 1:] + 1) + 1
+    elif trans == "no_trans":
+        pass
+
+
 def filter_and_transform(df1, df2, threshold_value, trans1, trans2, data_path1=None, data_path2=None, save=False):
     data_cols = df1.columns[1:]
     zero_percentage = (df1[data_cols] == 0).mean()
@@ -264,94 +287,29 @@ def filter_and_transform(df1, df2, threshold_value, trans1, trans2, data_path1=N
 
     pos_col = df1.columns[0]
     cols_to_keep = [pos_col] + data_cols[keep_cols].tolist()
-    
+
     filtered_df1 = df1[cols_to_keep].copy()
     filtered_df2 = df2[cols_to_keep].copy()
-    
-    # Apply trans1 to df1
-    if trans1 == "sqrt+1":
-        filtered_df1.iloc[:, 1:] = np.sqrt(filtered_df1.iloc[:, 1:] + 1)
-    elif trans1 == "sqrt":
-        filtered_df1.iloc[:, 1:] = np.sqrt(filtered_df1.iloc[:, 1:])
-    elif trans1 == "sqrt+0.00001":
-        filtered_df1.iloc[:, 1:] = np.sqrt(filtered_df1.iloc[:, 1:] + 0.00001)
-    elif trans1 == "sqrt+10":
-        filtered_df1.iloc[:, 1:] = np.sqrt(filtered_df1.iloc[:, 1:] + 10)
-    elif trans1 == "sqrt+1_then_minus_1":
-        filtered_df1.iloc[:, 1:] = np.sqrt(filtered_df1.iloc[:, 1:] + 1) - 1
-    elif trans1 == "count+1":
-        filtered_df1.iloc[:, 1:] = filtered_df1.iloc[:, 1:] + 1
-    elif trans1 == "log2":
-        filtered_df1.iloc[:, 1:] = np.log2(filtered_df1.iloc[:, 1:] + 1)
-    elif trans1 == "log2_then_add_1":
-        filtered_df1.iloc[:, 1:] = np.log2(filtered_df1.iloc[:, 1:] + 1) + 1
-    elif trans1 == "log(count+2)":  
-        filtered_df1.iloc[:, 1:] = np.log(filtered_df1.iloc[:, 1:] + 2)
-    elif trans1 == "log2(count+2)":  
-        filtered_df1.iloc[:, 1:] = np.log2(filtered_df1.iloc[:, 1:] + 2)
-    elif trans1 == "log2(count+1)+1":  
-        filtered_df1.iloc[:, 1:] = np.log2(filtered_df1.iloc[:, 1:] + 1) + 1
-    elif trans1 == "no_trans":
-        pass
-    
-    # Apply trans2 to df2
-    if trans2 == "sqrt+1":
-        filtered_df2.iloc[:, 1:] = np.sqrt(filtered_df2.iloc[:, 1:] + 1)
-    elif trans2 == "sqrt":
-        filtered_df2.iloc[:, 1:] = np.sqrt(filtered_df2.iloc[:, 1:])
-    elif trans2 == "sqrt+0.00001":
-        filtered_df2.iloc[:, 1:] = np.sqrt(filtered_df2.iloc[:, 1:] + 0.00001)
-    elif trans2 == "sqrt+10":
-        filtered_df2.iloc[:, 1:] = np.sqrt(filtered_df2.iloc[:, 1:] + 10)
-    elif trans2 == "sqrt+1_then_minus_1":
-        filtered_df2.iloc[:, 1:] = np.sqrt(filtered_df2.iloc[:, 1:] + 1) - 1
-    elif trans2 == "count+1":
-        filtered_df2.iloc[:, 1:] = filtered_df2.iloc[:, 1:] + 1
-    elif trans2 == "log2":
-        filtered_df2.iloc[:, 1:] = np.log2(filtered_df2.iloc[:, 1:] + 1)
-    elif trans2 == "log2_then_add_1":
-        filtered_df2.iloc[:, 1:] = np.log2(filtered_df2.iloc[:, 1:] + 1) + 1
-    elif trans2 == "log(count+2)":  
-        filtered_df2.iloc[:, 1:] = np.log(filtered_df2.iloc[:, 1:] + 2)
-    elif trans2 == "log2(count+2)":  
-        filtered_df2.iloc[:, 1:] = np.log2(filtered_df2.iloc[:, 1:] + 2)
-    elif trans2 == "log2(count+1)+1":  
-        filtered_df2.iloc[:, 1:] = np.log2(filtered_df2.iloc[:, 1:] + 1) + 1
-    elif trans2 == "no_trans":
-        pass
-    
-    # Ensure all data columns are numeric
-    for col in filtered_df1.columns[1:]:
-        if filtered_df1[col].dtype == 'object':
-            print(f"Warning: Column {col} in df1 has object dtype, converting to numeric")
-            filtered_df1[col] = pd.to_numeric(filtered_df1[col], errors='coerce')
-    
-    for col in filtered_df2.columns[1:]:
-        if filtered_df2[col].dtype == 'object':
-            print(f"Warning: Column {col} in df2 has object dtype, converting to numeric")
-            filtered_df2[col] = pd.to_numeric(filtered_df2[col], errors='coerce')
-    
-    # Replace any NaN values with 0
-    filtered_df1.iloc[:, 1:] = filtered_df1.iloc[:, 1:].fillna(0)
-    filtered_df2.iloc[:, 1:] = filtered_df2.iloc[:, 1:].fillna(0)
-        
+
+    _apply_trans(filtered_df1, trans1)
+    _apply_trans(filtered_df2, trans2)
+
     if save:
         if data_path1 is not None:
             save_dir1 = Path(data_path1).parent
-            save_dir1.mkdir(parents=True, exist_ok=True)  
+            save_dir1.mkdir(parents=True, exist_ok=True)
             save_path1 = save_dir1 / f"Count_matrix_transformed_{trans1}.feather"
             filtered_df1.to_feather(save_path1)
-            print(f"[SAVE] Saved transformed df1 ({trans1}) to: {save_path1}")
-        
+            print(f"[SAVE] Saved transformed df1 to: {save_path1}")
+
         if data_path2 is not None:
             save_dir2 = Path(data_path2).parent
-            save_dir2.mkdir(parents=True, exist_ok=True) 
+            save_dir2.mkdir(parents=True, exist_ok=True)
             save_path2 = save_dir2 / f"Count_matrix_transformed_{trans2}.feather"
             filtered_df2.to_feather(save_path2)
-            print(f"[SAVE] Saved transformed df2 ({trans2}) to: {save_path2}")
-    
-    return filtered_df1, filtered_df2
+            print(f"[SAVE] Saved transformed df2 to: {save_path2}")
 
+    return filtered_df1, filtered_df2
 
 def _prepare_tensors(filtered_df1, filtered_df2):
     """Drop pos/barcode columns, validate dtypes, return (X_tensor, X2_numpy)."""
@@ -441,6 +399,21 @@ def outer10_inner_holdout(
         print("  [WARNING] Very large values detected! Consider normalization.")
     
     print("="*60 + "\n")
+    
+    # --- Negative-value safety check ---
+    df1_numeric = df1_raw.iloc[:, 1:]
+    has_negatives_df1 = (df1_numeric < 0).any().any()
+    df2_numeric = df2_raw.iloc[:, 1:]
+    has_negatives_df2 = (df2_numeric < 0).any().any()
+    if has_negatives_df1 or has_negatives_df2:
+        unsafe = {'sqrt', 'sqrt+1', 'sqrt+0.00001', 'sqrt+10', 'sqrt+1_then_minus_1',
+                  'log2', 'log2_then_add_1', 'log2(count+2)', 'log2(count+1)+1', 'log(count+2)'}
+        if has_negatives_df1:
+            trans1_grid = [t for t in trans1_grid if t not in unsafe] or ['no_trans']
+        if has_negatives_df2:
+            trans2_grid = [t for t in trans2_grid if t not in unsafe] or ['no_trans']
+        print(f"[INFO] Negative values detected (df1={has_negatives_df1}, df2={has_negatives_df2}), "
+              f"filtered trans grids to: trans1={trans1_grid}, trans2={trans2_grid}")
 
     # --- Pre-compute all (threshold, trans1, trans2) combinations ---
     transform_cache = {}
@@ -678,6 +651,9 @@ def outer10_inner_holdout(
 def main(args):
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
 

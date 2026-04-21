@@ -110,5 +110,5 @@ run_combine_figures <- function(input_dir, way, num, col_or_row = "col") {
     }
 }
 
-combine_figures(input_dir = input_dir, way = "pearson", num = num, col_or_row = col_or_row)
-combine_figures(input_dir = input_dir, way = "spearman", num = num, col_or_row = col_or_row)
+run_combine_figures(input_dir = input_dir, way = "pearson", num = num, col_or_row = col_or_row)
+run_combine_figures(input_dir = input_dir, way = "spearman", num = num, col_or_row = col_or_row)

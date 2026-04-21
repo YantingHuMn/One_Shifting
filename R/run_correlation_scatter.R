@@ -55,8 +55,8 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
     label4 <- "Output"
 
     # Override axis labels if provided
-    if (!is.null(x_title)) label3 <- paste0(label3, x_title)  # x-axis (path3) reconstructed/output
-    if (!is.null(y_title)) label4 <- paste0(label4, y_title)  # y-axis (path2) input
+    if (!is.null(x_title)) label3 <- paste0(label4, "_", x_title)  # x-axis (path3) reconstructed/output
+    if (!is.null(y_title)) label4 <- paste0(label3,"_", y_title)  # y-axis (path2) input
 
     #  Read best fold config from saved_models_dir
     fold_dirs <- list.dirs(saved_models_dir, recursive = FALSE, full.names = TRUE)

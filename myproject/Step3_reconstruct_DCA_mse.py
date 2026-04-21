@@ -71,6 +71,8 @@ def _apply_trans(df, trans):
         df.iloc[:, 1:] = np.sqrt(df.iloc[:, 1:] + 1) - 1
     elif trans == "count+1":
         df.iloc[:, 1:] = df.iloc[:, 1:] + 1
+    elif trans == "log(count+2)":
+        df.iloc[:, 1:] = np.log(df.iloc[:, 1:] + 2)
     elif trans == "log2(count+2)":
         df.iloc[:, 1:] = np.log2(df.iloc[:, 1:] + 2)
     elif trans == "log2(count+1)+1":

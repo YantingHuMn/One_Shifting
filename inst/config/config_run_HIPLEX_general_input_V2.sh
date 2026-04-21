@@ -1,0 +1,7 @@
+INPUT_FILE="/dcs05/hongkai/data/next_cutntag/bulk/homotone_heterotone_merged/data_align/frag_decon/valley-all-qc/V2_mixed"
+GROUND_TRUTH_FILE="/dcs05/hongkai/data/next_cutntag/bulk/homotone_heterotone_merged/data_align/frag_decon/valley-all-qc/V1_mixed"
+READ_DIR="../One_Shifting_Results/HIPLEX_INPUT_V2"
+V1="V2_mixed"
+V2="V1_mixed"
+V2_norm_factor="no_norm"
+V2_trans_factor="no_trans"

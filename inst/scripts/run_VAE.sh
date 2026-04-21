@@ -1,11 +1,11 @@
 #!/bin/bash
-source ../One_Shifting/inst/config/config_run_scVI_mse.sh
+source ../One_Shifting/inst/config/config_run_VAE.sh
 
 echo "INPUT_FILE: $INPUT_FILE"
 echo "INPUT_CATEGORY: $V1"
 echo "READ_DIR: $READ_DIR"
 
-method="scVI_MSE"
+method="VAE"
 CONDITION="given_${V2}_${V2_norm_factor}_${V2_trans_factor}"
 OUTPUT_DIR="${READ_DIR}/${method}/${CONDITION}"
 mkdir -p $OUTPUT_DIR
@@ -68,24 +68,25 @@ for this_trans_factor in "${trans_factor[@]}"; do
         conda activate vae_env2
         python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
-        python -u ../One_Shifting/myproject/Step2_train_scVI_mse.py \
+        python -u ../One_Shifting/myproject/Step2_train_VAE.py \
         --data_path1 "$DATA_PATH1" \
         --data_path2 "$DATA_PATH2" \
         --out_summary "$SUMMARY_FILE" \
         --early_stop \
-        --hidden_grid "512,256,128,64" \
+        --hidden_grid1 4096 \
+        --hidden_grid2 1024 \
         --patience 5 \
         --n_splits 2 \
         --eval_metric val_loss \
-        --trans1_grid "$this_trans_factor" \
-        --trans2_grid "$V2_trans_factor" \
+        --beta_grid 0 \
+        --trans_grid "$this_trans_factor" \
         --nonzero_weight_grid 1.0
-
+        
         # reconstruct
         SAVED_DIR="${OUT_DIR}/saved_models"
         OUT_PATH="${OUT_DIR}/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather"
 
-        python ../One_Shifting/myproject/Step3_reconstruct_scVI_mse.py \
+        python -u ../One_Shifting/myproject/Step3_reconstruct_VAE.py \
         --data_path1 "$DATA_PATH1" \
         --data_path2 "$DATA_PATH2" \
         --transformed_out_dir "$OUT_DIR" \

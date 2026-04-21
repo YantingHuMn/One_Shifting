@@ -1,9 +1,10 @@
 args <- commandArgs(trailingOnly = TRUE)
-csv_path <- args[1]
-skip_trans <- if (length(args) >= 2 && args[2] != "") args[2] else NULL
-skip_norm  <- if (length(args) >= 3 && args[3] != "") args[3] else NULL
+csv_path    <- args[1]
+method_name <- args[2]
+skip_trans  <- if (length(args) >= 3 && args[3] != "") args[3] else NULL
+skip_norm   <- if (length(args) >= 4 && args[4] != "") args[4] else NULL
 
-run_summary_scatter_plot <- function(csv_path, skip_trans = NULL, skip_norm = NULL) {
+run_summary_scatter_plot <- function(csv_path, method_name, skip_trans = NULL, skip_norm = NULL) {
     # Load libraries
     suppressPackageStartupMessages({
         library(ggplot2)
@@ -30,13 +31,13 @@ run_summary_scatter_plot <- function(csv_path, skip_trans = NULL, skip_norm = NU
         x_col <- "x_mean"
         y_col <- "residual_mean"
         df$residual_mean <- -df$residual_mean
-        x_label <- "x_mean (VAE correlation mean)"
-        y_label <- "residual_mean (VAE - ORIG)"
+        x_label <- "x_mean (OUTPUT correlation mean)"
+        y_label <- "residual_mean (OUTPUT - INPUT)"
     } else if (has_above) {
         x_col <- "below"
         y_col <- "above"
-        x_label <- "Below (ORIG < VAE)"
-        y_label <- "Above (ORIG > VAE)"
+        x_label <- "Below (INPUT < OUTPUT)"
+        y_label <- "Above (INPUT > OUTPUT)"
     } else {
         stop("CSV must have either (x_mean, residual_mean) or (above, below) columns")
     }
@@ -64,19 +65,19 @@ run_summary_scatter_plot <- function(csv_path, skip_trans = NULL, skip_norm = NU
         scale_color_manual(values = color_map) +
         scale_shape_manual(values = shape_map) +
         labs(
-        x = x_label,
-        y = y_label,
-        title = basename(csv_path),
-        subtitle = sprintf("n = %d", n_points),
-        color = "Trans",
-        shape = "Norm"
+            x = x_label,
+            y = y_label,
+            title = paste0(method_name, ": ", basename(csv_path)),
+            subtitle = sprintf("n = %d", n_points),
+            color = "Trans",
+            shape = "Norm"
         ) +
         theme_bw() +
         theme(
-        legend.position = "right",
-        plot.title = element_text(size = 11, hjust = 0.5),
-        legend.text = element_text(size = 9),
-        legend.title = element_text(size = 10, face = "bold")
+            legend.position = "right",
+            plot.title = element_text(size = 11, hjust = 0.5),
+            legend.text = element_text(size = 9),
+            legend.title = element_text(size = 10, face = "bold")
         )
 
     if (has_xmean) {
@@ -92,4 +93,4 @@ run_summary_scatter_plot <- function(csv_path, skip_trans = NULL, skip_norm = NU
     cat(sprintf("Saved to %s\n", output_path))
 }
 
-plot_scatter(csv_path, skip_trans, skip_norm)
+run_summary_scatter_plot(csv_path, method_name, skip_trans, skip_norm)

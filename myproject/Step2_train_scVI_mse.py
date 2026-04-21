@@ -566,6 +566,21 @@ def outer10_inner_holdout(
     print(f"  df2 range: [{df2_numeric.min().min():.4f}, {df2_numeric.max().max():.4f}]")
     print("=" * 60 + "\n")
 
+    # --- Negative-value safety check ---
+    df1_numeric = df1_raw.iloc[:, 1:]
+    has_negatives_df1 = (df1_numeric < 0).any().any()
+    df2_numeric = df2_raw.iloc[:, 1:]
+    has_negatives_df2 = (df2_numeric < 0).any().any()
+    if has_negatives_df1 or has_negatives_df2:
+        unsafe = {'sqrt', 'sqrt+1', 'sqrt+0.00001', 'sqrt+10', 'sqrt+1_then_minus_1',
+                  'log2', 'log2_then_add_1', 'log2(count+2)', 'log2(count+1)+1', 'log(count+2)'}
+        if has_negatives_df1:
+            trans1_grid = [t for t in trans1_grid if t not in unsafe] or ['no_trans']
+        if has_negatives_df2:
+            trans2_grid = [t for t in trans2_grid if t not in unsafe] or ['no_trans']
+        print(f"[INFO] Negative values detected (df1={has_negatives_df1}, df2={has_negatives_df2}), "
+              f"filtered trans grids to: trans1={trans1_grid}, trans2={trans2_grid}")
+
     # pre-compute transforms
     transform_cache = {}
     tensor_cache = {}
@@ -818,6 +833,9 @@ def outer10_inner_holdout(
 def main(args):
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
 
