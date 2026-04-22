@@ -36,8 +36,7 @@ if [ ! -f "$LOCK_FILE" ]; then
           $GROUND_TRUTH_FILE \
           "$READ_DIR" \
           "$norm_factor_string" \
-          "$norm_factor_string" \
-          "TRUE"
+          "$norm_factor_string" 
         touch "$LOCK_FILE"
         rmdir "$READ_DIR/.count_matrix_lock"
     else
@@ -158,25 +157,7 @@ for this_trans_factor in "${trans_factor[@]}"; do
           "${OUTPUT_DIR}" \
           "col" \
           "${V1}" \
-          "${method}"        
-
-        Figure_DIR="$OUTPUT_DIR/Figures_row"
-        mkdir -p "$Figure_DIR"
-
-        Rscript ../One_Shifting/R/run_correlation_scatter.R \
-          "$OUT_DIR/Count_matrix_transformed_rep2.feather" \
-          "$OUT_DIR/Count_matrix_transformed_rep1.feather" \
-          "$OUT_DIR/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather" \
-          "$Figure_DIR"  \
-          "$OUT_DIR/saved_models" \
-          "$factor" \
-          "$V2_norm_factor" \
-          "$this_trans_factor" \
-          "$V2_trans_factor" \
-          "${OUTPUT_DIR}" \
-          "row" \
-          "${V1}" \
-          "${method}"        
+          "${method}"             
 
         sleep 2
     done
@@ -186,11 +167,8 @@ done
 module load conda_R
  
 Rscript ../One_Shifting/R/run_combine_figures.R \
-  "$OUTPUT_DIR/Figures_col" \
+  "$OUTPUT_DIR/Figures_col"
 
-Rscript ../One_Shifting/R/run_combine_figures.R \
-  "$OUTPUT_DIR/Figures_row" \
-  "row"
 
 # Rscript /dcs10/hongkai/data/yhu1/Autoencoder/artificial_ground_truth_compare_km/final_model_2_0/compare_Dec_12/Step12_combine_plot_no_data.R \
 #   "$OUTPUT_DIR/ROC" \
@@ -202,43 +180,29 @@ Rscript ../One_Shifting/R/run_combine_figures.R \
 #   "roc_balanced" \
 #   30
 
+# Summary scatter plots
+for corr_method in pearson spearman; do
+    for gt_suffix in "" "_noGTzero"; do
+        Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
+          "${OUTPUT_DIR}/plots_summary_${corr_method}_col_gene${gt_suffix}.csv" \
+          $method \
+          "log(count+2)"
+    done
+done
 
-Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
-  "${OUTPUT_DIR}/plots_summary_pearson_col_gene.csv" \
-  $method \
-  "log(count+2)"
-
-Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
-  "${OUTPUT_DIR}/plots_summary_pearson_col_gene_noGTzero.csv" \
-  $method \
-  "log(count+2)"
-
-Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
-  "${OUTPUT_DIR}/plots_summary_spearman_col_gene.csv" \
-  $method \
-  "log(count+2)"
-
-Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
-  "${OUTPUT_DIR}/plots_summary_spearman_col_gene_noGTzero.csv" \
-  $method \
-  "log(count+2)"
-
-Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
-  "${OUTPUT_DIR}/plots_summary_pearson_row_cell.csv" \
-  $method \
-  "log(count+2)"
-
-Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
-  "${OUTPUT_DIR}/plots_summary_pearson_row_cell_noGTzero.csv" \
-  $method \
-  "log(count+2)"
-
-Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
-  "${OUTPUT_DIR}/plots_summary_spearman_row_cell.csv" \
-  $method \
-  "log(count+2)"
-
-Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
-  "${OUTPUT_DIR}/plots_summary_spearman_row_cell_noGTzero.csv" \
-  $method \
-  "log(count+2)"
+echo "=== Step 8: Bubble Plot ==="
+for corr_method in pearson spearman; do
+    for gt_suffix in "" "_noGTzero"; do
+        Rscript ../One_Shifting/R/Step_post_summary_bubble_table.R \
+            "$method" \
+            "$V1" \
+            "$OUTPUT_DIR" \
+            "TRUE" \
+            "${OUTPUT_DIR}/plots_summary_${corr_method}_col_gene${gt_suffix}.csv" \
+            "${READ_DIR}/bubble_plot_summary_col_gene${gt_suffix}.csv" \
+            "$corr_method" \
+            "$V2_trans_factor" \
+            "$V2_norm_factor" \
+            "${trans_factor[@]}"
+    done
+done
