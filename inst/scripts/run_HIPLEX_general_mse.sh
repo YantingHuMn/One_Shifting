@@ -79,7 +79,7 @@ if [ "$method" = "VAE" ]; then
 elif [ "$method" = "DCA_mse" ]; then
     METHOD_ARGS="--dropout_grid 0.0 --hidden_grid1 256 --hidden_grid2 128"
 elif [ "$method" = "scVI_mse" ]; then
-    METHOD_ARGS="--hidden_grid 256,128,64,32"
+    METHOD_ARGS="--hidden_grid 512,128,32"
 elif [ "$method" = "Transformer_denoise" ]; then
     METHOD_ARGS="--n_tokens_grid 32 --d_model_grid 64 --nhead_grid 4 --num_layers_grid 1 --dim_feedforward_grid 128 --dropout_grid 0.1 --batch_size_grid 512"
 fi

@@ -1,0 +1,8 @@
+INPUT_FILE="../One_Shifting_Results/ATAC/activity_counts.feather"
+GROUND_TRUTH_FILE="../One_Shifting_Results/RNA/rna_counts.feather"
+READ_DIR="../One_Shifting_Results/PBMC_INPUT_ATAC"
+V1="ATAC"
+V2="RNA"
+V2_norm_factor="no_norm"
+V2_trans_factor="no_trans"
+

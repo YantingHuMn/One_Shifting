@@ -1,0 +1,7 @@
+INPUT_FILE="../One_Shifting_Results/G120_ATAC/activity_counts.feather"
+GROUND_TRUTH_FILE="../One_Shifting_Results/G120_RNA/rna_counts.feather"
+READ_DIR="../One_Shifting_Results/G120_INPUT_ATAC"
+V1="G120_ATAC"
+V2="G120_RNA"
+V2_norm_factor="no_norm"
+V2_trans_factor="no_trans"

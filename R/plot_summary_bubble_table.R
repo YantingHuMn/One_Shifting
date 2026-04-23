@@ -48,16 +48,40 @@ plot_summary_bubble_table <- function(csv_path) {
     avg_rank_perf$trans <- factor(avg_rank_perf$trans, levels = rev(perf_order))
     avg_rank_resid$trans <- factor(avg_rank_resid$trans, levels = rev(resid_order))
 
-    x_labels <- x_combinations %>%
-        mutate(label = paste(method, data_type, metric, sep = " | ")) %>%
-        pull(label)
+    # Order x-axis by best trans value for each plot
+    best_perf_trans <- perf_order[1]
+    perf_x_order <- df_perf %>%
+        filter(trans == best_perf_trans) %>%
+        arrange(desc(mean_performance)) %>%
+        pull(x_id) %>%
+        unique()
+    # Add any x_ids missing from best trans row
+    perf_x_order <- c(perf_x_order, setdiff(unique(df_perf$x_id), perf_x_order))
+
+    best_resid_trans <- resid_order[1]
+    resid_x_order <- df_resid %>%
+        filter(trans == best_resid_trans) %>%
+        arrange(mean_residual) %>%
+        pull(x_id) %>%
+        unique()
+    resid_x_order <- c(resid_x_order, setdiff(unique(df_resid$x_id), resid_x_order))
+
+    x_labels_df <- x_combinations %>%
+        mutate(label = paste(method, data_type, metric, sep = " | "))
+
+    # Performance x labels in sorted order
+    perf_x_labels <- x_labels_df$label[match(perf_x_order, x_labels_df$x_id)]
+    resid_x_labels <- x_labels_df$label[match(resid_x_order, x_labels_df$x_id)]
+
+    df_perf$x_id <- factor(df_perf$x_id, levels = perf_x_order)
+    df_resid$x_id <- factor(df_resid$x_id, levels = resid_x_order)
 
     # --- Plot 1: mean_performance ---
-    p1_main <- ggplot(df_perf, aes(x = factor(x_id), y = trans)) +
+    p1_main <- ggplot(df_perf, aes(x = x_id, y = trans)) +
         geom_point(aes(size = rank_perf, color = mean_performance), alpha = 0.9) +
         scale_size_continuous(
             name = "Rank\n(smaller = better)",
-            range = c(8, 1),
+            range = c(8, 3),
             guide = guide_legend(order = 2)
         ) +
         scale_color_viridis_c(
@@ -65,7 +89,7 @@ plot_summary_bubble_table <- function(csv_path) {
             option = "D", direction = 1,
             guide = guide_colorbar(order = 1)
         ) +
-        scale_x_discrete(labels = x_labels) +
+        scale_x_discrete(labels = perf_x_labels) +
         theme_minimal() +
         theme(
             axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
@@ -93,7 +117,7 @@ plot_summary_bubble_table <- function(csv_path) {
                        align = "h", axis = "tb")
 
     # --- Plot 2: mean_residual ---
-    p2_main <- ggplot(df_resid, aes(x = factor(x_id), y = trans)) +
+    p2_main <- ggplot(df_resid, aes(x = x_id, y = trans)) +
         geom_point(aes(size = rank_residual, color = mean_residual), alpha = 0.9) +
         scale_size_continuous(
             name = "Rank\n(smaller = better)",
@@ -105,7 +129,7 @@ plot_summary_bubble_table <- function(csv_path) {
             option = "magma", direction = -1,
             guide = guide_colorbar(order = 1)
         ) +
-        scale_x_discrete(labels = x_labels) +
+        scale_x_discrete(labels = resid_x_labels) +
         theme_minimal() +
         theme(
             axis.text.x = element_text(angle = 45, hjust = 1, size = 8),

@@ -62,65 +62,70 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
     fold_dirs <- list.dirs(saved_models_dir, recursive = FALSE, full.names = TRUE)
     fold_dirs <- fold_dirs[grepl("fold_", fold_dirs)]
 
-    best_fold   <- NULL
-    best_metric <- Inf
-    best_config <- NULL
+    if (length(fold_dirs) > 0) {
+        best_fold   <- NULL
+        best_metric <- Inf
+        best_config <- NULL
 
-    for (fold_dir in fold_dirs) {
-        config_file <- list.files(fold_dir, pattern = "_config\\.json$", full.names = TRUE)[1]
-        if (is.na(config_file) || !file.exists(config_file)) next
+        for (fold_dir in fold_dirs) {
+            config_file <- list.files(fold_dir, pattern = "_config\\.json$", full.names = TRUE)[1]
+            if (is.na(config_file) || !file.exists(config_file)) next
 
-        # Read as text and replace NaN with null before parsing
-        json_text <- readLines(config_file, warn = FALSE)
-        json_text <- gsub(' NaN', ' null', json_text)
-        config <- fromJSON(paste(json_text, collapse = ""))
+            # Read as text and replace NaN with null before parsing
+            json_text <- readLines(config_file, warn = FALSE)
+            json_text <- gsub(' NaN', ' null', json_text)
+            config <- fromJSON(paste(json_text, collapse = ""))
 
-        # Check if outer_test_metric is valid; fall back to outer_test_loss
-        metric_value <- config$outer_test_metric
-        if (is.null(metric_value) || is.na(metric_value) || !is.finite(metric_value)) {
-            metric_value <- config$outer_test_loss
-        }
+            # Check if outer_test_metric is valid; fall back to outer_test_loss
+            metric_value <- config$outer_test_metric
+            if (is.null(metric_value) || is.na(metric_value) || !is.finite(metric_value)) {
+                metric_value <- config$outer_test_loss
+            }
 
-        # Only consider this fold if metric_value is a valid number
-        if (!is.null(metric_value) && !is.na(metric_value) && is.finite(metric_value)) {
-            if (metric_value < best_metric) {
-                best_metric <- metric_value
-                best_fold   <- fold_dir
-                best_config <- config
+            # Only consider this fold if metric_value is a valid number
+            if (!is.null(metric_value) && !is.na(metric_value) && is.finite(metric_value)) {
+                if (metric_value < best_metric) {
+                    best_metric <- metric_value
+                    best_fold   <- fold_dir
+                    best_config <- config
+                }
             }
         }
-    }
 
-    if (is.null(best_fold)) {
-        stop("Error: No fold with valid (non-NaN) metrics found!")
-    }
+        if (is.null(best_fold)) {
+            stop("Error: No fold with valid (non-NaN) metrics found!")
+        }
 
-    #  Build subtitle from best fold config
-    fold_name  <- basename(best_fold)
-    model_type <- ifelse(is.null(best_config$model_type), "VAE", best_config$model_type)
+        #  Build subtitle from best fold config
+        fold_name  <- basename(best_fold)
+        model_type <- ifelse(is.null(best_config$model_type), "VAE", best_config$model_type)
 
-    # Compatible with different config formats (trans1 vs trans, scVI vs DCA/VAE)
-    trans_label <- if (!is.null(best_config$trans1)) best_config$trans1
-                   else if (!is.null(best_config$trans)) best_config$trans
-                   else "none"
+        # Compatible with different config formats (trans1 vs trans, scVI vs DCA/VAE)
+        trans_label <- if (!is.null(best_config$trans1)) best_config$trans1
+                       else if (!is.null(best_config$trans)) best_config$trans
+                       else "none"
 
-    beta_val   <- if (is.null(best_config$beta)) 0 else best_config$beta
-    nonzero_w  <- if (is.null(best_config$nonzero_weight)) "N/A" else best_config$nonzero_weight
+        beta_val   <- if (is.null(best_config$beta)) 0 else best_config$beta
+        nonzero_w  <- if (is.null(best_config$nonzero_weight)) "N/A" else best_config$nonzero_weight
 
-    # Detect architecture format: scVI (n_hidden/n_latent/n_layers) vs DCA/VAE (hidden_dim1/hidden_dim2/latent_dim)
-    if (!is.null(best_config$n_hidden)) {
-        arch_str <- sprintf("n_hidden=%d, n_latent=%d, n_layers=%d",
-                            best_config$n_hidden, best_config$n_latent, best_config$n_layers)
+        # Detect architecture format: scVI (n_hidden/n_latent/n_layers) vs DCA/VAE (hidden_dim1/hidden_dim2/latent_dim)
+        if (!is.null(best_config$n_hidden)) {
+            arch_str <- sprintf("n_hidden=%d, n_latent=%d, n_layers=%d",
+                                best_config$n_hidden, best_config$n_latent, best_config$n_layers)
+        } else {
+            arch_str <- sprintf("%d-%d-%d",
+                                best_config$hidden_dim1, best_config$hidden_dim2, best_config$latent_dim)
+        }
+
+        subtitle_text <- sprintf(
+            "%s | %s | Input: %d | Threshold: %.3f | Trans: %s | Arch: %s |\nBeta: %.2f | Nonzero_weight: %s",
+            fold_name, model_type, best_config$input_dim, best_config$threshold,
+            trans_label, arch_str, beta_val, as.character(nonzero_w)
+        )
     } else {
-        arch_str <- sprintf("%d-%d-%d",
-                            best_config$hidden_dim1, best_config$hidden_dim2, best_config$latent_dim)
+        # MLP mode: no subtitle
+        subtitle_text <- ""
     }
-
-    subtitle_text <- sprintf(
-        "%s | %s | Input: %d | Threshold: %.3f | Trans: %s | Arch: %s |\nBeta: %.2f | Nonzero_weight: %s",
-        fold_name, model_type, best_config$input_dim, best_config$threshold,
-        trans_label, arch_str, beta_val, as.character(nonzero_w)
-    )
 
     #  Load data
     df1 <- read_feather(path1)  # ground truth
@@ -350,46 +355,102 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
 
 # Run all 4 combinations: {pearson, spearman} x {unfiltered, filtered} 
 
-# 1. Pearson, unfiltered (original)
-run_correlation_scatter(
-    path1 = path1, path2 = path2, path3 = path3,
-    out_dir = out_dir, saved_models_dir = saved_models_dir,
-    factor = factor, V2_norm_factor = V2_norm_factor,
-    this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
-    save_csv_dir = save_csv_dir, corr = corr,
-    y_title = y_title, x_title = x_title,
-    corr_method = "pearson", filter_zero_gt = FALSE
+# # 1. Pearson, unfiltered (original)
+# run_correlation_scatter(
+#     path1 = path1, path2 = path2, path3 = path3,
+#     out_dir = out_dir, saved_models_dir = saved_models_dir,
+#     factor = factor, V2_norm_factor = V2_norm_factor,
+#     this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
+#     save_csv_dir = save_csv_dir, corr = corr,
+#     y_title = y_title, x_title = x_title,
+#     corr_method = "pearson", filter_zero_gt = FALSE
+# )
+
+# # 2. Pearson, GT-zero filtered
+# run_correlation_scatter(
+#     path1 = path1, path2 = path2, path3 = path3,
+#     out_dir = out_dir, saved_models_dir = saved_models_dir,
+#     factor = factor, V2_norm_factor = V2_norm_factor,
+#     this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
+#     save_csv_dir = save_csv_dir, corr = corr,
+#     y_title = y_title, x_title = x_title,
+#     corr_method = "pearson", filter_zero_gt = TRUE
+# )
+
+# # 3. Spearman, unfiltered (original)
+# run_correlation_scatter(
+#     path1 = path1, path2 = path2, path3 = path3,
+#     out_dir = out_dir, saved_models_dir = saved_models_dir,
+#     factor = factor, V2_norm_factor = V2_norm_factor,
+#     this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
+#     save_csv_dir = save_csv_dir, corr = corr,
+#     y_title = y_title, x_title = x_title,
+#     corr_method = "spearman", filter_zero_gt = FALSE
+# )
+
+# # 4. Spearman, GT-zero filtered
+# run_correlation_scatter(
+#     path1 = path1, path2 = path2, path3 = path3,
+#     out_dir = out_dir, saved_models_dir = saved_models_dir,
+#     factor = factor, V2_norm_factor = V2_norm_factor,
+#     this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
+#     save_csv_dir = save_csv_dir, corr = corr,
+#     y_title = y_title, x_title = x_title,
+#     corr_method = "spearman", filter_zero_gt = TRUE
+# )
+
+# 1. Pearson, unfiltered
+tryCatch(
+    run_correlation_scatter(
+        path1 = path1, path2 = path2, path3 = path3,
+        out_dir = out_dir, saved_models_dir = saved_models_dir,
+        factor = factor, V2_norm_factor = V2_norm_factor,
+        this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
+        save_csv_dir = save_csv_dir, corr = corr,
+        y_title = y_title, x_title = x_title,
+        corr_method = "pearson", filter_zero_gt = FALSE
+    ),
+    error = function(e) cat("ERROR in Pearson unfiltered:", conditionMessage(e), "\n")
 )
 
 # 2. Pearson, GT-zero filtered
-run_correlation_scatter(
-    path1 = path1, path2 = path2, path3 = path3,
-    out_dir = out_dir, saved_models_dir = saved_models_dir,
-    factor = factor, V2_norm_factor = V2_norm_factor,
-    this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
-    save_csv_dir = save_csv_dir, corr = corr,
-    y_title = y_title, x_title = x_title,
-    corr_method = "pearson", filter_zero_gt = TRUE
+tryCatch(
+    run_correlation_scatter(
+        path1 = path1, path2 = path2, path3 = path3,
+        out_dir = out_dir, saved_models_dir = saved_models_dir,
+        factor = factor, V2_norm_factor = V2_norm_factor,
+        this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
+        save_csv_dir = save_csv_dir, corr = corr,
+        y_title = y_title, x_title = x_title,
+        corr_method = "pearson", filter_zero_gt = TRUE
+    ),
+    error = function(e) cat("ERROR in Pearson filtered:", conditionMessage(e), "\n")
 )
 
-# 3. Spearman, unfiltered (original)
-run_correlation_scatter(
-    path1 = path1, path2 = path2, path3 = path3,
-    out_dir = out_dir, saved_models_dir = saved_models_dir,
-    factor = factor, V2_norm_factor = V2_norm_factor,
-    this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
-    save_csv_dir = save_csv_dir, corr = corr,
-    y_title = y_title, x_title = x_title,
-    corr_method = "spearman", filter_zero_gt = FALSE
+# 3. Spearman, unfiltered
+tryCatch(
+    run_correlation_scatter(
+        path1 = path1, path2 = path2, path3 = path3,
+        out_dir = out_dir, saved_models_dir = saved_models_dir,
+        factor = factor, V2_norm_factor = V2_norm_factor,
+        this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
+        save_csv_dir = save_csv_dir, corr = corr,
+        y_title = y_title, x_title = x_title,
+        corr_method = "spearman", filter_zero_gt = FALSE
+    ),
+    error = function(e) cat("ERROR in Spearman unfiltered:", conditionMessage(e), "\n")
 )
 
 # 4. Spearman, GT-zero filtered
-run_correlation_scatter(
-    path1 = path1, path2 = path2, path3 = path3,
-    out_dir = out_dir, saved_models_dir = saved_models_dir,
-    factor = factor, V2_norm_factor = V2_norm_factor,
-    this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
-    save_csv_dir = save_csv_dir, corr = corr,
-    y_title = y_title, x_title = x_title,
-    corr_method = "spearman", filter_zero_gt = TRUE
+tryCatch(
+    run_correlation_scatter(
+        path1 = path1, path2 = path2, path3 = path3,
+        out_dir = out_dir, saved_models_dir = saved_models_dir,
+        factor = factor, V2_norm_factor = V2_norm_factor,
+        this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
+        save_csv_dir = save_csv_dir, corr = corr,
+        y_title = y_title, x_title = x_title,
+        corr_method = "spearman", filter_zero_gt = TRUE
+    ),
+    error = function(e) cat("ERROR in Spearman filtered:", conditionMessage(e), "\n")
 )

@@ -258,6 +258,8 @@ def make_loader(X, idx, batch_size, shuffle):
     return DataLoader(subset, batch_size=batch_size, shuffle=shuffle)
 
 def _apply_trans(df, trans):
+    df.iloc[:, 1:] = df.iloc[:, 1:].astype(np.float64)
+    
     if trans == "sqrt+1":
         df.iloc[:, 1:] = np.sqrt(df.iloc[:, 1:] + 1)
     elif trans == "sqrt":

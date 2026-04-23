@@ -5,16 +5,23 @@ method="$2"
 if [ -z "$CONFIG_FILE" ] || [ -z "$method" ]; then
     echo "Usage: bash run_pipeline.sh <config_file> <method>"
     echo "  config_file: path to config (e.g. configs/pbmc_atac_rna.sh)"
-    echo "  method: VAE, DCA_mse, scVI_MSE, Transformer_denoise"
+    echo "  method: MLP"
     exit 1
 fi
 
 source "$CONFIG_FILE"
 
 echo "INPUT_FILE: $INPUT_FILE"
-echo "INPUT_CATEGORY: $V1"
+echo "GROUND_TRUTH_FILE: $GROUND_TRUTH_FILE"
 echo "READ_DIR: $READ_DIR"
+echo "INPUT_CATEGORY: $V1"
+echo "OUTPUT_CATEGORY: $V1"
 echo "METHOD: $method"
+
+N_HVG=100
+TEST_FRAC=0.2
+VAL_FRAC=0.1
+SEED=42
 
 CONDITION="given_${V2}_${V2_norm_factor}_${V2_trans_factor}"
 OUTPUT_DIR="${READ_DIR}/${method}/${CONDITION}"
@@ -25,6 +32,7 @@ norm_factor=("no_norm" 1000000 100000 10000 1000 "standardize")
 norm_factor_string=$(IFS=','; echo "${norm_factor[*]}")
 
 module load conda_R
+
 
 LOCK_FILE="$READ_DIR/.count_matrix_done"
 if [ ! -f "$LOCK_FILE" ]; then
@@ -50,49 +58,39 @@ if [ ! -f "$LOCK_FILE" ]; then
     fi
 fi
 echo "Count matrix ready, proceeding..."
-
-
 echo "===Finish build count matrix==="
 
-# Rscript /dcs10/hongkai/data/yhu1/Autoencoder/artificial_ground_truth_compare_km/final_model_2_0/seurat/Step_post_sparsity_avg.R \
-#   /dcs10/hongkai/data/yhu1/Autoencoder/artificial_ground_truth_compare_km/final_model_2_0/seurat_all_genes/RNA/rna_counts_75per.feather \
-#   "${OUTPUT_DIR}" \
-#   "rna"
+echo "===Find TF and hvg==="
 
-# Rscript /dcs10/hongkai/data/yhu1/Autoencoder/artificial_ground_truth_compare_km/final_model_2_0/seurat/Step_post_sparsity_avg.R \
-#   /dcs10/hongkai/data/yhu1/Autoencoder/artificial_ground_truth_compare_km/final_model_2_0/seurat_all_genes/ATAC/activity_counts_75per.feather \
-#   "${OUTPUT_DIR}" \
-#   "atac"
-  
+GENE_LIST_DIR="${OUTPUT_DIR}/gene_lists"
+mkdir -p "$GENE_LIST_DIR"
+ 
+Rscript ../One_Shifting/R/run_select_tf_hvg.R \
+    "$READ_DIR/$V1/Count_Matrix_norm_by_no_norm.feather" \
+    $GENE_LIST_DIR \
+    $N_HVG
+ 
+TF_NAMES="${GENE_LIST_DIR}/tf_names.txt"
+HVG_NAMES="${GENE_LIST_DIR}/hvg_target_names.txt"
+
+# Ground Truth RNA
+DATA_PATH2="$READ_DIR/$V2/Count_Matrix_norm_by_$V2_norm_factor.feather"
+
+Rscript ../One_Shifting/R/run_MLP_data_pre.R \
+    $DATA_PATH2 \
+    "${OUTPUT_DIR}/${V2}_Ground_TRUTH" \
+    $TF_NAMES \
+    $HVG_NAMES \
+    $TEST_FRAC \
+    $VAL_FRAC \
+    $SEED
+    
 echo "=== Starting ${method} pipeline ==="
 
-rm -f "${OUTPUT_DIR}/plots_summary_pearson_col_gene.csv"
-rm -f "${OUTPUT_DIR}/plots_summary_spearman_col_gene.csv"
-rm -f "${OUTPUT_DIR}/plots_summary_pearson_row_cell.csv"
-rm -f "${OUTPUT_DIR}/plots_summary_spearman_row_cell.csv"
 
-rm -f "${OUTPUT_DIR}/plots_summary_pearson_col_gene_noGTzero.csv"
-rm -f "${OUTPUT_DIR}/plots_summary_spearman_col_gene_noGTzero.csv"
-rm -f "${OUTPUT_DIR}/plots_summary_pearson_row_cell_noGTzero.csv"
-rm -f "${OUTPUT_DIR}/plots_summary_spearman_row_cell_noGTzero.csv"
-
-if [ "$method" = "VAE" ]; then
-    METHOD_ARGS="--beta_grid 0 --hidden_grid1 4096 --hidden_grid2 1024"
-elif [ "$method" = "DCA_mse" ]; then
-    METHOD_ARGS="--dropout_grid 0.0 --hidden_grid1 4096 --hidden_grid2 1024"
-elif [ "$method" = "scVI_mse" ]; then
-    METHOD_ARGS="--hidden_grid 512,256,128,64"
-elif [ "$method" = "Transformer_denoise" ]; then
-    METHOD_ARGS="--n_tokens_grid 32 --d_model_grid 64 --nhead_grid 4 --num_layers_grid 1 --dim_feedforward_grid 128 --dropout_grid 0.1"
-fi
-        
 # train - find par
-echo "=== Step 4: Training ${method} on filtered data ==="
+echo "=== Step 4: Training VAE on filtered data ==="
 for this_trans_factor in "${trans_factor[@]}"; do
-    OUT_DIR="$OUTPUT_DIR/$this_trans_factor" 
-
-    mkdir -p "$OUT_DIR"
-
     for factor in "${norm_factor[@]}"; do
 
         # Skip incompatible (standardize + sqrt/log) combinations
@@ -104,37 +102,51 @@ for this_trans_factor in "${trans_factor[@]}"; do
             esac
         fi
 
+        OUT_DIR="$OUTPUT_DIR/${this_trans_factor}/norm_${factor}"
+        mkdir -p "$OUT_DIR"
+
         DATA_PATH1="$READ_DIR/$V1/Count_Matrix_norm_by_$factor.feather"
-        DATA_PATH2="$READ_DIR/$V2/Count_Matrix_norm_by_$V2_norm_factor.feather"
-        SUMMARY_FILE="${OUT_DIR}/vae_artificial_ground_truth_hyper_par.tsv"
+        
+        module load conda_R
+        Rscript ../One_Shifting/R/run_MLP_data_pre.R \
+            $DATA_PATH1 \
+            $OUT_DIR \
+            $TF_NAMES \
+            $HVG_NAMES \
+            $TEST_FRAC \
+            $VAL_FRAC \
+            $SEED
 
         source ~/.bashrc
         conda activate vae_env2
         python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
-        python -u ../One_Shifting/myproject/Step2_train_${method}.py \
-        --data_path1 "$DATA_PATH1" \
-        --data_path2 "$DATA_PATH2" \
-        --out_summary "$SUMMARY_FILE" \
-        --early_stop \
-        --patience 5 \
-        --n_splits 2 \
-        --eval_metric val_loss \
-        --trans1_grid "$this_trans_factor" \
-        --trans2_grid "$V2_trans_factor" \
-        --nonzero_weight_grid 1.0 \
-        $METHOD_ARGS
-        
-        # reconstruct
-        SAVED_DIR="${OUT_DIR}/saved_models"
-        OUT_PATH="${OUT_DIR}/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather"
+        python -u ../One_Shifting/myproject/Step2_train_MLP.py \
+        --tf_train ${OUT_DIR}/tf_train.feather \
+        --tf_val ${OUT_DIR}/tf_val.feather \
+        --tf_test ${OUT_DIR}/tf_test.feather \
+        --target_train ${OUT_DIR}/target_train.feather \
+        --target_val ${OUT_DIR}/target_val.feather \
+        --target_test ${OUT_DIR}/target_test.feather \
+        --trans "${this_trans_factor}" \
+        --epochs 60 \
+        --patience 10 \
+        --out_summary ${OUT_DIR}/mlp_results.tsv
 
-        python -u ../One_Shifting/myproject/Step3_reconstruct_${method}.py \
-        --data_path1 "$DATA_PATH1" \
-        --data_path2 "$DATA_PATH2" \
-        --transformed_out_dir "$OUT_DIR" \
-        --saved_models_dir "$SAVED_DIR" \
-        --out_path "$OUT_PATH"
+        # predict
+        SAVED_DIR="${OUT_DIR}/saved_models"
+        OUT_PATH="${OUT_DIR}/input_predicted_trans_by_${this_trans_factor}_norm_by_${factor}.feather" # input predicted
+        OUT_pre="${OUT_DIR}/input_true_trans_by_${this_trans_factor}_norm_by_${factor}.feather" # input
+        OUT_GROUND_TRUTH="${OUT_DIR}/ground_truth_trans_by_${this_trans_factor}_norm_by_${factor}.feather" # ground truth
+
+        python ../One_Shifting/myproject/Step3_predict_MLP.py \
+        --model_dir ${SAVED_DIR} \
+        --tf_test ${OUT_DIR}/tf_test.feather \
+        --target_test ${OUT_DIR}/target_test.feather \
+        --ground_test ${OUTPUT_DIR}/${V2}_Ground_TRUTH/target_test.feather \
+        --out_pred ${OUT_PATH} \
+        --out_truth ${OUT_pre} \
+        --out_ground_truth ${OUT_GROUND_TRUTH}
 
         python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
         conda deactivate 
@@ -147,11 +159,11 @@ for this_trans_factor in "${trans_factor[@]}"; do
         mkdir -p "$Figure_DIR"
 
         Rscript ../One_Shifting/R/run_correlation_scatter.R \
-          "$OUT_DIR/Count_matrix_transformed_rep2.feather" \
-          "$OUT_DIR/Count_matrix_transformed_rep1.feather" \
-          "$OUT_DIR/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather" \
+          "$OUT_GROUND_TRUTH" \
+          "$OUT_pre" \
+          "$OUT_PATH" \
           "$Figure_DIR"  \
-          "$OUT_DIR/saved_models" \
+          "$SAVED_DIR" \
           "$factor" \
           "$V2_norm_factor" \
           "$this_trans_factor" \
@@ -165,11 +177,11 @@ for this_trans_factor in "${trans_factor[@]}"; do
         mkdir -p "$Figure_DIR"
 
         Rscript ../One_Shifting/R/run_correlation_scatter.R \
-          "$OUT_DIR/Count_matrix_transformed_rep2.feather" \
-          "$OUT_DIR/Count_matrix_transformed_rep1.feather" \
-          "$OUT_DIR/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather" \
+          "$OUT_GROUND_TRUTH" \
+          "$OUT_pre" \
+          "$OUT_PATH" \
           "$Figure_DIR"  \
-          "$OUT_DIR/saved_models" \
+          "$SAVED_DIR" \
           "$factor" \
           "$V2_norm_factor" \
           "$this_trans_factor" \
@@ -180,6 +192,7 @@ for this_trans_factor in "${trans_factor[@]}"; do
           "${method}"        
 
         sleep 2
+
     done
 done
 
@@ -193,15 +206,6 @@ Rscript ../One_Shifting/R/run_combine_figures.R \
   "$OUTPUT_DIR/Figures_row" \
   "row"
 
-# Rscript /dcs10/hongkai/data/yhu1/Autoencoder/artificial_ground_truth_compare_km/final_model_2_0/compare_Dec_12/Step12_combine_plot_no_data.R \
-#   "$OUTPUT_DIR/ROC" \
-#   "roc" \
-#   30
-
-# Rscript /dcs10/hongkai/data/yhu1/Autoencoder/artificial_ground_truth_compare_km/final_model_2_0/compare_Dec_12/Step12_combine_plot_no_data.R \
-#   "$OUTPUT_DIR/ROC_balanced" \
-#   "roc_balanced" \
-#   30
 
 sleep 2
 

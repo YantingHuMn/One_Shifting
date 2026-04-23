@@ -1,4 +1,5 @@
 submit_all_steps*
+submit_specific_steps*
 *.err
 *.out
 *.log
