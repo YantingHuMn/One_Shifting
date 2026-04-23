@@ -143,41 +143,25 @@ for this_trans_factor in "${trans_factor[@]}"; do
         echo "=== Step 7: Correlation analysis ==="
         module load conda_R
 
-        Figure_DIR="$OUTPUT_DIR/Figures_col"
-        mkdir -p "$Figure_DIR"
+        for corr_dir in col row; do
+            Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}"
+            mkdir -p "$Figure_DIR"
 
-        Rscript ../One_Shifting/R/run_correlation_scatter.R \
-          "$OUT_DIR/Count_matrix_transformed_rep2.feather" \
-          "$OUT_DIR/Count_matrix_transformed_rep1.feather" \
-          "$OUT_DIR/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather" \
-          "$Figure_DIR"  \
-          "$OUT_DIR/saved_models" \
-          "$factor" \
-          "$V2_norm_factor" \
-          "$this_trans_factor" \
-          "$V2_trans_factor" \
-          "${OUTPUT_DIR}" \
-          "col" \
-          "${V1}" \
-          "${method}"        
-
-        Figure_DIR="$OUTPUT_DIR/Figures_row"
-        mkdir -p "$Figure_DIR"
-
-        Rscript ../One_Shifting/R/run_correlation_scatter.R \
-          "$OUT_DIR/Count_matrix_transformed_rep2.feather" \
-          "$OUT_DIR/Count_matrix_transformed_rep1.feather" \
-          "$OUT_DIR/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather" \
-          "$Figure_DIR"  \
-          "$OUT_DIR/saved_models" \
-          "$factor" \
-          "$V2_norm_factor" \
-          "$this_trans_factor" \
-          "$V2_trans_factor" \
-          "${OUTPUT_DIR}" \
-          "row" \
-          "${V1}" \
-          "${method}"        
+            Rscript ../One_Shifting/R/run_correlation_scatter.R \
+              "$OUT_DIR/Count_matrix_transformed_rep2.feather" \
+              "$OUT_DIR/Count_matrix_transformed_rep1.feather" \
+              "$OUT_DIR/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather" \
+              "$Figure_DIR"  \
+              "$OUT_DIR/saved_models" \
+              "$factor" \
+              "$V2_norm_factor" \
+              "$this_trans_factor" \
+              "$V2_trans_factor" \
+              "${OUTPUT_DIR}" \
+              "$corr_dir" \
+              "${V1}" \
+              "${method}"
+        done
 
         sleep 2
     done
