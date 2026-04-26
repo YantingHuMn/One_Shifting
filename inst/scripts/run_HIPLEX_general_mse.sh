@@ -104,7 +104,7 @@ for this_trans_factor in "${trans_factor[@]}"; do
 
         DATA_PATH1="$READ_DIR/$V1/Count_Matrix_norm_by_$factor.feather"
         DATA_PATH2="$READ_DIR/$V2/Count_Matrix_norm_by_$V2_norm_factor.feather"
-        SUMMARY_FILE="${OUT_DIR}/vae_artificial_ground_truth_hyper_par.tsv"
+        SUMMARY_FILE="${OUT_DIR}/hyper_par_norm_by_${factor}.tsv"
 
         source ~/.bashrc
         conda activate vae_env2

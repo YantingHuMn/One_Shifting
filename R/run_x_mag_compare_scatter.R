@@ -1,6 +1,6 @@
 source("../One_Shifting/R/create_hex_plot.R")
 
-run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, x_norm_info_path, corr_dir,
+run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir,
                                        v2_trans_factor = "no_trans",
                                        v2_norm_factor = "no_norm",
                                        v1_trans_factors = c("no_trans", "sqrt", "log2", "count+1", "sqrt+1", "log2(count+2)")) {
@@ -197,6 +197,5 @@ run_x_mag_compare_scatter(
     y_dir = args[2],
     V1 = args[3],
     V2 = args[4],
-    x_norm_info_path = args[5],
-    corr_dir = args[6]
+    corr_dir = args[5]
 )

@@ -1,4 +1,4 @@
-load_seurat_cbmc <- function(save_dir) {
+load_UMAP_cbmc <- function(save_dir) {
     # Load Libraries
     suppressPackageStartupMessages({
         library(SeuratData)
@@ -85,7 +85,3 @@ load_seurat_cbmc <- function(save_dir) {
     write_feather(norm_t_df, file.path(save_dir, "cbmc_rna_seurat_norm_transposed.feather"))
     cat("Saved: cbmc_rna_seurat_norm_transposed.feather (cells x genes)\n")
 }
-
-save_dir <- "/dcs10/hongkai/data/yhu1/One_Shifting_Results/Cite-seq/orig_data"
-
-load_seurat_cbmc(save_dir)

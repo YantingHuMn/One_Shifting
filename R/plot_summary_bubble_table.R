@@ -1,4 +1,4 @@
-plot_summary_bubble_table <- function(csv_path) {
+plot_summary_bubble_table <- function(csv_path, filter_method = NULL) {
     # Load Libraries
     suppressPackageStartupMessages({
         library(ggplot2)
@@ -10,6 +10,16 @@ plot_summary_bubble_table <- function(csv_path) {
 
     base_path <- sub("\\.csv$", "", csv_path)
     df <- read.csv(csv_path)
+
+    if (!is.null(filter_method)) {
+        df <- df %>% filter(tolower(method) != tolower(filter_method))
+        if (nrow(df) == 0) {
+            cat("No data left after excluding method:", filter_method, "\n")
+            return(invisible(NULL))
+        }
+        base_path <- paste0(base_path, "_no_", filter_method)
+        cat("Excluded method:", filter_method, "->", nrow(df), "rows remaining\n")
+    }
 
     unique_data_types <- unique(df$data_type)
     title_suffix <- if (length(unique_data_types) == 1) paste0(' for "', unique_data_types[1], '"') else ""
@@ -55,7 +65,6 @@ plot_summary_bubble_table <- function(csv_path) {
         arrange(desc(mean_performance)) %>%
         pull(x_id) %>%
         unique()
-    # Add any x_ids missing from best trans row
     perf_x_order <- c(perf_x_order, setdiff(unique(df_perf$x_id), perf_x_order))
 
     best_resid_trans <- resid_order[1]
@@ -69,7 +78,6 @@ plot_summary_bubble_table <- function(csv_path) {
     x_labels_df <- x_combinations %>%
         mutate(label = paste(method, data_type, metric, sep = " | "))
 
-    # Performance x labels in sorted order
     perf_x_labels <- x_labels_df$label[match(perf_x_order, x_labels_df$x_id)]
     resid_x_labels <- x_labels_df$label[match(resid_x_order, x_labels_df$x_id)]
 

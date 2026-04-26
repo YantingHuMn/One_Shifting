@@ -87,6 +87,7 @@ for method in "${methods[@]}"; do
         for corr_dir in col row; do
             x_dir="${READ_DIR}/${mse_method}/given_${V2}_no_norm_no_trans"
             y_dir="${READ_DIR}/${method}"
+            
             Rscript ../One_Shifting/R/run_x_mag_compare_scatter.R \
                 "${x_dir}" \
                 "${y_dir}" \
@@ -94,6 +95,7 @@ for method in "${methods[@]}"; do
                 $V2 \
                 $corr_dir
         done
+    done
 done
 
 # mse vs mse (pairwise)

@@ -1,9 +1,3 @@
-args <- commandArgs(trailingOnly = TRUE)
-csv_path    <- args[1]
-method_name <- args[2]
-skip_trans  <- if (length(args) >= 3 && args[3] != "") args[3] else NULL
-skip_norm   <- if (length(args) >= 4 && args[4] != "") args[4] else NULL
-
 run_summary_scatter_plot <- function(csv_path, method_name, skip_trans = NULL, skip_norm = NULL) {
     # Load libraries
     suppressPackageStartupMessages({
@@ -92,5 +86,12 @@ run_summary_scatter_plot <- function(csv_path, method_name, skip_trans = NULL, s
     ggsave(output_path, p, width = 9, height = 6, dpi = 300)
     cat(sprintf("Saved to %s\n", output_path))
 }
+
+args <- commandArgs(trailingOnly = TRUE)
+csv_path <- args[1]
+method_name <- args[2]
+skip_trans <- if (length(args) >= 3 && args[3] != "") args[3] else NULL
+skip_norm <- if (length(args) >= 4 && args[4] != "") args[4] else NULL
+
 
 run_summary_scatter_plot(csv_path, method_name, skip_trans, skip_norm)

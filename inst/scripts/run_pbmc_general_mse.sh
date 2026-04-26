@@ -12,9 +12,14 @@ fi
 source "$CONFIG_FILE"
 
 echo "INPUT_FILE: $INPUT_FILE"
-echo "INPUT_CATEGORY: $V1"
+echo "GROUND_TRUTH_FILE: $GROUND_TRUTH_FILE"
 echo "READ_DIR: $READ_DIR"
+echo "INPUT_CATEGORY: $V1"
+echo "OUTPUT_CATEGORY: $V2"
+echo "V2_norm_factor: $V2_norm_factor"
+echo "V2_trans_factor: $V2_trans_factor"
 echo "METHOD: $method"
+
 
 CONDITION="given_${V2}_${V2_norm_factor}_${V2_trans_factor}"
 OUTPUT_DIR="${READ_DIR}/${method}/${CONDITION}"
@@ -106,7 +111,7 @@ for this_trans_factor in "${trans_factor[@]}"; do
 
         DATA_PATH1="$READ_DIR/$V1/Count_Matrix_norm_by_$factor.feather"
         DATA_PATH2="$READ_DIR/$V2/Count_Matrix_norm_by_$V2_norm_factor.feather"
-        SUMMARY_FILE="${OUT_DIR}/vae_artificial_ground_truth_hyper_par.tsv"
+        SUMMARY_FILE="${OUT_DIR}/hyper_par_norm_by_${factor}.tsv"
 
         source ~/.bashrc
         conda activate vae_env2

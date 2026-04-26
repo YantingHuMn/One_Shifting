@@ -47,14 +47,13 @@ class DCA(nn.Module):
         h = self.dropout(h)
         h = F.relu(self.bn_dec2(self.dec2(h)))
         h = self.dropout(h)
-        # return F.relu(self.output(h))
-        return torch.clamp(torch.exp(self.output(h)), 1e-5, 1e6)
-
+        return F.relu(self.output(h))
 
     def forward(self, x):
         z = self.encode(x)
         recon = self.decode(z)
         return recon, z
+
 
 def _apply_trans(df, trans):
     if trans == "sqrt+1":
@@ -83,7 +82,8 @@ def _apply_trans(df, trans):
         pass
     return df
 
-def filter_and_transform(df1, df2, threshold_value, trans1, trans2):
+
+def filter_and_transform(df1, threshold_value, trans1):
     data_cols = df1.columns[1:]
     zero_percentage = (df1[data_cols] == 0).mean()
     keep_cols = zero_percentage < threshold_value
@@ -92,11 +92,8 @@ def filter_and_transform(df1, df2, threshold_value, trans1, trans2):
     cols_to_keep = [pos_col] + data_cols[keep_cols].tolist()
 
     filtered_df1 = df1[cols_to_keep].copy()
-    filtered_df2 = df2[cols_to_keep].copy()
-
     filtered_df1 = _apply_trans(filtered_df1, trans1)
-    filtered_df2 = _apply_trans(filtered_df2, trans2)
-    return filtered_df1, filtered_df2
+    return filtered_df1
 
 
 def find_best_fold(saved_models_dir, criterion="inner_val_loss"):
@@ -157,38 +154,31 @@ def main(args):
         cfg = json.load(f)
 
     dropout = cfg.get("dropout", 0.0)
+    # Support both "trans1" and "trans" key names
+    trans1 = cfg.get("trans1", cfg.get("trans", "no_trans"))
 
     print(f"\n[CONFIG]")
     print(f"  threshold: {cfg['threshold']}")
-    print(f"  trans1: {cfg['trans1']}")
-    print(f"  trans2: {cfg['trans2']}")
+    print(f"  trans: {trans1}")
     print(f"  architecture: {cfg['hidden_dim1']}-{cfg['hidden_dim2']}-{cfg['latent_dim']}")
     print(f"  dropout: {dropout}")
 
     # 3) Load and preprocess
     print("\n[LOAD DATA]")
     df1_raw = pd.read_feather(args.data_path1)
-    df2_raw = pd.read_feather(args.data_path2)
     print(f"  Original df1: {df1_raw.shape}")
-    print(f"  Original df2: {df2_raw.shape}")
 
     print("\n[PREPROCESS] Applying filter_and_transform...")
-    df1_transformed, df2_transformed = filter_and_transform(
-        df1_raw, df2_raw, cfg['threshold'], cfg['trans1'], cfg['trans2']
-    )
+    df1_transformed = filter_and_transform(df1_raw, cfg['threshold'], trans1)
     print(f"  Transformed df1: {df1_transformed.shape}")
-    print(f"  Transformed df2: {df2_transformed.shape}")
 
-    # 4) Save transformed files to --transformed_out_dir with _rep1/_rep2 naming
+    # 4) Save transformed file
     out_dir = Path(args.transformed_out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    save_path1 = out_dir / "Count_matrix_transformed_rep1.feather"
-    save_path2 = out_dir / "Count_matrix_transformed_rep2.feather"
+    save_path1 = out_dir / "Count_matrix_transformed.feather"
     df1_transformed.to_feather(save_path1)
-    df2_transformed.to_feather(save_path2)
-    print(f"[SAVE] Transformed rep1 -> {save_path1}")
-    print(f"[SAVE] Transformed rep2 -> {save_path2}")
+    print(f"[SAVE] Transformed -> {save_path1}")
 
     # 5) Prepare model input
     if 'pos' in df1_transformed.columns:
@@ -230,11 +220,10 @@ def main(args):
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="DCA Reconstruction / Inference")
-    ap.add_argument("--data_path1", required=True, help="Input feather rep1 (to reconstruct)")
-    ap.add_argument("--data_path2", required=True, help="Input feather rep2 (for column filtering)")
+    ap = argparse.ArgumentParser(description="DCA Reconstruction / Inference - Single Input")
+    ap.add_argument("--data_path1", required=True, help="Input feather file (to reconstruct)")
     ap.add_argument("--transformed_out_dir", required=True,
-                    help="Directory to save Count_matrix_transformed_rep1/rep2.feather")
+                    help="Directory to save Count_matrix_transformed.feather")
     ap.add_argument("--saved_models_dir", required=True, help="saved_models directory")
     ap.add_argument("--criterion", default="inner_val_loss",
                     choices=["inner_val_loss", "outer_test_loss"])
