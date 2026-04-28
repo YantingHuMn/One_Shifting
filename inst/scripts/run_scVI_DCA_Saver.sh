@@ -12,18 +12,18 @@ for method in "${methods[@]}"; do
     mkdir -p ${READ_DIR}/${method}
 done
 
-# echo "======Run scVI======"
-# source ~/.bashrc
-# conda activate scvi_env
-# python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
+echo "======Run scVI======"
+source ~/.bashrc
+conda activate scvi_env
+python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
-# python ../One_Shifting/myproject/Step2_3_train_scVI.py \
-#     --input "${INPUT_PATH}" \
-#     --output "${READ_DIR}/scVI/reconstruct_scVI_trans_by_no_trans_norm_by_no_norm.feather" \
-#     --loss "$LOSS" 
+python ../One_Shifting/myproject/Step2_3_train_scVI.py \
+    --input "${INPUT_PATH}" \
+    --output "${READ_DIR}/scVI/reconstruct_scVI_trans_by_no_trans_norm_by_no_norm.feather" \
+    --loss "$LOSS" 
 
-# python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
-# conda deactivate 
+python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
+conda deactivate 
 
 
 echo "======Run DCA======"
@@ -104,6 +104,7 @@ for ((i=0; i<${#mse_methods[@]}; i++)); do
         for corr_dir in col row; do
             x_dir="${READ_DIR}/${mse_methods[$i]}/given_${V2}_no_norm_no_trans"
             y_dir="${READ_DIR}/${mse_methods[$j]}/given_${V2}_no_norm_no_trans"
+            
             Rscript ../One_Shifting/R/run_x_mag_compare_scatter.R \
                 "${x_dir}" \
                 "${y_dir}" \

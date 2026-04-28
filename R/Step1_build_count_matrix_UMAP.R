@@ -1,12 +1,13 @@
 
 run_build_count_matrix_UMAP <- function(path, out_dir, norm_factors, min_nonzero = 2) {
-  
     # Load Libraries
     suppressPackageStartupMessages({
         library(arrow)
     })
+    
     # create output directory
-    save_dir <- file.path(out_dir, basename(dirname(path)))
+    # save_dir <- file.path(out_dir, basename(dirname(path)))
+    save_dir <- out_dir
     dir.create(save_dir, recursive = TRUE, showWarnings = FALSE)
     
     # read data
@@ -64,4 +65,4 @@ out_dir <- args[2]
 norm_factor_string <- args[3]
 norm_factor <- unlist(strsplit(norm_factor_string, ","))
 
-run_build_count_matrix_UMAP(path = path, out_dir = out_dir, norm_factor = norm_factor, norm_factor2 = norm_factor2, filtered_percentile = 0.25, lib_size_min = lib_size_min, transpose = transpose)
+run_build_count_matrix_UMAP(path = path, out_dir = out_dir, norm_factors = norm_factor)

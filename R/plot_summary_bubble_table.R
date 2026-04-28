@@ -58,6 +58,11 @@ plot_summary_bubble_table <- function(csv_path, filter_method = NULL) {
     avg_rank_perf$trans <- factor(avg_rank_perf$trans, levels = rev(perf_order))
     avg_rank_resid$trans <- factor(avg_rank_resid$trans, levels = rev(resid_order))
 
+    avg_rank_perf <- avg_rank_perf %>%
+        mutate(bar_len = max(avg_rank) - avg_rank + min(avg_rank))
+    avg_rank_resid <- avg_rank_resid %>%
+        mutate(bar_len = max(avg_rank) - avg_rank + min(avg_rank))
+
     # Order x-axis by best trans value for each plot
     best_perf_trans <- perf_order[1]
     perf_x_order <- df_perf %>%
@@ -110,7 +115,7 @@ plot_summary_bubble_table <- function(csv_path, filter_method = NULL) {
         labs(x = "Method Combination", y = "Transformation",
              title = paste0("Mean Performance", title_suffix))
 
-    p1_bar <- ggplot(avg_rank_perf, aes(x = avg_rank, y = trans)) +
+    p1_bar <- ggplot(avg_rank_perf, aes(x = bar_len, y = trans)) +
         geom_bar(stat = "identity", fill = "steelblue", width = 0.7) +
         scale_x_reverse() +
         theme_minimal() +
@@ -150,7 +155,7 @@ plot_summary_bubble_table <- function(csv_path, filter_method = NULL) {
         labs(x = "Method Combination", y = "Transformation",
              title = paste0("Mean Residual", title_suffix))
 
-    p2_bar <- ggplot(avg_rank_resid, aes(x = avg_rank, y = trans)) +
+    p2_bar <- ggplot(avg_rank_resid, aes(x = bar_len, y = trans)) +
         geom_bar(stat = "identity", fill = "coral", width = 0.7) +
         scale_x_reverse() +
         theme_minimal() +

@@ -1,9 +1,9 @@
 source("../One_Shifting/R/create_hex_plot.R")
+source("../One_Shifting/R/create_cutoff_ma_curve.R")
 
-run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir,
-                                       v2_trans_factor = "no_trans",
-                                       v2_norm_factor = "no_norm",
-                                       v1_trans_factors = c("no_trans", "sqrt", "log2", "count+1", "sqrt+1", "log2(count+2)")) {
+run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir, v2_trans_factor = "no_trans", v2_norm_factor = "no_norm",
+                                       v1_trans_factors = c("no_trans", "sqrt", "log2", "count+1", "sqrt+1", "log2(count+2)"),
+                                       cutoff_seq = seq(-0.5, 1, by = 0.01)) {
     # Load Libraries
     suppressPackageStartupMessages({
         library(dplyr)
@@ -35,6 +35,7 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir,
     best_norm_y <- if (file.exists(y_norm_info_path)) read.csv(y_norm_info_path) else NULL
 
     plots_density <- list()
+    plots_cutoff <- list()
 
     for (trans_val in v1_trans_factors) {
         cat("Processing trans: ", trans_val, "\n")
@@ -98,12 +99,18 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir,
                                                        residual_sum, residual_mean, n_points, 
                                                        above_line, below_line, on_line, 
                                                        trans_val, v1_norm_factor, "Pearson", V1, y_label, x_label)
+
+        plots_cutoff[[trans_val]] <- create_cutoff_ma_curve(plot_data, cutoff_seq, trans_val, v1_norm_factor, "Pearson", V1, y_label, x_label)
     }
 
     # Save
     if (length(plots_density) > 0) {
         grid_plot <- do.call(grid.arrange, c(plots_density, ncol = 3))
         ggsave(file.path(out_dir, paste0("pearson_density_", corr_dir, ".png")), grid_plot, width = 15, height = 10, dpi = 300)
+    }
+    if (length(plots_cutoff) > 0) {
+        grid_plot <- do.call(grid.arrange, c(plots_cutoff, ncol = 3))
+        ggsave(file.path(out_dir, paste0("pearson_cutoff_", corr_dir, ".png")), grid_plot, width = 15, height = 10, dpi = 300)
     }
 
     # ==================== Spearman plots ====================
@@ -115,6 +122,7 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir,
     best_norm_y <- if (file.exists(y_norm_info_path)) read.csv(y_norm_info_path) else NULL
 
     plots_density <- list()
+    plots_cutoff <- list()
 
     for (trans_val in v1_trans_factors) {
         cat("Processing trans: ", trans_val, "\n")
@@ -178,6 +186,8 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir,
                                                        residual_sum, residual_mean, n_points, 
                                                        above_line, below_line, on_line, 
                                                        trans_val, v1_norm_factor, "Spearman", V1, y_label, x_label)
+
+        plots_cutoff[[trans_val]] <- create_cutoff_ma_curve(plot_data, cutoff_seq, trans_val, v1_norm_factor, "Spearman", V1, y_label, x_label)
     }
 
     # Save
@@ -185,8 +195,12 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir,
         grid_plot <- do.call(grid.arrange, c(plots_density, ncol = 3))
         ggsave(file.path(out_dir, paste0("spearman_density_", corr_dir, ".png")), grid_plot, width = 15, height = 10, dpi = 300)
     }
+    if (length(plots_cutoff) > 0) {
+        grid_plot <- do.call(grid.arrange, c(plots_cutoff, ncol = 3))
+        ggsave(file.path(out_dir, paste0("spearman_cutoff_", corr_dir, ".png")), grid_plot, width = 15, height = 10, dpi = 300)
+    }
 
-    cat("Done! Saved 2 plots (1 Pearson + 1 Spearman) to:", out_dir, "\n")
+    cat("Done! Saved plots to:", out_dir, "\n")
 }
 
 

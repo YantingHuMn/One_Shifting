@@ -9,6 +9,8 @@ echo "METHOD: $method"
 
 
 V1="normed_data"
+count_matrix_dir="${READ_DIR}/${V1}"
+mkdir -p $count_matrix_dir
 OUTPUT_DIR="${READ_DIR}/${method}"
 mkdir -p $OUTPUT_DIR
 
@@ -17,19 +19,21 @@ trans_factor=("no_trans" "sqrt" "sqrt+1" "log2" "count+1" "log2(count+2)")
 norm_factor=("no_norm" 1000000 100000 10000 1000 "standardize")
 norm_factor_string=$(IFS=','; echo "${norm_factor[*]}")
 
+rm -f $registry_file
+
 module load conda_R
 
-LOCK_FILE="$READ_DIR/.count_matrix_done"
+LOCK_FILE="$count_matrix_dir/.count_matrix_done"
 if [ ! -f "$LOCK_FILE" ]; then
     mkdir -p "$(dirname $LOCK_FILE)"
-    if mkdir "$READ_DIR/.count_matrix_lock" 2>/dev/null; then
+    if mkdir "$count_matrix_dir/.count_matrix_lock" 2>/dev/null; then
         # The job that grabs the lock is executed
         Rscript ../One_Shifting/R/Step1_build_count_matrix_UMAP.R \
           $INPUT_FILE \
-          "${READ_DIR}/${V1}" \
+          "${count_matrix_dir}" \
           "$norm_factor_string"
         touch "$LOCK_FILE"
-        rmdir "$READ_DIR/.count_matrix_lock"
+        rmdir "$count_matrix_dir/.count_matrix_lock"
     else
         # waiting for the job that didn't get the lock
         echo "Waiting for count matrix to be built..."
@@ -79,7 +83,7 @@ for this_trans_factor in "${trans_factor[@]}"; do
         conda activate vae_env2
         python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
-        python -u ../One_Shifting/myproject/UMAP/Step2_train_${method}.py \
+        python -u ../One_Shifting/myproject/UMAP/UMAP_Step2_train_${method}.py \
         --data_path1 "$DATA_PATH1" \
         --out_summary "$SUMMARY_FILE" \
         --early_stop \
@@ -94,7 +98,7 @@ for this_trans_factor in "${trans_factor[@]}"; do
         SAVED_DIR="${OUT_DIR}/saved_models"
         OUT_PATH="${OUT_DIR}/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather"
 
-        python -u ../One_Shifting/myproject/UMAP/Step3_reconstruct_${method}.py \
+        python -u ../One_Shifting/myproject/UMAP/UMAP_Step3_reconstruct_${method}.py \
         --data_path1 "$DATA_PATH1" \
         --transformed_out_dir "$OUT_DIR" \
         --saved_models_dir "$SAVED_DIR" \
@@ -105,12 +109,16 @@ for this_trans_factor in "${trans_factor[@]}"; do
 
         sleep 2
 
-        Rscript ../One_Shifting/R/run_record_UMAP_recon_path.R \
-            "$registry_file" \
-            "$OUT_PATH" \
-            "$method" \
-            "$this_trans_factor" \
-            "$factor"
+        if [ -f "$OUT_PATH" ]; then
+            Rscript ../One_Shifting/R/run_record_UMAP_recon_path.R \
+                "$registry_file" \
+                "$OUT_PATH" \
+                "$method" \
+                "$this_trans_factor" \
+                "$factor"
+        else
+            echo "[WARNING] Reconstruct file not found: $OUT_PATH"
+        fi
 
         sleep 2
 
