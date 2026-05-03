@@ -1,5 +1,5 @@
 
-load_UMAP_zheng_pbmc <- function(save_dir) {
+load_UMAP_zheng_duo8 <- function(save_dir) {
     # Load Libraries
     suppressPackageStartupMessages({
         library(DuoClustering2018)

@@ -21,7 +21,7 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
     
     if (is.null(height)) {
         nrow_plot <- ceiling(n_data / ncol)
-        height <- nrow_plot * 5
+        height <- min(nrow_plot * 5, 48)  # cap at 48 inches
     }
 
     output_dir <- file.path(output_dir, clustering_method)
@@ -60,11 +60,27 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
         
         return(seurat_obj)
     }
+
+    # Helper: create a placeholder plot for failed datasets
+    make_failed_plot <- function(name) {
+        ggplot() +
+            annotate("text", x = 0.5, y = 0.5, label = paste0(name, "\n[FAILED]"),
+                     size = 5, color = "red", hjust = 0.5) +
+            theme_void() +
+            ggtitle(name) +
+            theme(plot.title = element_text(hjust = 0.5, size = 11, face = "bold", color = "red"))
+    }
     
     # Process all datasets (only once)
     seurat_list <- list()
     for (i in seq_along(data_paths)) {
-        seurat_list[[i]] <- process_one(data_paths[i], data_names[i])
+        seurat_list[[i]] <- tryCatch(
+            process_one(data_paths[i], data_names[i]),
+            error = function(e) {
+                cat(paste0("[ERROR] Failed: ", data_names[i], " -- ", conditionMessage(e), "\n"))
+                return(NULL)
+            }
+        )
     }
     
     # Cluster with fixed k using known cell type count, then compute ARI
@@ -74,6 +90,13 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
 
     for (i in seq_along(seurat_list)) {
         obj <- seurat_list[[i]]
+
+        if (is.null(obj)) {
+            all_ari <- rbind(all_ari, data.frame(
+                method = data_names[i], n_clusters = NA, ARI = NA
+            ))
+            next
+        }
         
         if (clustering_method == "kmeans") {
             pca_embed <- Embeddings(obj, reduction = "pca")[, 1:30, drop = FALSE]
@@ -91,7 +114,7 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
                 temp_true <- obj_temp$cell_type
                 temp_valid <- temp_true != "Unknown"
                 temp_ari <- adjustedRandIndex(temp_labels[temp_valid], temp_true[temp_valid])
-                if (temp_ari > best_ari) {
+                if (!is.na(temp_ari) && temp_ari > best_ari) {
                     best_ari <- temp_ari
                     best_res <- res
                 }
@@ -105,7 +128,11 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
 
         true_labels <- obj$cell_type
         valid_idx <- true_labels != "Unknown"
-        ari <- adjustedRandIndex(cluster_labels[valid_idx], true_labels[valid_idx])
+        if (sum(valid_idx) == 0) {
+            ari <- NA
+        } else {
+            ari <- adjustedRandIndex(cluster_labels[valid_idx], true_labels[valid_idx])
+        }
         found_clusters <- length(unique(cluster_labels))
 
         cat(paste0("  ", data_names[i], ": k=", found_clusters, ", ARI=", round(ari, 4), "\n"))
@@ -119,36 +146,53 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
         ))
     }
 
-    # Plot UMAP colored by reference cell type
+    # Sort ARI and get top methods
+    ari_valid <- all_ari[!is.na(all_ari$ARI), ]
+    ari_valid <- ari_valid[order(-ari_valid$ARI), ]
+    top20_names <- head(ari_valid$method, 20)
+    top20_idx <- which(data_names %in% top20_names)
+
+    nrow_umap <- ceiling(length(top20_idx) / ncol)
+    height_umap <- min(nrow_umap * 5, 48)
+
+    # Plot UMAP colored by reference cell type - top 20
     plot_list <- list()
-    for (i in seq_along(seurat_list)) {
+    for (i in top20_idx) {
+        if (is.null(seurat_list[[i]])) {
+            plot_list[[length(plot_list) + 1]] <- make_failed_plot(data_names[i])
+            next
+        }
         p <- DimPlot(seurat_list[[i]], reduction = "umap", group.by = "cell_type", 
                     label = TRUE, repel = TRUE) + 
         ggtitle(data_names[i]) + 
         NoLegend() +
         theme(plot.title = element_text(hjust = 0.5, size = 11, face = "bold"))
-        plot_list[[i]] <- p
+        plot_list[[length(plot_list) + 1]] <- p
     }
     
     combined_plot <- wrap_plots(plot_list, ncol = ncol)
-    umap_path <- file.path(output_dir, "UMAP_color_by_reference.png")
-    ggsave(umap_path, combined_plot, width = width, height = height, dpi = dpi)
+    umap_path <- file.path(output_dir, "UMAP_color_by_reference_top20.png")
+    ggsave(umap_path, combined_plot, width = width, height = height_umap, dpi = dpi, limitsize = FALSE)
     cat(paste0("\n[SAVE] UMAP plot: ", umap_path, "\n"))
 
-    # Plot UMAP colored by self clustering
+    # Plot UMAP colored by self clustering - top 20
     plot_list_self <- list()
-    for (i in seq_along(seurat_list)) {
+    for (i in top20_idx) {
+        if (is.null(seurat_list[[i]])) {
+            plot_list_self[[length(plot_list_self) + 1]] <- make_failed_plot(data_names[i])
+            next
+        }
         p <- DimPlot(seurat_list[[i]], reduction = "umap", group.by = "self_cluster", 
                     label = TRUE, repel = TRUE) + 
         ggtitle(data_names[i]) + 
         NoLegend() +
         theme(plot.title = element_text(hjust = 0.5, size = 11, face = "bold"))
-        plot_list_self[[i]] <- p
+        plot_list_self[[length(plot_list_self) + 1]] <- p
     }
     
     combined_plot_self <- wrap_plots(plot_list_self, ncol = ncol)
-    umap_self_path <- file.path(output_dir, "UMAP_color_by_self.png")
-    ggsave(umap_self_path, combined_plot_self, width = width, height = height, dpi = dpi)
+    umap_self_path <- file.path(output_dir, "UMAP_color_by_self_top20.png")
+    ggsave(umap_self_path, combined_plot_self, width = width, height = height_umap, dpi = dpi, limitsize = FALSE)
     cat(paste0("[SAVE] UMAP plot: ", umap_self_path, "\n"))
     
     # Save ARI CSV
@@ -156,16 +200,18 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
     write.csv(all_ari, csv_path, row.names = FALSE)
     cat(paste0("\n[SAVE] ARI table: ", csv_path, "\n"))
 
-    # Plot ARI bar chart for fixed k
-    p_ari <- ggplot(all_ari, aes(x = reorder(method, ARI), y = ARI, fill = method)) +
+    # Plot ARI bar chart - top 40
+    ari_top40 <- head(ari_valid, 40)
+    p_ari <- ggplot(ari_top40, aes(x = reorder(method, ARI), y = ARI, fill = method)) +
         geom_col() +
         coord_flip() +
-        labs(x = "Method", y = "ARI", title = paste0("ARI with ", clustering_method, " (target k=", n_clusters, ")")) +
+        scale_y_continuous(breaks = seq(0, 1, by = 0.1)) +
+        labs(x = "Method", y = "ARI", title = paste0("ARI with ", clustering_method, " (target k=", n_clusters, ") - Top 40")) +
         theme_bw() +
         theme(legend.position = "none")
 
     ari_plot_path <- file.path(output_dir, paste0("ARI_", clustering_method, ".png"))
-    ggsave(ari_plot_path, p_ari, width = 12, height = 6, dpi = 300)
+    ggsave(ari_plot_path, p_ari, width = 12, height = 10, dpi = 300)
     cat(paste0("[SAVE] ARI plot: ", ari_plot_path, "\n"))
     
     return(list(

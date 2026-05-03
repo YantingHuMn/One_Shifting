@@ -18,6 +18,9 @@ dropout_multinomial <- function(df, keep_par = 0.5, save_dir = NULL) {
         mat[i, ] <- rmultinom(1, size = new_total, prob = probs)
     }
 
+    # calculate sparsity
+    sparsity <- round(mean(mat == 0) * 100, 1)
+
     # rebuild df
     result <- as.data.frame(mat)
     if (!is.null(pos_col)) {
@@ -27,7 +30,7 @@ dropout_multinomial <- function(df, keep_par = 0.5, save_dir = NULL) {
     if (!is.null(save_dir)) {
         library(arrow)
         dir.create(save_dir, recursive = TRUE, showWarnings = FALSE)
-        write_feather(result, file.path(save_dir, paste0("dropout_", keep_par, ".feather")))
+        write_feather(result, file.path(save_dir, paste0("dropout_", keep_par, "_sparsity_", sparsity, ".feather")))
     }
 
     return(result)

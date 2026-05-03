@@ -12,6 +12,15 @@ for method in "${methods[@]}"; do
     mkdir -p ${READ_DIR}/${method}
 done
 
+LOCK_FILE="${READ_DIR}/.count_matrix_done"
+if [ ! -f "$LOCK_FILE" ]; then
+    echo "Waiting for count matrix to be built by another job..."
+    while [ ! -f "$LOCK_FILE" ]; do
+        sleep 10
+    done
+fi
+echo "Count matrix ready, proceeding..."
+
 echo "======Run scVI======"
 source ~/.bashrc
 conda activate scvi_env
@@ -88,6 +97,8 @@ for method in "${methods[@]}"; do
             x_dir="${READ_DIR}/${mse_method}/given_${V2}_no_norm_no_trans"
             y_dir="${READ_DIR}/${method}"
             
+            echo $x_dir
+            echo $y_dir
             Rscript ../One_Shifting/R/run_x_mag_compare_scatter.R \
                 "${x_dir}" \
                 "${y_dir}" \

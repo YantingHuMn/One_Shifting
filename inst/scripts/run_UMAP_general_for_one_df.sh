@@ -15,11 +15,26 @@ OUTPUT_DIR="${READ_DIR}/${method}"
 mkdir -p $OUTPUT_DIR
 
 registry_file="${READ_DIR}/recon_registry.csv"
-trans_factor=("no_trans" "sqrt" "sqrt+1" "log2" "count+1" "log2(count+2)")
+# trans_factor=("no_trans" "sqrt" "sqrt+1" "log2" "count+1" "log2(count+2)")
+trans_factor=("count+1" "log2(count+2)")
 norm_factor=("no_norm" 1000000 100000 10000 1000 "standardize")
 norm_factor_string=$(IFS=','; echo "${norm_factor[*]}")
 
-rm -f $registry_file
+REGISTRY_LOCK="$READ_DIR/.registry_lock"
+REGISTRY_DONE="$READ_DIR/.registry_initialized"
+
+if [ ! -f "$REGISTRY_DONE" ]; then
+    if mkdir "$REGISTRY_LOCK" 2>/dev/null; then
+        rm -f "$registry_file"
+        touch "$REGISTRY_DONE"
+        rmdir "$REGISTRY_LOCK"
+    else
+        echo "Waiting for registry initialization..."
+        while [ ! -f "$REGISTRY_DONE" ]; do
+            sleep 2
+        done
+    fi
+fi
 
 module load conda_R
 
@@ -110,7 +125,7 @@ for this_trans_factor in "${trans_factor[@]}"; do
         sleep 2
 
         if [ -f "$OUT_PATH" ]; then
-            Rscript ../One_Shifting/R/run_record_UMAP_recon_path.R \
+            flock "$registry_file.lock" Rscript ../One_Shifting/R/run_record_UMAP_recon_path.R \
                 "$registry_file" \
                 "$OUT_PATH" \
                 "$method" \

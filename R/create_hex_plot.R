@@ -2,6 +2,24 @@ create_hex_plot <- function(plot_data, df1_x_mean, df2_y_mean,
                             residual_sum, residual_mean, n_points, above_line, below_line, 
                             on_line, trans_val, norm_val, metric_type, V1, y_label, x_label) {
     
+    n_total <- nrow(plot_data)
+    na_df1 <- sum(is.na(plot_data$df1_VAE))
+    na_df2 <- sum(is.na(plot_data$df2_VAE))
+    na_both <- sum(is.na(plot_data$df1_VAE) & is.na(plot_data$df2_VAE))
+    na_any <- sum(is.na(plot_data$df1_VAE) | is.na(plot_data$df2_VAE))
+
+    if (na_any > 0) {
+        cat("  WARNING: NA detected in plot_data (trans=", trans_val, "):\n")
+        cat("    Total rows:", n_total, "\n")
+        cat("    NA in df1_VAE (x):", na_df1, "\n")
+        cat("    NA in df2_VAE (y):", na_df2, "\n")
+        cat("    NA in both:", na_both, "\n")
+        cat("    Rows dropped:", na_any, "\n")
+        cat("    Rows remaining:", n_total - na_any, "\n")
+    }
+
+    plot_data <- plot_data[!is.na(plot_data$df1_VAE) & !is.na(plot_data$df2_VAE), ]
+
     subtitle_line1 <- paste0("x_m: ", round(df1_x_mean, 4), 
                              ", y_m: ", round(df2_y_mean, 4),
                              ", Res_s: ", round(residual_sum, 4),

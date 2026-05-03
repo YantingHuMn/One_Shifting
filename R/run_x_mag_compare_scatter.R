@@ -26,22 +26,48 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir, v2_trans_f
         object = "cell"
     }
 
+    cat("========== DEBUG INFO ==========\n")
+    cat("x_dir:", x_dir, "\n")
+    cat("y_dir:", y_dir, "\n")
+    cat("corr_dir:", corr_dir, "  object:", object, "\n")
+    cat("out_dir:", out_dir, "\n")
+    cat("v1_trans_factors:", paste(v1_trans_factors, collapse=", "), "\n")
+    cat("v2_trans_factor:", v2_trans_factor, "  v2_norm_factor:", v2_norm_factor, "\n")
+    cat("================================\n\n")
+
     # ==================== Pearson plots ====================
     corr = "pearson"
     x_norm_info_path <- paste0(x_dir, "/plots_summary_", corr, "_", corr_dir, "_", object, "_best_norm.csv")
     y_norm_info_path <- paste0(y_dir, "/plots_summary_", corr, "_", corr_dir, "_", object, "_best_norm.csv")
 
+    cat("[Pearson] x_norm_info_path:", x_norm_info_path, " exists:", file.exists(x_norm_info_path), "\n")
+    cat("[Pearson] y_norm_info_path:", y_norm_info_path, " exists:", file.exists(y_norm_info_path), "\n")
+
     best_norm_x <- if (file.exists(x_norm_info_path)) read.csv(x_norm_info_path) else NULL
     best_norm_y <- if (file.exists(y_norm_info_path)) read.csv(y_norm_info_path) else NULL
+
+    if (!is.null(best_norm_x)) {
+        cat("[Pearson] best_norm_x REP1_trans values:", paste(unique(best_norm_x$REP1_trans), collapse=", "), "\n")
+        cat("[Pearson] best_norm_x REP1_norm values:", paste(unique(best_norm_x$REP1_norm), collapse=", "), "\n")
+    } else {
+        cat("[Pearson] best_norm_x is NULL\n")
+    }
+    if (!is.null(best_norm_y)) {
+        cat("[Pearson] best_norm_y REP1_trans values:", paste(unique(best_norm_y$REP1_trans), collapse=", "), "\n")
+        cat("[Pearson] best_norm_y REP1_norm values:", paste(unique(best_norm_y$REP1_norm), collapse=", "), "\n")
+    } else {
+        cat("[Pearson] best_norm_y is NULL\n")
+    }
 
     plots_density <- list()
     plots_cutoff <- list()
 
     for (trans_val in v1_trans_factors) {
-        cat("Processing trans: ", trans_val, "\n")
+        cat("\n[Pearson] Processing trans: ", trans_val, "\n")
 
         if (!is.null(best_norm_x)) {
             v1_norm_factor_x <- best_norm_x$REP1_norm[best_norm_x$REP1_trans == trans_val]
+            cat("[Pearson]   x match count:", length(v1_norm_factor_x), "\n")
             if (length(v1_norm_factor_x) == 0) {
                 warning(paste("No norm found in x for trans=", trans_val))
                 next
@@ -55,6 +81,7 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir, v2_trans_f
 
         if (!is.null(best_norm_y)) {
             v1_norm_factor_y <- best_norm_y$REP1_norm[best_norm_y$REP1_trans == trans_val]
+            cat("[Pearson]   y match count:", length(v1_norm_factor_y), "\n")
             if (length(v1_norm_factor_y) == 0) {
                 warning(paste("No norm found in y for trans=", trans_val))
                 next
@@ -64,7 +91,9 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir, v2_trans_f
             path2 <- file.path(y_dir, paste0("Figures_", corr_dir, "/d_pearson_", corr_dir, "_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv"))
         }
 
-        cat("      with norm: ", v1_norm_factor, "\n")
+        cat("[Pearson]   with norm: ", v1_norm_factor, "\n")
+        cat("[Pearson]   path1:", path1, " exists:", file.exists(path1), "\n")
+        cat("[Pearson]   path2:", path2, " exists:", file.exists(path2), "\n")
 
         if (!file.exists(path1) || !file.exists(path2)) {
             warning(paste("One of the paths does not exist:", path1, "or", path2))
@@ -73,6 +102,8 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir, v2_trans_f
 
         df1 <- read.csv(path1)
         df2 <- read.csv(path2)
+
+        cat("[Pearson]   df1 rows:", nrow(df1), " df2 rows:", nrow(df2), "\n")
 
         df2_sorted <- df2[match(df1$Value, df2$Value), ]
 
@@ -101,16 +132,25 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir, v2_trans_f
                                                        trans_val, v1_norm_factor, "Pearson", V1, y_label, x_label)
 
         plots_cutoff[[trans_val]] <- create_cutoff_ma_curve(plot_data, cutoff_seq, trans_val, v1_norm_factor, "Pearson", V1, y_label, x_label)
+        cat("[Pearson]   SUCCESS for trans:", trans_val, "\n")
     }
+
+    cat("\n[Pearson] Total plots_density:", length(plots_density), " plots_cutoff:", length(plots_cutoff), "\n")
 
     # Save
     if (length(plots_density) > 0) {
         grid_plot <- do.call(grid.arrange, c(plots_density, ncol = 3))
         ggsave(file.path(out_dir, paste0("pearson_density_", corr_dir, ".png")), grid_plot, width = 15, height = 10, dpi = 300)
+        cat("[Pearson] Saved density plot\n")
+    } else {
+        cat("[Pearson] WARNING: No density plots generated, skipping save\n")
     }
     if (length(plots_cutoff) > 0) {
         grid_plot <- do.call(grid.arrange, c(plots_cutoff, ncol = 3))
         ggsave(file.path(out_dir, paste0("pearson_cutoff_", corr_dir, ".png")), grid_plot, width = 15, height = 10, dpi = 300)
+        cat("[Pearson] Saved cutoff plot\n")
+    } else {
+        cat("[Pearson] WARNING: No cutoff plots generated, skipping save\n")
     }
 
     # ==================== Spearman plots ====================
@@ -118,17 +158,34 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir, v2_trans_f
     x_norm_info_path <- paste0(x_dir, "/plots_summary_", corr, "_", corr_dir, "_", object, "_best_norm.csv")
     y_norm_info_path <- paste0(y_dir, "/plots_summary_", corr, "_", corr_dir, "_", object, "_best_norm.csv")
 
+    cat("\n[Spearman] x_norm_info_path:", x_norm_info_path, " exists:", file.exists(x_norm_info_path), "\n")
+    cat("[Spearman] y_norm_info_path:", y_norm_info_path, " exists:", file.exists(y_norm_info_path), "\n")
+
     best_norm_x <- if (file.exists(x_norm_info_path)) read.csv(x_norm_info_path) else NULL
     best_norm_y <- if (file.exists(y_norm_info_path)) read.csv(y_norm_info_path) else NULL
+
+    if (!is.null(best_norm_x)) {
+        cat("[Spearman] best_norm_x REP1_trans values:", paste(unique(best_norm_x$REP1_trans), collapse=", "), "\n")
+        cat("[Spearman] best_norm_x REP1_norm values:", paste(unique(best_norm_x$REP1_norm), collapse=", "), "\n")
+    } else {
+        cat("[Spearman] best_norm_x is NULL\n")
+    }
+    if (!is.null(best_norm_y)) {
+        cat("[Spearman] best_norm_y REP1_trans values:", paste(unique(best_norm_y$REP1_trans), collapse=", "), "\n")
+        cat("[Spearman] best_norm_y REP1_norm values:", paste(unique(best_norm_y$REP1_norm), collapse=", "), "\n")
+    } else {
+        cat("[Spearman] best_norm_y is NULL\n")
+    }
 
     plots_density <- list()
     plots_cutoff <- list()
 
     for (trans_val in v1_trans_factors) {
-        cat("Processing trans: ", trans_val, "\n")
+        cat("\n[Spearman] Processing trans: ", trans_val, "\n")
 
         if (!is.null(best_norm_x)) {
             v1_norm_factor_x <- best_norm_x$REP1_norm[best_norm_x$REP1_trans == trans_val]
+            cat("[Spearman]   x match count:", length(v1_norm_factor_x), "\n")
             if (length(v1_norm_factor_x) == 0) {
                 warning(paste("No norm found in x for trans=", trans_val))
                 next
@@ -142,6 +199,7 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir, v2_trans_f
 
         if (!is.null(best_norm_y)) {
             v1_norm_factor_y <- best_norm_y$REP1_norm[best_norm_y$REP1_trans == trans_val]
+            cat("[Spearman]   y match count:", length(v1_norm_factor_y), "\n")
             if (length(v1_norm_factor_y) == 0) {
                 warning(paste("No norm found in y for trans=", trans_val))
                 next
@@ -151,7 +209,9 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir, v2_trans_f
             path2 <- file.path(y_dir, paste0("Figures_", corr_dir, "/g_spearman_", corr_dir, "_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv"))
         }
 
-        cat("      with norm: ", v1_norm_factor, "\n")
+        cat("[Spearman]   with norm: ", v1_norm_factor, "\n")
+        cat("[Spearman]   path1:", path1, " exists:", file.exists(path1), "\n")
+        cat("[Spearman]   path2:", path2, " exists:", file.exists(path2), "\n")
 
         if (!file.exists(path1) || !file.exists(path2)) {
             warning(paste("One of the paths does not exist:", path1, "or", path2))
@@ -161,6 +221,12 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir, v2_trans_f
         df1 <- read.csv(path1)
         df2 <- read.csv(path2)
 
+        cat("[Spearman]   df1 rows:", nrow(df1), " df2 rows:", nrow(df2), "\n")
+
+        unmatched <- df1$Value[is.na(match(df1$Value, df2$Value))]
+        cat("[Spearman]   Unmatched values:", length(unmatched), "\n")
+        if (length(unmatched) > 0) print(head(unmatched, 20))
+        
         df2_sorted <- df2[match(df1$Value, df2$Value), ]
 
         df1_x_mean <- mean(df1$VAE, na.rm = TRUE)
@@ -188,19 +254,28 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir, v2_trans_f
                                                        trans_val, v1_norm_factor, "Spearman", V1, y_label, x_label)
 
         plots_cutoff[[trans_val]] <- create_cutoff_ma_curve(plot_data, cutoff_seq, trans_val, v1_norm_factor, "Spearman", V1, y_label, x_label)
+        cat("[Spearman]   SUCCESS for trans:", trans_val, "\n")
     }
+
+    cat("\n[Spearman] Total plots_density:", length(plots_density), " plots_cutoff:", length(plots_cutoff), "\n")
 
     # Save
     if (length(plots_density) > 0) {
         grid_plot <- do.call(grid.arrange, c(plots_density, ncol = 3))
         ggsave(file.path(out_dir, paste0("spearman_density_", corr_dir, ".png")), grid_plot, width = 15, height = 10, dpi = 300)
+        cat("[Spearman] Saved density plot\n")
+    } else {
+        cat("[Spearman] WARNING: No density plots generated, skipping save\n")
     }
     if (length(plots_cutoff) > 0) {
         grid_plot <- do.call(grid.arrange, c(plots_cutoff, ncol = 3))
         ggsave(file.path(out_dir, paste0("spearman_cutoff_", corr_dir, ".png")), grid_plot, width = 15, height = 10, dpi = 300)
+        cat("[Spearman] Saved cutoff plot\n")
+    } else {
+        cat("[Spearman] WARNING: No cutoff plots generated, skipping save\n")
     }
 
-    cat("Done! Saved plots to:", out_dir, "\n")
+    cat("\nDone! Saved plots to:", out_dir, "\n")
 }
 
 

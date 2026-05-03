@@ -46,12 +46,12 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir,
               "| filter_zero_gt:", filter_zero_gt, "\n"))
 
     # Create Label
-    label3 <- "Input"
-    label4 <- "Output"
+    label3 <- "Output" # x-axis
+    label4 <- "Input" # y-axis
 
     # Override axis labels if provided
-    if (!is.null(x_title)) label3 <- paste0(label4, "_", x_title)  # x-axis (path3) reconstructed/output
-    if (!is.null(y_title)) label4 <- paste0(label3,"_", y_title)  # y-axis (path2) input
+    if (!is.null(x_title)) label3 <- paste0(label3, "_", x_title)  # x-axis (path3) reconstructed/output
+    if (!is.null(y_title)) label4 <- paste0(label4,"_", y_title)  # y-axis (path2) input
 
     subtitle_text <- ""
 
