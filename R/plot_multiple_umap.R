@@ -200,6 +200,48 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
     write.csv(all_ari, csv_path, row.names = FALSE)
     cat(paste0("\n[SAVE] ARI table: ", csv_path, "\n"))
 
+    # Save ARI CSV (best norm per trans for VAE/DCA_mse/scVI_mse/Transformer_denoise)
+    target_prefixes <- c("VAE", "DCA_mse", "scVI_mse", "Transformer_denoise")
+    best_norm_rows <- list()
+    other_rows <- list()
+    for (j in seq_len(nrow(all_ari))) {
+        m <- all_ari$method[j]
+        matched <- FALSE
+        for (pfx in target_prefixes) {
+            if (startsWith(m, paste0(pfx, "_"))) {
+                suffix <- sub(paste0("^", pfx, "_"), "", m)
+                norm_patterns <- c("_no_norm$", "_standardize$", "_1000000$", "_100000$", "_10000$", "_1000$")
+                trans <- suffix
+                for (np in norm_patterns) {
+                    if (grepl(np, suffix)) {
+                        trans <- sub(np, "", suffix)
+                        break
+                    }
+                }
+                key <- paste0(pfx, "|||", trans)
+                if (is.null(best_norm_rows[[key]])) {
+                    best_norm_rows[[key]] <- j
+                } else {
+                    prev_ari <- all_ari$ARI[best_norm_rows[[key]]]
+                    cur_ari <- all_ari$ARI[j]
+                    if (!is.na(cur_ari) && (is.na(prev_ari) || cur_ari > prev_ari)) {
+                        best_norm_rows[[key]] <- j
+                    }
+                }
+                matched <- TRUE
+                break
+            }
+        }
+        if (!matched) {
+            other_rows[[length(other_rows) + 1]] <- j
+        }
+    }
+    keep_idx <- sort(c(unlist(best_norm_rows), unlist(other_rows)))
+    all_ari_best_norm <- all_ari[keep_idx, ]
+    csv_best_path <- file.path(output_dir, paste0("ARI_", clustering_method, "_best_norm.csv"))
+    write.csv(all_ari_best_norm, csv_best_path, row.names = FALSE)
+    cat(paste0("[SAVE] ARI best norm table: ", csv_best_path, "\n"))
+
     # Plot ARI bar chart - top 40
     ari_top40 <- head(ari_valid, 40)
     p_ari <- ggplot(ari_top40, aes(x = reorder(method, ARI), y = ARI, fill = method)) +

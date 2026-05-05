@@ -1,8 +1,9 @@
-load_rna_atac_from_h5ad <- function(path, sample_name, out_dir, upstream = 2000) {
+load_rna_atac_from_h5ad_previous <- function(path, sample_name, out_dir, upstream = 2000) {
     # Load Libraries
     suppressPackageStartupMessages({
         library(hdf5r)
         library(Matrix)
+        library(Seurat)
         library(Signac)
         library(EnsDb.Hsapiens.v86)
         library(GenomicRanges)
@@ -31,6 +32,7 @@ load_rna_atac_from_h5ad <- function(path, sample_name, out_dir, upstream = 2000)
     # Remove ENSG rows
     ensg_indices <- grep("^ENSG", rownames(rna_mat))
     if (length(ensg_indices) > 0) {
+        library(EnsDb.Hsapiens.v86)
         ensg_ids <- sub("\\..*", "", rownames(rna_mat)[ensg_indices])
         gene_map <- ensembldb::select(EnsDb.Hsapiens.v86,
                                         keys = ensg_ids,
@@ -47,8 +49,13 @@ load_rna_atac_from_h5ad <- function(path, sample_name, out_dir, upstream = 2000)
     }
     cat("RNA after ENSG conversion:", dim(rna_mat_cleaned), "\n")
 
-    # Standardize underscores to dashes
+    # Standardize underscores to dashes before Seurat
     rownames(rna_mat_cleaned) <- gsub("_", "-", rownames(rna_mat_cleaned))
+
+    # Seurat Object for RNA (normalize for correlation only)
+    rna_seurat <- CreateSeuratObject(counts = rna_mat_cleaned, assay = "RNA")
+    rna_seurat <- NormalizeData(rna_seurat)
+    rna_seurat <- ScaleData(rna_seurat)
 
     # Peak coordinates
     peak_names <- rownames(atac_mat)
@@ -127,36 +134,68 @@ load_rna_atac_from_h5ad <- function(path, sample_name, out_dir, upstream = 2000)
     gene.activities <- gene.activities[non_zero_mask, ]
     cat("Genes with activity:", nrow(gene.activities), "\n")
 
-    # Standardize underscores to dashes
+    # Standardize underscores to dashes before Seurat
     rownames(gene.activities) <- gsub("_", "-", rownames(gene.activities))
 
-    # Common genes and shared cells
-    common_genes <- intersect(rownames(gene.activities), rownames(rna_mat_cleaned))
+    gene.activities <- as(gene.activities, "sparseMatrix")
+
+    # Normalize Gene Activity (for correlation only)
+    activity_seurat <- CreateSeuratObject(counts = gene.activities, assay = "ACTIVITY")
+    activity_seurat <- NormalizeData(activity_seurat)
+    activity_seurat <- ScaleData(activity_seurat, features = rownames(activity_seurat))
+
+    # Debug: print rownames before matching
+    cat("\n=== DEBUG: rownames before matching ===\n")
+    cat("rna_seurat rownames (first 10):", head(rownames(rna_seurat), 10), "\n")
+    cat("activity_seurat rownames (first 10):", head(rownames(activity_seurat), 10), "\n")
+    cat("rna_seurat total features:", nrow(rna_seurat), "\n")
+    cat("activity_seurat total features:", nrow(activity_seurat), "\n")
+
+    # Correlation
+    common_genes <- intersect(rownames(activity_seurat), rownames(rna_seurat))
     cat("Common genes:", length(common_genes), "\n")
 
     if (length(common_genes) == 0) stop("No common genes found! Check rowname formats above.")
 
-    rna_counts <- as.matrix(rna_mat_cleaned[common_genes, ])
-    activity_counts <- as.matrix(gene.activities[common_genes, ])
+    rna_data <- as.matrix(GetAssayData(rna_seurat, assay = "RNA", layer = "data"))
+    activity_data <- as.matrix(GetAssayData(activity_seurat, assay = "ACTIVITY", layer = "data"))
 
-    shared_cells <- intersect(colnames(rna_counts), colnames(activity_counts))
-    rna_counts <- rna_counts[, shared_cells]
-    activity_counts <- activity_counts[, shared_cells]
+    # Explicitly align rows and columns
+    rna_data <- rna_data[common_genes, ]
+    activity_data <- activity_data[common_genes, ]
 
-    cat("Aligned matrix dim:", dim(rna_counts), "\n")
+    shared_cells <- intersect(colnames(rna_data), colnames(activity_data))
+    rna_data <- rna_data[, shared_cells]
+    activity_data <- activity_data[, shared_cells]
 
-    # Correlation (on raw counts, just for diagnostics)
-    cell_cor <- sapply(1:ncol(activity_counts), function(x) cor(activity_counts[, x], rna_counts[, x]))
+    cat("Aligned matrix dim:", dim(rna_data), "\n")
+
+    # Diagnostic: check for any remaining mismatches
+    mismatches <- which(rownames(rna_data) != rownames(activity_data))
+    if (length(mismatches) > 0) {
+        cat("WARNING: mismatched rownames at indices:", head(mismatches, 20), "\n")
+        cat("  RNA:", head(rownames(rna_data)[mismatches], 5), "\n")
+        cat("  Activity:", head(rownames(activity_data)[mismatches], 5), "\n")
+        stop("Row names still do not match after alignment!")
+    }
+
+    cell_cor <- sapply(1:ncol(activity_data), function(x) cor(activity_data[, x], rna_data[, x]))
     cat("Cell correlation - Mean:", mean(cell_cor, na.rm = TRUE), "\n")
     cat("Cell correlation - Median:", median(cell_cor, na.rm = TRUE), "\n")
 
-    gene_cor <- sapply(1:nrow(activity_counts), function(x) cor(activity_counts[x, ], rna_counts[x, ]))
+    gene_cor <- sapply(1:nrow(activity_data), function(x) cor(activity_data[x, ], rna_data[x, ]))
     cat("Gene correlation - Mean:", mean(gene_cor, na.rm = TRUE), "\n")
     cat("Gene correlation - Median:", median(gene_cor, na.rm = TRUE), "\n")
 
-    # Save raw counts
+    # Save raw counts (aligned to common_genes and shared_cells)
     dir.create(file.path(out_dir, paste0(sample_name, "_RNA")), recursive = TRUE, showWarnings = FALSE)
     dir.create(file.path(out_dir, paste0(sample_name, "_ATAC")), recursive = TRUE, showWarnings = FALSE)
+
+    rna_counts <- as.matrix(GetAssayData(rna_seurat, assay = "RNA", layer = "counts"))
+    activity_counts <- as.matrix(GetAssayData(activity_seurat, assay = "ACTIVITY", layer = "counts"))
+
+    rna_counts <- rna_counts[common_genes, shared_cells]
+    activity_counts <- activity_counts[common_genes, shared_cells]
 
     # Filter to keep only genes non-zero in both
     keep_genes <- rowSums(rna_counts) > 0 & rowSums(activity_counts) > 0

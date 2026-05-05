@@ -9,7 +9,7 @@ plot_ari_bubble <- function(read_dir, methods = c("kmeans", "leiden", "louvain")
 
     all_data <- data.frame()
     for (method in methods) {
-        path <- paste0(read_dir, "/", method, "/ARI_", method, ".csv")
+        path <- paste0(read_dir, "/", method, "/ARI_", method, "_best_norm.csv")
         df <- read.csv(path)
         df$criteria <- method
         all_data <- rbind(all_data, df)

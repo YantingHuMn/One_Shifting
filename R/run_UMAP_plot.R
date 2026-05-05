@@ -100,3 +100,4 @@ gc()
 
 
 plot_ari_bubble(output_dir)
+plot_ari_bubble_trans(output_dir)

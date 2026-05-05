@@ -21,18 +21,18 @@ prep_summary_bubble_table_data <- function(method, data_type, base_dir, with_col
         v1_norm <- as.character(v1_norm[1])
 
         if (with_col) {
-            path1 <- file.path(base_dir, paste0(
-                "Figures_col/", prefix, gt_tag, "_col_scatter_v1_trans_", trans_val,
-                "_norm_", v1_norm,
-                "_v2_trans_", v2_trans_factor,
-                "_norm_", v2_norm_factor, ".csv"))
+            fig_dir <- list.dirs(base_dir, recursive = FALSE, full.names = FALSE)
+            fig_dir <- fig_dir[grepl("^Figures_col", fig_dir)][1]
         } else {
-            path1 <- file.path(base_dir, paste0(
-                "Figures_row/", prefix, gt_tag, "_row_scatter_v1_trans_", trans_val,
-                "_norm_", v1_norm,
-                "_v2_trans_", v2_trans_factor,
-                "_norm_", v2_norm_factor, ".csv"))
+            fig_dir <- list.dirs(base_dir, recursive = FALSE, full.names = FALSE)
+            fig_dir <- fig_dir[grepl("^Figures_row", fig_dir)][1]
         }
+
+        path1 <- file.path(base_dir, fig_dir, paste0(
+            prefix, gt_tag, "_", ifelse(with_col, "col", "row"), "_scatter_v1_trans_", trans_val,
+            "_norm_", v1_norm,
+            "_v2_trans_", v2_trans_factor,
+            "_norm_", v2_norm_factor, ".csv"))
 
         if (!file.exists(path1)) {
             cat(sprintf("  [SKIP] %s not found: %s\n", metric, path1))

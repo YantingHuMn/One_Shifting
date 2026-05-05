@@ -5,7 +5,7 @@ method="$2"
 if [ -z "$CONFIG_FILE" ] || [ -z "$method" ]; then
     echo "Usage: bash run_pipeline.sh <config_file> <method>"
     echo "  config_file: path to config (e.g. configs/pbmc_atac_rna.sh)"
-    echo "  method: VAE, DCA_mse, scVI_MSE, Transformer_denoise"
+    echo "  method: VAE, DCA_mse, scVI_mse, Transformer_denoise"
     exit 1
 fi
 
@@ -71,15 +71,27 @@ echo "===Finish build count matrix==="
   
 echo "=== Starting ${method} pipeline ==="
 
-rm -f "${OUTPUT_DIR}/plots_summary_pearson_col_gene.csv"
-rm -f "${OUTPUT_DIR}/plots_summary_spearman_col_gene.csv"
-rm -f "${OUTPUT_DIR}/plots_summary_pearson_row_cell.csv"
-rm -f "${OUTPUT_DIR}/plots_summary_spearman_row_cell.csv"
+for data_mode in default v1_trans_v2_trans v1_reverse; do
+    if [ "$data_mode" = "default" ]; then
+        mode_suffix="v1_trans_v2_no_trans"
+    elif [ "$data_mode" = "v1_trans_v2_trans" ]; then
+        mode_suffix="v1_trans_v2_trans"
+    elif [ "$data_mode" = "v1_reverse" ]; then
+        mode_suffix="v1_reverse_v2_no_trans"
+    fi
 
-rm -f "${OUTPUT_DIR}/plots_summary_pearson_col_gene_noGTzero.csv"
-rm -f "${OUTPUT_DIR}/plots_summary_spearman_col_gene_noGTzero.csv"
-rm -f "${OUTPUT_DIR}/plots_summary_pearson_row_cell_noGTzero.csv"
-rm -f "${OUTPUT_DIR}/plots_summary_spearman_row_cell_noGTzero.csv"
+    for corr_dir in col row; do
+        Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
+        rm -f "${Figure_DIR}/plots_summary_pearson_col_gene.csv"
+        rm -f "${Figure_DIR}/plots_summary_spearman_col_gene.csv"
+        rm -f "${Figure_DIR}/plots_summary_pearson_row_cell.csv"
+        rm -f "${Figure_DIR}/plots_summary_spearman_row_cell.csv"
+        rm -f "${Figure_DIR}/plots_summary_pearson_col_gene_noGTzero.csv"
+        rm -f "${Figure_DIR}/plots_summary_spearman_col_gene_noGTzero.csv"
+        rm -f "${Figure_DIR}/plots_summary_pearson_row_cell_noGTzero.csv"
+        rm -f "${Figure_DIR}/plots_summary_spearman_row_cell_noGTzero.csv"
+    done
+done
 
 if [ "$method" = "VAE" ]; then
     METHOD_ARGS="--beta_grid 0 --hidden_grid1 4096 --hidden_grid2 1024"
@@ -148,79 +160,87 @@ for this_trans_factor in "${trans_factor[@]}"; do
         echo "=== Step 7: Correlation analysis ==="
         module load conda_R
 
-        for corr_dir in col row; do
-            Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}"
-            mkdir -p "$Figure_DIR"
+        for data_mode in default v1_trans_v2_trans v1_reverse; do
+            if [ "$data_mode" = "default" ]; then
+                mode_suffix="v1_trans_v2_no_trans"
+            elif [ "$data_mode" = "v1_trans_v2_trans" ]; then
+                mode_suffix="v1_trans_v2_trans"
+            elif [ "$data_mode" = "v1_reverse" ]; then
+                mode_suffix="v1_reverse_v2_no_trans"
+            fi
 
-            Rscript ../One_Shifting/R/run_correlation_scatter.R \
-              "$OUT_DIR/Count_matrix_transformed_rep2.feather" \
-              "$OUT_DIR/Count_matrix_transformed_rep1.feather" \
-              "$OUT_DIR/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather" \
-              "$Figure_DIR"  \
-              "$OUT_DIR/saved_models" \
-              "$factor" \
-              "$V2_norm_factor" \
-              "$this_trans_factor" \
-              "$V2_trans_factor" \
-              "${OUTPUT_DIR}" \
-              "$corr_dir" \
-              "${V1}" \
-              "${method}"
+            for corr_dir in col row; do
+                Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
+                mkdir -p "$Figure_DIR"
+
+                Rscript ../One_Shifting/R/run_correlation_scatter_2_0.R \
+                  "$OUT_DIR/Count_matrix_transformed_rep2.feather" \
+                  "$OUT_DIR/Count_matrix_transformed_rep1.feather" \
+                  "$OUT_DIR/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather" \
+                  "$Figure_DIR"  \
+                  "$OUT_DIR/saved_models" \
+                  "$factor" \
+                  "$V2_norm_factor" \
+                  "$this_trans_factor" \
+                  "$V2_trans_factor" \
+                  "${Figure_DIR}" \
+                  "$corr_dir" \
+                  "${V1}" \
+                  "${method}" \
+                  "$data_mode"
+            done
+
+            sleep 2
+
         done
 
-        sleep 2
     done
 done
 
-
+# === Summary steps: run after all trans_factor x norm_factor combinations are done ===
+echo "=== Post-processing: combine figures and summary ==="
 module load conda_R
- 
-for corr_dir in col row; do
-    Rscript ../One_Shifting/R/run_combine_figures.R \
-    "$OUTPUT_DIR/Figures_${corr_dir}" \
-    "${corr_dir}"
-done
 
-# Rscript /dcs10/hongkai/data/yhu1/Autoencoder/artificial_ground_truth_compare_km/final_model_2_0/compare_Dec_12/Step12_combine_plot_no_data.R \
-#   "$OUTPUT_DIR/ROC" \
-#   "roc" \
-#   30
-
-# Rscript /dcs10/hongkai/data/yhu1/Autoencoder/artificial_ground_truth_compare_km/final_model_2_0/compare_Dec_12/Step12_combine_plot_no_data.R \
-#   "$OUTPUT_DIR/ROC_balanced" \
-#   "roc_balanced" \
-#   30
-
-sleep 2
-
-# Summary scatter plots
-for corr_dir in col row; do
-    if [ "$corr_dir" = "col" ]; then
-        obj="gene"
-    else
-        obj="cell"
+for data_mode in default v1_trans_v2_trans v1_reverse; do
+    if [ "$data_mode" = "default" ]; then
+        mode_suffix="v1_trans_v2_no_trans"
+    elif [ "$data_mode" = "v1_trans_v2_trans" ]; then
+        mode_suffix="v1_trans_v2_trans"
+    elif [ "$data_mode" = "v1_reverse" ]; then
+        mode_suffix="v1_reverse_v2_no_trans"
     fi
-    for corr_method in pearson spearman; do
-        for gt_suffix in "" "_noGTzero"; do
+
+    COL_Figure_DIR="$OUTPUT_DIR/Figures_col_${mode_suffix}"
+    ROW_Figure_DIR="$OUTPUT_DIR/Figures_row_${mode_suffix}"
+
+    for corr_dir in col row; do
+        Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
+
+        Rscript ../One_Shifting/R/run_combine_figures.R \
+            "${Figure_DIR}" \
+            "${corr_dir}"
+
+        if [ "$corr_dir" = "col" ]; then
+            obj="gene"
+        else
+            obj="cell"
+        fi
+        for corr_method in pearson spearman; do
             Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
-              "${OUTPUT_DIR}/plots_summary_${corr_method}_${corr_dir}_${obj}${gt_suffix}.csv" \
-              $method \
-              "log(count+2)"
+                "${Figure_DIR}/plots_summary_${corr_method}_${corr_dir}_${obj}.csv" \
+                $method \
+                "log(count+2)"
         done
     done
-done
 
-
-echo "=== Step 8: Bubble Plot ==="
-for corr_method in pearson spearman; do
-    for gt_suffix in "" "_noGTzero"; do
+    for corr_method in pearson spearman; do
         Rscript ../One_Shifting/R/Step_post_summary_bubble_table.R \
             "$method" \
             "$V1" \
             "$OUTPUT_DIR" \
             "TRUE" \
-            "${OUTPUT_DIR}/plots_summary_${corr_method}_col_gene${gt_suffix}.csv" \
-            "${READ_DIR}/bubble_plot_summary_col_gene${gt_suffix}.csv" \
+            "${COL_Figure_DIR}/plots_summary_${corr_method}_col_gene.csv" \
+            "${READ_DIR}/bubble_plot_summary_col_gene.csv" \
             "$corr_method" \
             "$V2_trans_factor" \
             "$V2_norm_factor" \
@@ -232,8 +252,8 @@ for corr_method in pearson spearman; do
                 "$V1" \
                 "$OUTPUT_DIR" \
                 "FALSE" \
-                "${OUTPUT_DIR}/plots_summary_${corr_method}_row_cell${gt_suffix}.csv" \
-                "${READ_DIR}/bubble_plot_summary_row_cell${gt_suffix}.csv" \
+                "${ROW_Figure_DIR}/plots_summary_${corr_method}_row_cell.csv" \
+                "${READ_DIR}/bubble_plot_summary_row_cell.csv" \
                 "$corr_method" \
                 "$V2_trans_factor" \
                 "$V2_norm_factor" \
