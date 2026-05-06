@@ -56,9 +56,9 @@ load_UMAP_cbmc <- function(save_dir) {
     length(cell_types)
 
     # Save raw counts (genes x cells)
-    write_feather(rna_df, file.path(save_dir, "cbmc_rna_counts.feather"))
-    write.csv(rna_df, file.path(save_dir, "cbmc_rna_counts.csv"), row.names = TRUE)  
-    write.csv(celltype_df, file.path(save_dir, "cbmc_celltype_protein.csv"), row.names = TRUE)  
+    write_feather(rna_df, file.path(save_dir, "orig_data/cbmc_rna_counts.feather"))
+    write.csv(rna_df, file.path(save_dir, "orig_data/cbmc_rna_counts.csv"), row.names = TRUE)  
+    write.csv(celltype_df, file.path(save_dir, "orig_data/cbmc_celltype_protein.csv"), row.names = TRUE)  
 
     # ===== Seurat standard normalization (LogNormalize, scale.factor = 10000) =====
     cbmc_clean <- NormalizeData(cbmc_clean, normalization.method = "LogNormalize", scale.factor = 10000)
@@ -75,13 +75,13 @@ load_UMAP_cbmc <- function(save_dir) {
     # genes x cells (same orientation as raw)
     norm_df <- as.data.frame(rna_norm)
     norm_df <- rownames_to_column(norm_df, var = "pos")
-    write_feather(norm_df, file.path(save_dir, "cbmc_rna_seurat_norm.feather"))
+    write_feather(norm_df, file.path(save_dir, "orig_data/cbmc_rna_seurat_norm.feather"))
     cat("Saved: cbmc_rna_seurat_norm.feather (genes x cells)\n")
 
     # cells x genes (transposed)
     norm_t <- t(rna_norm)
     norm_t_df <- as.data.frame(norm_t)
     norm_t_df <- rownames_to_column(norm_t_df, var = "pos")
-    write_feather(norm_t_df, file.path(save_dir, "cbmc_rna_seurat_norm_transposed.feather"))
+    write_feather(norm_t_df, file.path(save_dir, "orig_data/cbmc_rna_seurat_norm_transposed.feather"))
     cat("Saved: cbmc_rna_seurat_norm_transposed.feather (cells x genes)\n")
 }

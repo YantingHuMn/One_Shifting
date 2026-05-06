@@ -82,16 +82,12 @@ for data_mode in default v1_trans_v2_trans v1_reverse; do
 
     for corr_dir in col row; do
         Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
-        rm -f "${Figure_DIR}/plots_summary_pearson_col_gene.csv"
-        rm -f "${Figure_DIR}/plots_summary_spearman_col_gene.csv"
-        rm -f "${Figure_DIR}/plots_summary_pearson_row_cell.csv"
-        rm -f "${Figure_DIR}/plots_summary_spearman_row_cell.csv"
-        rm -f "${Figure_DIR}/plots_summary_pearson_col_gene_noGTzero.csv"
-        rm -f "${Figure_DIR}/plots_summary_spearman_col_gene_noGTzero.csv"
-        rm -f "${Figure_DIR}/plots_summary_pearson_row_cell_noGTzero.csv"
-        rm -f "${Figure_DIR}/plots_summary_spearman_row_cell_noGTzero.csv"
+        rm -f "${Figure_DIR}"/plots_summary_*.csv
     done
 done
+
+rm -f "${READ_DIR}"/bubble_plot_summary_*.csv
+
 
 if [ "$method" = "VAE" ]; then
     METHOD_ARGS="--beta_grid 0 --hidden_grid1 4096 --hidden_grid2 1024"
@@ -216,7 +212,7 @@ for data_mode in default v1_trans_v2_trans v1_reverse; do
     for corr_dir in col row; do
         Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
 
-        Rscript ../One_Shifting/R/run_combine_figures.R \
+        Rscript ../One_Shifting/R/run_combine_figures_reverse.R \
             "${Figure_DIR}" \
             "${corr_dir}"
 
@@ -226,21 +222,31 @@ for data_mode in default v1_trans_v2_trans v1_reverse; do
             obj="cell"
         fi
         for corr_method in pearson spearman; do
+            if [ "$data_mode" = "default" ]; then
+                mode_tag=""
+            else
+                mode_tag="_${data_mode}"
+            fi
             Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
-                "${Figure_DIR}/plots_summary_${corr_method}_${corr_dir}_${obj}.csv" \
+                "${Figure_DIR}/plots_summary_${corr_method}_${corr_dir}_${obj}${mode_tag}.csv" \
                 $method \
                 "log(count+2)"
         done
     done
 
-    for corr_method in pearson spearman; do
+for corr_method in pearson spearman; do
+        if [ "$data_mode" = "default" ]; then
+            mode_tag=""
+        else
+            mode_tag="_${data_mode}"
+        fi
         Rscript ../One_Shifting/R/Step_post_summary_bubble_table.R \
             "$method" \
             "$V1" \
             "$OUTPUT_DIR" \
             "TRUE" \
-            "${COL_Figure_DIR}/plots_summary_${corr_method}_col_gene.csv" \
-            "${READ_DIR}/bubble_plot_summary_col_gene.csv" \
+            "${COL_Figure_DIR}/plots_summary_${corr_method}_col_gene${mode_tag}.csv" \
+            "${READ_DIR}/bubble_plot_summary_col_gene_${mode_suffix}.csv" \
             "$corr_method" \
             "$V2_trans_factor" \
             "$V2_norm_factor" \
@@ -252,8 +258,8 @@ for data_mode in default v1_trans_v2_trans v1_reverse; do
                 "$V1" \
                 "$OUTPUT_DIR" \
                 "FALSE" \
-                "${ROW_Figure_DIR}/plots_summary_${corr_method}_row_cell.csv" \
-                "${READ_DIR}/bubble_plot_summary_row_cell.csv" \
+                "${ROW_Figure_DIR}/plots_summary_${corr_method}_row_cell${mode_tag}.csv" \
+                "${READ_DIR}/bubble_plot_summary_row_cell_${mode_suffix}.csv" \
                 "$corr_method" \
                 "$V2_trans_factor" \
                 "$V2_norm_factor" \

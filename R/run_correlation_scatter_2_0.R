@@ -192,20 +192,18 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
         mat1 <- apply_trans(mat1, this_trans_factor)
         df1 <- as.data.frame(mat1)
 
+        cat(paste("data_mode: v1_trans_v2_trans | ground truth trans:", this_trans_factor, "\n"))
+    } else if (data_mode == "v1_reverse") {
+        mat2 <- as.matrix(df2)
+        mat2 <- reverse_trans(mat2, this_trans_factor)
+        df2 <- as.data.frame(mat2)
+
         mat3 <- as.matrix(df3)
-        mat3 <- apply_trans(mat3, V2_trans_factor)
+        mat3 <- reverse_trans(mat3, this_trans_factor)
         df3 <- as.data.frame(mat3)
 
-        cat(paste("data_mode: v1_trans_v2_trans | v1 trans:", this_trans_factor,
-                  "| v2 trans:", V2_trans_factor, "\n"))
-    } else if (data_mode == "v1_reverse") {
-        mat1 <- as.matrix(df1)
-        mat1 <- reverse_trans(mat1, this_trans_factor)
-        df1 <- as.data.frame(mat1)
-
-        cat(paste("data_mode: v1_reverse | reversed trans:", this_trans_factor, "\n"))
+        cat(paste("data_mode: v1_reverse | reversed input & reconstruction trans:", this_trans_factor, "\n"))
     }
-
     # Filter out all-zero columns/rows in ground truth (df1), sync df2 & df3
     n_before <- if (corr == "col") ncol(df1) else nrow(df1)
 
@@ -488,11 +486,11 @@ tryCatch(
         this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
         save_csv_dir = save_csv_dir, corr = corr,
         y_title = y_title, x_title = x_title,
-        corr_method = "pearson", filter_zero_gt = FALSE
+        corr_method = "pearson", filter_zero_gt = FALSE,
+        data_mode = data_mode
     ),
     error = function(e) cat("ERROR in Pearson unfiltered:", conditionMessage(e), "\n")
 )
-
 
 # 3. Spearman, unfiltered
 tryCatch(
@@ -503,7 +501,8 @@ tryCatch(
         this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
         save_csv_dir = save_csv_dir, corr = corr,
         y_title = y_title, x_title = x_title,
-        corr_method = "spearman", filter_zero_gt = FALSE
+        corr_method = "spearman", filter_zero_gt = FALSE,
+        data_mode = data_mode
     ),
     error = function(e) cat("ERROR in Spearman unfiltered:", conditionMessage(e), "\n")
 )

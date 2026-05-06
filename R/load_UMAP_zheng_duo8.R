@@ -53,9 +53,9 @@ load_UMAP_zheng_duo8 <- function(save_dir) {
         cell_type = cell_types
     )
 
-    write_feather(rna_df, file.path(save_dir, "zheng_pbmc_rna_counts.feather"))
-    write.csv(rna_df, file.path(save_dir, "zheng_pbmc_rna_counts.csv"), row.names = FALSE)
-    write.csv(celltype_df, file.path(save_dir, "zheng_pbmc_celltype_facs.csv"), row.names = FALSE)
+    write_feather(rna_df, file.path(save_dir, "orig_data/zheng_pbmc_rna_counts.feather"))
+    write.csv(rna_df, file.path(save_dir, "orig_data/zheng_pbmc_rna_counts.csv"), row.names = FALSE)
+    write.csv(celltype_df, file.path(save_dir, "orig_data/zheng_pbmc_celltype_facs.csv"), row.names = FALSE)
 
     # Seurat normalize
     norm_mat <- as.matrix(rna_df[, -1])
@@ -69,12 +69,12 @@ load_UMAP_zheng_duo8 <- function(save_dir) {
     # genes x cells
     norm_df <- as.data.frame(norm_data)
     norm_df <- rownames_to_column(norm_df, var = "pos")
-    write_feather(norm_df, file.path(save_dir, "zheng_pbmc_rna_seurat_norm.feather"))
+    write_feather(norm_df, file.path(save_dir, "orig_data/zheng_pbmc_rna_seurat_norm.feather"))
 
     # cells x genes (transposed)
     norm_df_t <- as.data.frame(t(norm_data))
     norm_df_t <- rownames_to_column(norm_df_t, var = "pos")
-    write_feather(norm_df_t, file.path(save_dir, "zheng_pbmc_rna_seurat_norm_transposed.feather"))
+    write_feather(norm_df_t, file.path(save_dir, "orig_data/zheng_pbmc_rna_seurat_norm_transposed.feather"))
 
     cat("Saved all files to:", save_dir, "\n")
 }
