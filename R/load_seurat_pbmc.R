@@ -1,4 +1,3 @@
-
 load_save_seurat_pbmc <- function(save_dir, keep_perc = NULL) {
     # Load Libraries
     suppressPackageStartupMessages({
@@ -6,7 +5,6 @@ load_save_seurat_pbmc <- function(save_dir, keep_perc = NULL) {
         library(Seurat)
         library(Signac)
         library(EnsDb.Hsapiens.v86)
-        library(ggplot2)
         library(GenomicRanges)
         library(dplyr)
         library(arrow)  
@@ -44,10 +42,6 @@ load_save_seurat_pbmc <- function(save_dir, keep_perc = NULL) {
     cat("INFO [after QC] ATAC cells retained:", ncol(pbmc.atac), "\n")
     cat("INFO [after QC] RNA genes retained:", nrow(pbmc.rna), "\n")
     cat("INFO [after QC] ATAC peaks retained:", nrow(pbmc.atac), "\n")
-
-    pbmc.rna <- NormalizeData(pbmc.rna)
-    pbmc.rna <- FindVariableFeatures(pbmc.rna)
-    pbmc.rna <- ScaleData(pbmc.rna)
 
     annotations <- GetGRangesFromEnsDb(ensdb = EnsDb.Hsapiens.v86)
     seqlevelsStyle(annotations) <- "UCSC"
@@ -132,19 +126,15 @@ load_save_seurat_pbmc <- function(save_dir, keep_perc = NULL) {
 
     pbmc.atac[["ACTIVITY"]] <- CreateAssayObject(counts = gene.activities)
 
-    DefaultAssay(pbmc.atac) <- "ACTIVITY"
-    pbmc.atac <- NormalizeData(pbmc.atac)
-    pbmc.atac <- ScaleData(pbmc.atac, features = rownames(pbmc.atac))
-
     all.equal(colnames(pbmc.atac), colnames(pbmc.rna))
 
     # === corr ===
-    common_genes <- intersect(rownames(pbmc.atac[["ACTIVITY"]]), rownames(pbmc.rna$RNA$data))
+    common_genes <- intersect(rownames(pbmc.atac[["ACTIVITY"]]), rownames(pbmc.rna[["RNA"]]))
     cat("Common genes (initial):", length(common_genes), "\n")
 
     # extract matrix with shared genes
-    activity_mat <- as.matrix(GetAssayData(pbmc.atac, assay = "ACTIVITY", layer = "data")[common_genes, ])
-    rna_mat <- as.matrix(pbmc.rna$RNA$data[common_genes, ])
+    activity_mat <- as.matrix(GetAssayData(pbmc.atac, assay = "ACTIVITY", layer = "counts")[common_genes, ])
+    rna_mat <- as.matrix(GetAssayData(pbmc.rna, assay = "RNA", layer = "counts")[common_genes, ])
 
     cat("Activity dimensions (before filtering):", dim(activity_mat), "\n")
     cat("RNA dimensions (before filtering):", dim(rna_mat), "\n")
@@ -205,17 +195,21 @@ load_save_seurat_pbmc <- function(save_dir, keep_perc = NULL) {
     rna_sparsity <- rna_zero_elements / rna_total_elements * 100
     cat("INFO [final] RNA sparsity:", round(rna_sparsity, 2), "%\n")
 
+    # Save raw counts
+    dir.create(file.path(out_dir, "PBMC_RNA"), recursive = TRUE, showWarnings = FALSE)
+    dir.create(file.path(out_dir, "PBMC_ATAC"), recursive = TRUE, showWarnings = FALSE)
+
     # Activity raw counts: gene x cell
     activity_counts_df <- as.data.frame(activity_counts)
     activity_counts_df <- rownames_to_column(activity_counts_df, var = "pos") 
     activity_counts_df[1:5,1:5]
-    write_feather(activity_counts_df, paste0(out_dir, "/ATAC/activity_counts.feather"))
+    write_feather(activity_counts_df, paste0(out_dir, "/PBMC_ATAC/activity_counts.feather"))
 
     # RNA raw counts: gene x cell
     rna_counts_df <- as.data.frame(rna_counts)
     rna_counts_df <- rownames_to_column(rna_counts_df, var = "pos") 
     rna_counts_df[1:5,1:5]
-    write_feather(rna_counts_df, paste0(out_dir, "/RNA/rna_counts.feather"))
+    write_feather(rna_counts_df, paste0(out_dir, "/PBMC_RNA/rna_counts.feather"))
 
     cat("  - activity_counts.feather\n")
     cat("  - rna_counts.feather\n")
@@ -226,5 +220,5 @@ load_save_seurat_pbmc <- function(save_dir, keep_perc = NULL) {
 
 args <- commandArgs(trailingOnly = TRUE)
 
-path1 <- args[1]
-load_save_seurat_pbmc(save_dir = path1, keep_perc = NULL)
+save_dir <- args[1]
+load_save_seurat_pbmc(save_dir = save_dir, keep_perc = NULL)

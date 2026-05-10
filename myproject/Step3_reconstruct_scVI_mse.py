@@ -89,20 +89,18 @@ class DecoderSCVI(nn.Module):
                                    n_layers=n_layers, n_hidden=n_hidden, dropout_rate=0,
                                    inject_covariates=inject_covariates,
                                    use_batch_norm=use_batch_norm, use_layer_norm=use_layer_norm)
-        self.px_scale_decoder = nn.Sequential(nn.Linear(n_hidden, n_output), nn.Softmax(dim=-1))
+        self.px_scale_decoder = nn.Sequential(nn.Linear(n_hidden, n_output), nn.ReLU())
 
-    def forward(self, z, library, *cat_list):
+    def forward(self, z, *cat_list):
         px = self.px_decoder(z, *cat_list)
-        px_scale = self.px_scale_decoder(px)
-        px_rate = torch.exp(library) * px_scale
-        return px_rate
+        return self.px_scale_decoder(px)
 
 
 class ScVIModel(nn.Module):
     def __init__(self, n_input, n_hidden=128, n_latent=10, n_layers=1, dropout_rate=0.1,
                  use_batch_norm_encoder=True, use_batch_norm_decoder=True,
                  use_layer_norm_encoder=False, use_layer_norm_decoder=False,
-                 log_variational=True):
+                 log_variational=False):
         super().__init__()
         self.n_input = n_input
         self.n_latent = n_latent
@@ -117,10 +115,10 @@ class ScVIModel(nn.Module):
                                    use_layer_norm=use_layer_norm_decoder)
 
     def forward(self, x):
-        library = torch.log(x.sum(dim=1, keepdim=True) + 1e-6)
+        # library = torch.log(x.sum(dim=1, keepdim=True) + 1e-6)
         x_input = torch.log1p(x) if self.log_variational else x
         q_m, q_v, z = self.z_encoder(x_input)
-        px_rate = self.decoder(z, library)
+        px_rate = self.decoder(z)
         logvar = torch.log(q_v)
         return px_rate, q_m, logvar
 

@@ -178,14 +178,18 @@ class DecoderSCVI(nn.Module):
         )
         self.px_scale_decoder = nn.Sequential(
             nn.Linear(n_hidden, n_output),
-            nn.Softmax(dim=-1),
+            nn.ReLU(),
         )
 
-    def forward(self, z: torch.Tensor, library: torch.Tensor, *cat_list):
+    def forward(self, z: torch.Tensor, *cat_list):
         px = self.px_decoder(z, *cat_list)
-        px_scale = self.px_scale_decoder(px)
-        px_rate = torch.exp(library) * px_scale
-        return px_rate
+        return self.px_scale_decoder(px)
+    
+    # def forward(self, z: torch.Tensor, library: torch.Tensor, *cat_list):
+    #     px = self.px_decoder(z, *cat_list)
+    #     px_scale = self.px_scale_decoder(px)
+    #     px_rate = torch.exp(library) * px_scale
+    #     return px_rate
 
 
 #  Full scVI-structure model  (encoder + library + decoder, no distribution)
@@ -196,7 +200,7 @@ class ScVIModel(nn.Module):
 
     Parameters mirror scVI defaults:
       n_layers=1, n_hidden=128, n_latent=10, dropout_rate=0.1,
-      use_batch_norm encoder+decoder, log_variational=True,
+      use_batch_norm encoder+decoder, log_variational=False,
       use_observed_lib_size=True
     """
 
@@ -211,7 +215,7 @@ class ScVIModel(nn.Module):
         use_batch_norm_decoder: bool = True,
         use_layer_norm_encoder: bool = False,
         use_layer_norm_decoder: bool = False,
-        log_variational: bool = True,
+        log_variational: bool = False,
     ):
         super().__init__()
         self.n_input = n_input
@@ -249,14 +253,14 @@ class ScVIModel(nn.Module):
         logvar: latent log-variance (log of q_v)
         """
         # observed library size
-        library = torch.log(x.sum(dim=1, keepdim=True) + 1e-6)
+        # library = torch.log(x.sum(dim=1, keepdim=True) + 1e-6)
 
         # encode
         x_input = torch.log1p(x) if self.log_variational else x
         q_m, q_v, z = self.z_encoder(x_input)
 
         # decode
-        px_rate = self.decoder(z, library)
+        px_rate = self.decoder(z)
 
         # logvar for KL computation: q_v = exp(logvar) + eps  →  logvar ≈ log(q_v)
         logvar = torch.log(q_v)

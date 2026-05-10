@@ -47,8 +47,8 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
     if (!corr_method %in% c("pearson", "spearman")) {
         stop("Error: corr_method must be either 'pearson' or 'spearman'")
     }
-    if (!data_mode %in% c("default", "v1_trans_v2_trans", "v1_reverse")) {
-        stop("Error: data_mode must be 'default', 'v1_trans_v2_trans', or 'v1_reverse'")
+    if (!data_mode %in% c("default", "v1_trans_v2_trans", "v1_reverse", "v1_trans_v2_trans_norm_100000")) {
+        stop("Error: data_mode must be 'default', 'v1_trans_v2_trans', 'v1_reverse', or 'v1_trans_v2_trans_norm_100000'")
     }
 
     # Helper: apply transformation
@@ -203,6 +203,16 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
         df3 <- as.data.frame(mat3)
 
         cat(paste("data_mode: v1_reverse | reversed input & reconstruction trans:", this_trans_factor, "\n"))
+    } else if (data_mode == "v1_trans_v2_trans_norm_100000") {
+        # Same as v1_trans_v2_trans but also apply library size normalization (*100000) to ground truth (df1)
+        mat1 <- as.matrix(df1)
+        lib_sizes <- rowSums(mat1)
+        lib_sizes[lib_sizes == 0] <- 1  # avoid division by zero
+        mat1 <- mat1 / lib_sizes * 100000
+        mat1 <- apply_trans(mat1, this_trans_factor)
+        df1 <- as.data.frame(mat1)
+
+        cat(paste("data_mode: v1_trans_v2_trans_norm_100000 | ground truth library size norm *100000 + trans:", this_trans_factor, "\n"))
     }
     # Filter out all-zero columns/rows in ground truth (df1), sync df2 & df3
     n_before <- if (corr == "col") ncol(df1) else nrow(df1)

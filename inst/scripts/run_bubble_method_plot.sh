@@ -17,14 +17,14 @@ echo "READ_DIR: $READ_DIR"
 module load conda_R
 
 echo "=== Draw Bubble Plot ==="
-for gt_suffix in "" "_noGTzero"; do
+for csv_file in "${READ_DIR}"/bubble_plot_summary_*.csv; do
+    if [ ! -f "$csv_file" ]; then
+        echo "[WARN] No bubble_plot_summary_*.csv files found in ${READ_DIR}"
+        break
+    fi
+    echo "[INFO] Plotting: $csv_file"
     Rscript ../One_Shifting/R/run_plot_summary_bubble_table.R \
-        "${READ_DIR}/bubble_plot_summary_col_gene${gt_suffix}.csv" \
-        $filter_method
-
-    Rscript ../One_Shifting/R/run_plot_summary_bubble_table.R \
-        "${READ_DIR}/bubble_plot_summary_row_cell${gt_suffix}.csv" \
+        "$csv_file" \
         $filter_method
 done
-
 

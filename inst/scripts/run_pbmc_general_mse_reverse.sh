@@ -32,27 +32,44 @@ norm_factor_string=$(IFS=','; echo "${norm_factor[*]}")
 module load conda_R
 
 LOCK_FILE="$READ_DIR/.count_matrix_done"
+LOCK_DIR="$READ_DIR/.count_matrix_lock"
+MAX_WAIT=180  # 30
+
 if [ ! -f "$LOCK_FILE" ]; then
-    mkdir -p "$(dirname $LOCK_FILE)"
-    if mkdir "$READ_DIR/.count_matrix_lock" 2>/dev/null; then
-        # The job that grabs the lock is executed
-        Rscript ../One_Shifting/R/Step1_build_count_matrix.R \
-          $INPUT_FILE \
-          $GROUND_TRUTH_FILE \
-          "$READ_DIR" \
-          "$norm_factor_string" \
-          "$norm_factor_string" \
-          "TRUE" \
-          "p25"
-        touch "$LOCK_FILE"
-        rmdir "$READ_DIR/.count_matrix_lock"
-    else
-        # waiting for the job that didn't get the lock
-        echo "Waiting for count matrix to be built..."
-        while [ ! -f "$LOCK_FILE" ]; do
-            sleep 10
-        done
-    fi
+    mkdir -p "$READ_DIR"
+
+    while true; do
+        if mkdir "$LOCK_DIR" 2>/dev/null; then
+            trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
+
+            Rscript ../One_Shifting/R/Step1_build_count_matrix.R \
+              $INPUT_FILE \
+              $GROUND_TRUTH_FILE \
+              "$READ_DIR" \
+              "$norm_factor_string" \
+              "$norm_factor_string" \
+              "TRUE" \
+              "p25"
+
+            touch "$LOCK_FILE"
+            rmdir "$LOCK_DIR"
+            trap - EXIT
+            break
+        else
+            echo "Lock exists, waiting..."
+            WAIT_COUNT=0
+            while [ ! -f "$LOCK_FILE" ]; do
+                sleep 10
+                WAIT_COUNT=$((WAIT_COUNT + 1))
+                if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+                    echo "Timeout after 30min, removing stale lock and retrying..."
+                    rmdir "$LOCK_DIR" 2>/dev/null
+                    break
+                fi
+            done
+            [ -f "$LOCK_FILE" ] && break
+        fi
+    done
 fi
 echo "Count matrix ready, proceeding..."
 
@@ -71,13 +88,15 @@ echo "===Finish build count matrix==="
   
 echo "=== Starting ${method} pipeline ==="
 
-for data_mode in default v1_trans_v2_trans v1_reverse; do
+for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
     if [ "$data_mode" = "default" ]; then
         mode_suffix="v1_trans_v2_no_trans"
     elif [ "$data_mode" = "v1_trans_v2_trans" ]; then
         mode_suffix="v1_trans_v2_trans"
     elif [ "$data_mode" = "v1_reverse" ]; then
         mode_suffix="v1_reverse_v2_no_trans"
+    elif [ "$data_mode" = "v1_trans_v2_trans_norm_100000" ]; then
+        mode_suffix="v1_trans_v2_trans_norm_100000"
     fi
 
     for corr_dir in col row; do
@@ -94,7 +113,7 @@ if [ "$method" = "VAE" ]; then
 elif [ "$method" = "DCA_mse" ]; then
     METHOD_ARGS="--dropout_grid 0.0 --hidden_grid1 4096 --hidden_grid2 1024"
 elif [ "$method" = "scVI_mse" ]; then
-    METHOD_ARGS="--hidden_grid 512,256,128,64"
+    METHOD_ARGS="--beta_grid 0 --hidden_grid 512,256,128,64"
 elif [ "$method" = "Transformer_denoise" ]; then
     METHOD_ARGS="--n_tokens_grid 32 --d_model_grid 64 --nhead_grid 4 --num_layers_grid 1 --dim_feedforward_grid 128 --dropout_grid 0.1"
 fi
@@ -156,34 +175,36 @@ for this_trans_factor in "${trans_factor[@]}"; do
         echo "=== Step 7: Correlation analysis ==="
         module load conda_R
 
-        for data_mode in default v1_trans_v2_trans v1_reverse; do
+        for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
             if [ "$data_mode" = "default" ]; then
                 mode_suffix="v1_trans_v2_no_trans"
             elif [ "$data_mode" = "v1_trans_v2_trans" ]; then
                 mode_suffix="v1_trans_v2_trans"
             elif [ "$data_mode" = "v1_reverse" ]; then
                 mode_suffix="v1_reverse_v2_no_trans"
+            elif [ "$data_mode" = "v1_trans_v2_trans_norm_100000" ]; then
+                mode_suffix="v1_trans_v2_trans_norm_100000"
             fi
 
             for corr_dir in col row; do
                 Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
                 mkdir -p "$Figure_DIR"
 
-                Rscript ../One_Shifting/R/run_correlation_scatter_2_0.R \
-                  "$OUT_DIR/Count_matrix_transformed_rep2.feather" \
-                  "$OUT_DIR/Count_matrix_transformed_rep1.feather" \
-                  "$OUT_DIR/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather" \
-                  "$Figure_DIR"  \
-                  "$OUT_DIR/saved_models" \
-                  "$factor" \
-                  "$V2_norm_factor" \
-                  "$this_trans_factor" \
-                  "$V2_trans_factor" \
-                  "${Figure_DIR}" \
-                  "$corr_dir" \
-                  "${V1}" \
-                  "${method}" \
-                  "$data_mode"
+                Rscript ../One_Shifting/R/run_correlation_scatter_reverse.R \
+                    "$OUT_DIR/Count_matrix_transformed_rep2.feather" \
+                    "$OUT_DIR/Count_matrix_transformed_rep1.feather" \
+                    "$OUT_DIR/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather" \
+                    "$Figure_DIR"  \
+                    "$OUT_DIR/saved_models" \
+                    "$factor" \
+                    "$V2_norm_factor" \
+                    "$this_trans_factor" \
+                    "$V2_trans_factor" \
+                    "${Figure_DIR}" \
+                    "$corr_dir" \
+                    "${V1}" \
+                    "${method}" \
+                    "$data_mode"
             done
 
             sleep 2
@@ -193,17 +214,21 @@ for this_trans_factor in "${trans_factor[@]}"; do
     done
 done
 
+
 # === Summary steps: run after all trans_factor x norm_factor combinations are done ===
 echo "=== Post-processing: combine figures and summary ==="
 module load conda_R
 
-for data_mode in default v1_trans_v2_trans v1_reverse; do
+
+for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
     if [ "$data_mode" = "default" ]; then
         mode_suffix="v1_trans_v2_no_trans"
     elif [ "$data_mode" = "v1_trans_v2_trans" ]; then
         mode_suffix="v1_trans_v2_trans"
     elif [ "$data_mode" = "v1_reverse" ]; then
         mode_suffix="v1_reverse_v2_no_trans"
+    elif [ "$data_mode" = "v1_trans_v2_trans_norm_100000" ]; then
+        mode_suffix="v1_trans_v2_trans_norm_100000"
     fi
 
     COL_Figure_DIR="$OUTPUT_DIR/Figures_col_${mode_suffix}"
@@ -234,7 +259,7 @@ for data_mode in default v1_trans_v2_trans v1_reverse; do
         done
     done
 
-for corr_method in pearson spearman; do
+    for corr_method in pearson spearman; do
         if [ "$data_mode" = "default" ]; then
             mode_tag=""
         else

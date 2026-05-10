@@ -27,25 +27,42 @@ norm_factor_string=$(IFS=','; echo "${norm_factor[*]}")
 module load conda_R
 
 LOCK_FILE="$READ_DIR/.count_matrix_done"
+LOCK_DIR="$READ_DIR/.count_matrix_lock"
+MAX_WAIT=180  # 30 minutes
+
 if [ ! -f "$LOCK_FILE" ]; then
     mkdir -p "$(dirname $LOCK_FILE)"
-    if mkdir "$READ_DIR/.count_matrix_lock" 2>/dev/null; then
-        # The job that grabs the lock is executed
-        Rscript ../One_Shifting/R/Step1_build_count_matrix.R \
-          $INPUT_FILE \
-          $GROUND_TRUTH_FILE \
-          "$READ_DIR" \
-          "$norm_factor_string" \
-          "$norm_factor_string" 
-        touch "$LOCK_FILE"
-        rmdir "$READ_DIR/.count_matrix_lock"
-    else
-        # waiting for the job that didn't get the lock
-        echo "Waiting for count matrix to be built..."
-        while [ ! -f "$LOCK_FILE" ]; do
-            sleep 10
-        done
-    fi
+
+    while true; do
+        if mkdir "$LOCK_DIR" 2>/dev/null; then
+            trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
+
+            Rscript ../One_Shifting/R/Step1_build_count_matrix.R \
+              $INPUT_FILE \
+              $GROUND_TRUTH_FILE \
+              "$READ_DIR" \
+              "$norm_factor_string" \
+              "$norm_factor_string"
+
+            touch "$LOCK_FILE"
+            rmdir "$LOCK_DIR"
+            trap - EXIT
+            break
+        else
+            echo "Lock exists, waiting..."
+            WAIT_COUNT=0
+            while [ ! -f "$LOCK_FILE" ]; do
+                sleep 10
+                WAIT_COUNT=$((WAIT_COUNT + 1))
+                if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+                    echo "Timeout after 30min, removing stale lock and retrying..."
+                    rmdir "$LOCK_DIR" 2>/dev/null
+                    break
+                fi
+            done
+            [ -f "$LOCK_FILE" ] && break
+        fi
+    done
 fi
 echo "Count matrix ready, proceeding..."
 

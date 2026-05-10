@@ -1,4 +1,3 @@
-
 source("../One_Shifting/R/plot_multiple_umap.R")
 source("../One_Shifting/R/plot_ari_bubble.R")
 
@@ -7,6 +6,11 @@ read_dir <- args[1]
 cell_type_reference_path <- args[2] 
 data_path_df_path <- args[3]
 
+if (length(args) >= 4) {
+    clustering_methods <- strsplit(args[4], ",")[[1]]
+} else {
+    clustering_methods <- c("kmeans", "louvain", "leiden")
+}
 
 celltype_df <- read.csv(cell_type_reference_path)
 
@@ -56,6 +60,7 @@ data_names <- c(data_names, other_names)
 output_dir <- paste0(read_dir, "/plots")
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
+if ("kmeans" %in% clustering_methods) {
 result <- plot_multiple_umap(
   data_paths = data_paths,
   data_names = data_names,
@@ -68,8 +73,9 @@ result <- plot_multiple_umap(
 )
 rm(result)
 gc()
+}
 
-
+if ("louvain" %in% clustering_methods) {
 result <- plot_multiple_umap(
   data_paths = data_paths,
   data_names = data_names,
@@ -82,8 +88,9 @@ result <- plot_multiple_umap(
 )
 rm(result)
 gc()
+}
 
-
+if ("leiden" %in% clustering_methods) {
 result <- plot_multiple_umap(
   data_paths = data_paths,
   data_names = data_names,
@@ -96,7 +103,7 @@ result <- plot_multiple_umap(
 )
 rm(result)
 gc()
-
+}
 
 
 plot_ari_bubble(output_dir)

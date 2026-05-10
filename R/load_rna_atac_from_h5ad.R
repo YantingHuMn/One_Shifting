@@ -185,4 +185,5 @@ args <- commandArgs(trailingOnly = TRUE)
 path <- args[1]
 sample_name <- args[2]
 out_dir <- args[3]
+
 load_rna_atac_from_h5ad(path, sample_name, out_dir)

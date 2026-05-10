@@ -30,6 +30,7 @@ model.train(
     early_stopping_patience=args.patience,
     early_stopping_monitor="elbo_validation",
     train_size=0.9,  # 90% train, 10% val
+    datasplitter_kwargs={"drop_last": True},
 )
 
 denoised = model.get_normalized_expression()
