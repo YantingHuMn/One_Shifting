@@ -263,7 +263,7 @@ if __name__ == "__main__":
     ap.add_argument("--data_path2", required=True, help="Second feather（Ground truth）")
     ap.add_argument("--transformed_out_dir", required=True, help="Saved dir after transformation")
     ap.add_argument("--saved_models_dir", required=True, help="Saved models dir")
-    ap.add_argument("--criterion", default="inner_val_loss", 
+    ap.add_argument("--criterion", default="outer_test_loss", 
                     choices=["inner_val_loss", "outer_test_loss"],
                     help="find best fold parameters")
     ap.add_argument("--out_path", required=True, help="save dir")

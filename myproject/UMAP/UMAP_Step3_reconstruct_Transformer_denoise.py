@@ -315,7 +315,7 @@ if __name__ == "__main__":
     ap.add_argument("--data_path1", required=True, help="V1 feather file (to denoise)")
     ap.add_argument("--transformed_out_dir", required=True, help="Directory to save transformed data")
     ap.add_argument("--saved_models_dir", required=True, help="saved_models directory")
-    ap.add_argument("--criterion", default="inner_val_loss",
+    ap.add_argument("--criterion", default="outer_test_loss",
                     choices=["inner_val_loss", "outer_test_loss"],
                     help="Criterion for selecting best fold")
     ap.add_argument("--out_path", required=True, help="Output path for reconstructed data (.feather)")

@@ -28,11 +28,11 @@ run_combine_figures <- function(input_dir, way, num, col_or_row = "col") {
 
     # Find matching PNG files
     if (way == "pearson") {
-        png_files1 <- list.files(input_dir, pattern = paste0("^d_pearson_", col_or_row, "_scatter_.*\\.png$"), full.names = TRUE)
+        png_files1 <- list.files(input_dir, pattern = paste0("^d_pearson_.*", col_or_row, "_scatter_.*\\.png$"), full.names = TRUE)
         png_files2 <- list.files(input_dir, pattern = "^d_pearson_scatter_.*\\.png$", full.names = TRUE)
         png_files <- sort(unique(c(png_files1, png_files2)))
     } else if (way == "spearman") {
-        png_files1 <- list.files(input_dir, pattern = paste0("^g_spearman_", col_or_row, "_scatter_.*\\.png$"), full.names = TRUE)
+        png_files1 <- list.files(input_dir, pattern = paste0("^g_spearman_.*", col_or_row, "_scatter_.*\\.png$"), full.names = TRUE)
         png_files2 <- list.files(input_dir, pattern = "^g_spearman_scatter_.*\\.png$", full.names = TRUE)
         png_files <- sort(unique(c(png_files1, png_files2)))
     } else if (way == "roc") {

@@ -106,7 +106,8 @@ for this_trans_factor in "${trans_factor[@]}"; do
         --eval_metric val_loss \
         --trans1_grid "$this_trans_factor" \
         --nonzero_weight_grid 1.0 \
-        $METHOD_ARGS
+        $METHOD_ARGS \
+        || { echo "[ERROR] Training failed for $this_trans_factor / $factor"; continue; }
         
         # reconstruct
         SAVED_DIR="${OUT_DIR}/saved_models"

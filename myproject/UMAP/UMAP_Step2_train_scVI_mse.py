@@ -145,7 +145,8 @@ class EncoderSCVI(nn.Module):
     def forward(self, x: torch.Tensor, *cat_list):
         q = self.encoder(x, *cat_list)
         q_m = self.mean_encoder(q)
-        q_v = torch.exp(self.var_encoder(q)) + self.var_eps
+        log_q_v = torch.clamp(self.var_encoder(q), min=-20.0, max=20.0)
+        q_v = torch.exp(log_q_v) + self.var_eps
         dist = torch.distributions.Normal(q_m, q_v.sqrt())
         z = dist.rsample()
         return q_m, q_v, z
@@ -178,7 +179,7 @@ class DecoderSCVI(nn.Module):
         )
         self.px_scale_decoder = nn.Sequential(
             nn.Linear(n_hidden, n_output),
-            nn.Softmax(dim=-1),
+            nn.ReLU(),
         )
 
     def forward(self, z: torch.Tensor, library: torch.Tensor, *cat_list):
@@ -191,12 +192,12 @@ class DecoderSCVI(nn.Module):
 #  Full scVI-structure model  (encoder + library + decoder, no distribution)
 class ScVIModel(nn.Module):
     """
-    scVI architecture (encoder → z, library encoder → l, decoder → rate)
+    scVI architecture (encoder → z, decoder → reconstruction)
     with plain MSE loss instead of negative-binomial likelihood.
 
     Parameters mirror scVI defaults:
       n_layers=1, n_hidden=128, n_latent=10, dropout_rate=0.1,
-      use_batch_norm encoder+decoder, log_variational=True,
+      use_batch_norm encoder+decoder, log_variational=False,
       use_observed_lib_size=True
     """
 
@@ -211,7 +212,7 @@ class ScVIModel(nn.Module):
         use_batch_norm_decoder: bool = True,
         use_layer_norm_encoder: bool = False,
         use_layer_norm_decoder: bool = False,
-        log_variational: bool = True,
+        log_variational: bool = False,
     ):
         super().__init__()
         self.n_input = n_input
@@ -248,11 +249,14 @@ class ScVIModel(nn.Module):
         mu    : latent mean
         logvar: latent log-variance (log of q_v)
         """
-        # observed library size
-        library = torch.log(x.sum(dim=1, keepdim=True) + 1e-6)
-
         # encode
-        x_input = torch.log1p(x) if self.log_variational else x
+        if self.log_variational:
+            library = torch.log(x.sum(dim=1, keepdim=True) + 1e-6)
+            x_input = torch.log1p(x)
+        else:
+            library = torch.zeros((x.size(0), 1), device=x.device, dtype=x.dtype)
+            x_input = x
+
         q_m, q_v, z = self.z_encoder(x_input)
 
         # decode
@@ -327,11 +331,21 @@ def weighted_reconstruction_loss(recon_x, x, weight_strategy='fixed', zero_weigh
     return torch.mean(weighted_mse)
 
 
-def vae_loss(recon_x, x, mu, logvar, beta, weight_strategy='fixed', zero_weight=1.0, nonzero_weight=5.0, trans=None,):
+def vae_loss(recon_x, x, mu, logvar, beta,
+             weight_strategy='fixed', zero_weight=1.0, nonzero_weight=5.0, trans=None):
     recon_loss = weighted_reconstruction_loss(
         recon_x, x, weight_strategy, zero_weight, nonzero_weight, trans
     )
-    KLD = -0.5 * torch.mean(torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1))
+
+    if beta == 0:
+        return recon_loss
+
+    logvar_safe = torch.clamp(logvar, min=-20.0, max=20.0)
+
+    KLD = -0.5 * torch.mean(
+        torch.sum(1 + logvar_safe - mu.pow(2) - logvar_safe.exp(), dim=1)
+    )
+
     return recon_loss + beta * KLD
 
 

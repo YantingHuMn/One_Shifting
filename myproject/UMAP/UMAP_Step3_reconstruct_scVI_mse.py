@@ -89,7 +89,7 @@ class DecoderSCVI(nn.Module):
                                    n_layers=n_layers, n_hidden=n_hidden, dropout_rate=0,
                                    inject_covariates=inject_covariates,
                                    use_batch_norm=use_batch_norm, use_layer_norm=use_layer_norm)
-        self.px_scale_decoder = nn.Sequential(nn.Linear(n_hidden, n_output), nn.Softmax(dim=-1))
+        self.px_scale_decoder = nn.Sequential(nn.Linear(n_hidden, n_output), nn.ReLU())
 
     def forward(self, z, library, *cat_list):
         px = self.px_decoder(z, *cat_list)
@@ -102,7 +102,7 @@ class ScVIModel(nn.Module):
     def __init__(self, n_input, n_hidden=128, n_latent=10, n_layers=1, dropout_rate=0.1,
                  use_batch_norm_encoder=True, use_batch_norm_decoder=True,
                  use_layer_norm_encoder=False, use_layer_norm_decoder=False,
-                 log_variational=True):
+                 log_variational=False):
         super().__init__()
         self.n_input = n_input
         self.n_latent = n_latent
@@ -298,7 +298,7 @@ if __name__ == "__main__":
     ap.add_argument("--transformed_out_dir", required=True,
                     help="Directory to save Count_matrix_transformed_rep1.feather")
     ap.add_argument("--saved_models_dir", required=True, help="saved_models directory")
-    ap.add_argument("--criterion", default="inner_val_loss",
+    ap.add_argument("--criterion", default="outer_test_loss",
                     choices=["inner_val_loss", "outer_test_loss"])
     ap.add_argument("--out_path", required=True, help="Output reconstruction feather path")
     ap.add_argument("--cpu", action="store_true")

@@ -7,7 +7,18 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
         library(dplyr)
         library(patchwork)
         library(mclust)
+        library(reticulate)
     })
+
+    if (clustering_method == "leiden") {
+        if (!py_module_available("numpy")) {
+            stop("Python module 'numpy' is not available. Please configure reticulate to use a Python environment with numpy and leidenalg installed.\n",
+                 "Example: reticulate::use_condaenv('your_env_name', required = TRUE)")
+        }
+        if (!py_module_available("leidenalg")) {
+            stop("Python module 'leidenalg' is not available. Please install it: pip install leidenalg")
+        }
+    }
 
     if (length(data_paths) != length(data_names)) {
         stop("data_paths and data_names must have the same length")

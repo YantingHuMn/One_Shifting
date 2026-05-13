@@ -145,11 +145,13 @@ class EncoderSCVI(nn.Module):
     def forward(self, x: torch.Tensor, *cat_list):
         q = self.encoder(x, *cat_list)
         q_m = self.mean_encoder(q)
-        q_v = torch.exp(self.var_encoder(q)) + self.var_eps
+
+        log_q_v = torch.clamp(self.var_encoder(q), min=-20.0, max=20.0)
+        q_v = torch.exp(log_q_v) + self.var_eps
+
         dist = torch.distributions.Normal(q_m, q_v.sqrt())
         z = dist.rsample()
         return q_m, q_v, z
-
 
 #  Decoder – scVI style (FCLayers → linear heads for scale, rate, dropout)
 class DecoderSCVI(nn.Module):
@@ -331,11 +333,21 @@ def weighted_reconstruction_loss(recon_x, x, weight_strategy='fixed', zero_weigh
     return torch.mean(weighted_mse)
 
 
-def vae_loss(recon_x, x, mu, logvar, beta, weight_strategy='fixed', zero_weight=1.0, nonzero_weight=5.0, trans=None,):
+def vae_loss(recon_x, x, mu, logvar, beta,
+             weight_strategy='fixed', zero_weight=1.0, nonzero_weight=5.0, trans=None):
     recon_loss = weighted_reconstruction_loss(
         recon_x, x, weight_strategy, zero_weight, nonzero_weight, trans
     )
-    KLD = -0.5 * torch.mean(torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1))
+
+    if beta == 0:
+        return recon_loss
+
+    logvar_safe = torch.clamp(logvar, min=-20.0, max=20.0)
+
+    KLD = -0.5 * torch.mean(
+        torch.sum(1 + logvar_safe - mu.pow(2) - logvar_safe.exp(), dim=1)
+    )
+
     return recon_loss + beta * KLD
 
 
@@ -367,7 +379,7 @@ def train_one_epoch(model, loader, optimizer, device, beta, weight_strategy='fix
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
-        total += loss.item()
+        total += loss.item() * x.size(0)
         n += x.size(0)
     return total / max(n, 1)
 
@@ -381,7 +393,7 @@ def eval_loss(model, loader, device, beta, weight_strategy='fixed', zero_weight=
         x = x.to(device)
         recon, mu, logvar = model(x)
         loss = vae_loss(recon, x, mu, logvar, beta, weight_strategy, zero_weight, nonzero_weight, trans)
-        total += loss.item()
+        total += loss.item() * x.size(0)
         n += x.size(0)
     return total / max(n, 1)
 
@@ -678,6 +690,16 @@ def outer10_inner_holdout(
             fold_val_combinations.append({
                 'config_name': config_name, 'val_metric': val_metric, 'fold': fold_id
             })
+
+            if val_metric is None or not np.isfinite(val_metric):
+                print(
+                    f"[WARNING] Fold {fold_id}: invalid val_metric={val_metric}, val_loss={val_loss} "
+                    f"for threshold={threshold}, trans1={trans1}, trans2={trans2}, "
+                    f"n_hidden={n_hidden}, n_latent={n_latent}, n_layers={n_layers}, "
+                    f"lr={lr}, bs={bs}, beta={beta}, "
+                    f"zero_w={zero_w}, nonzero_w={nonzero_w}"
+                )
+                continue
 
             if val_metric < best_val:
                 best_val = val_metric

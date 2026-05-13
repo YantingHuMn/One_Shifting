@@ -98,6 +98,30 @@ rm -f "${OUTPUT_DIR}/plots_summary_spearman_col_gene_noGTzero.csv"
 rm -f "${OUTPUT_DIR}/plots_summary_pearson_row_cell_noGTzero.csv"
 rm -f "${OUTPUT_DIR}/plots_summary_spearman_row_cell_noGTzero.csv"
 
+# === delete bubble summary===
+BUBBLE_LOCK_DIR="$READ_DIR/.bubble_reset_lock"
+BUBBLE_DONE_FLAG="$READ_DIR/.bubble_reset_done"
+
+if [ ! -f "$BUBBLE_DONE_FLAG" ]; then
+    if mkdir "$BUBBLE_LOCK_DIR" 2>/dev/null; then
+        trap 'rmdir "$BUBBLE_LOCK_DIR" 2>/dev/null' EXIT
+        
+        echo "First method ($method) - clearing old bubble summaries..."
+        rm -f "${READ_DIR}"/bubble_plot_summary_*.csv
+        
+        touch "$BUBBLE_DONE_FLAG"
+        rmdir "$BUBBLE_LOCK_DIR"
+        trap - EXIT
+    else
+        echo "Waiting for bubble reset..."
+        while [ ! -f "$BUBBLE_DONE_FLAG" ]; do
+            sleep 2
+        done
+    fi
+fi
+
+echo "Bubble reset done, proceeding with $method..."
+
 if [ "$method" = "VAE" ]; then
     METHOD_ARGS="--beta_grid 0 --hidden_grid1 4096 --hidden_grid2 1024"
 elif [ "$method" = "DCA_mse" ]; then

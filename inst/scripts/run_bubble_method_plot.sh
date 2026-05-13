@@ -22,9 +22,27 @@ for csv_file in "${READ_DIR}"/bubble_plot_summary_*.csv; do
         echo "[WARN] No bubble_plot_summary_*.csv files found in ${READ_DIR}"
         break
     fi
-    echo "[INFO] Plotting: $csv_file"
-    Rscript ../One_Shifting/R/run_plot_summary_bubble_table.R \
-        "$csv_file" \
-        $filter_method
-done
 
+    if [[ "$csv_file" == *_avg_rank_perf.csv ]]; then
+        continue
+    fi
+
+    if [[ "$csv_file" == *_avg_rank_resid.csv ]]; then
+        continue
+    fi
+
+    if [[ "$csv_file" == *_table_df.csv ]]; then
+        continue
+    fi
+
+    echo "[INFO] Plotting: $csv_file"
+
+    if [ -z "$filter_method" ]; then
+        Rscript ../One_Shifting/R/run_plot_summary_bubble_table.R \
+            "$csv_file"
+    else
+        Rscript ../One_Shifting/R/run_plot_summary_bubble_table.R \
+            "$csv_file" \
+            "$filter_method"
+    fi
+done

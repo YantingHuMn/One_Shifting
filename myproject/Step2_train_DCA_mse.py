@@ -137,17 +137,38 @@ def train_one_epoch(model, loader, optimizer, device, weight_strategy='fixed',
     model.train()
     total = 0.0
     n = 0
-    for (x,) in loader:
+
+    for batch_idx, (x,) in enumerate(loader):
         x = x.to(device)
+
+        if not torch.isfinite(x).all():
+            print(f"  [ERROR] NaN/Inf in input batch {batch_idx}, trans={trans}")
+            return float("inf")
+
         optimizer.zero_grad()
         recon, z = model(x)
-        loss = weighted_mse_loss(recon, x, weight_strategy, zero_weight, nonzero_weight, trans)
-        loss.backward()
-        optimizer.step()
-        total += loss.item()
-        n += x.size(0)
-    return total / max(n, 1)
 
+        if not torch.isfinite(recon).all():
+            print(f"  [ERROR] NaN/Inf in reconstruction at batch {batch_idx}, trans={trans}")
+            return float("inf")
+
+        loss = weighted_mse_loss(recon, x, weight_strategy, zero_weight, nonzero_weight, trans)
+
+        if not torch.isfinite(loss):
+            print(
+                f"  [ERROR] NaN/Inf training loss: {loss.item()}, "
+                f"trans={trans}, zero_w={zero_weight}, nonzero_w={nonzero_weight}"
+            )
+            return float("inf")
+
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        optimizer.step()
+
+        total += loss.item() * x.size(0)
+        n += x.size(0)
+
+    return total / max(n, 1)
 
 @torch.no_grad()
 def eval_loss(model, loader, device, weight_strategy='fixed',
@@ -155,12 +176,32 @@ def eval_loss(model, loader, device, weight_strategy='fixed',
     model.eval()
     total = 0.0
     n = 0
-    for (x,) in loader:
+
+    for batch_idx, (x,) in enumerate(loader):
         x = x.to(device)
+
+        if not torch.isfinite(x).all():
+            print(f"  [ERROR] NaN/Inf in eval input batch {batch_idx}, trans={trans}")
+            return float("inf")
+
         recon, z = model(x)
+
+        if not torch.isfinite(recon).all():
+            print(f"  [ERROR] NaN/Inf in eval reconstruction at batch {batch_idx}, trans={trans}")
+            return float("inf")
+
         loss = weighted_mse_loss(recon, x, weight_strategy, zero_weight, nonzero_weight, trans)
-        total += loss.item()
+
+        if not torch.isfinite(loss):
+            print(
+                f"  [ERROR] NaN/Inf eval loss: {loss.item()}, "
+                f"trans={trans}, zero_w={zero_weight}, nonzero_w={nonzero_weight}"
+            )
+            return float("inf")
+
+        total += loss.item() * x.size(0)
         n += x.size(0)
+
     return total / max(n, 1)
 
 
@@ -442,6 +483,16 @@ def outer10_inner_holdout(
                 'val_metric': val_metric,
                 'fold': fold_id
             })
+
+            if val_metric is None or not np.isfinite(val_metric):
+                print(
+                    f"[WARNING] Fold {fold_id}: invalid val_metric={val_metric}, val_loss={val_loss} "
+                    f"for threshold={threshold}, trans1={trans1}, trans2={trans2}, "
+                    f"hidden_dim1={hidden_dim1}, hidden_dim2={hidden_dim2}, latent_dim={latent_dim}, "
+                    f"lr={lr}, bs={bs}, dropout={dropout}, "
+                    f"zero_w={zero_w}, nonzero_w={nonzero_w}"
+                )
+                continue
 
             if val_metric < best_val:
                 best_val = val_metric
