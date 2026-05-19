@@ -78,6 +78,7 @@ source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate r_anndata
 
 export PYTHONNOUSERSITE=1
+export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}"
 
 module load R/4.4.0+Bioconductor
 
