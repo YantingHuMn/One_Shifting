@@ -73,7 +73,23 @@ echo "First few input/sample pairs:"
 head "$pair_tsv"
 
 # Step 3: Create Count Matrix
+module load anaconda3/2023.09
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate r_anndata
+
+export PYTHONNOUSERSITE=1
+
 module load R/4.4.0+Bioconductor
+
+export RETICULATE_PYTHON="$(which python)"
+
+echo "Using Python:"
+which python
+python -c "import anndata, h5py, numpy; print('anndata', anndata.__version__); print('h5py', h5py.__version__); print('numpy', numpy.__version__)"
+
+echo "Using Rscript:"
+which Rscript
+Rscript --version
 
 tail -n +2 "$pair_tsv" | while IFS=$'\t' read -r input_path sample_name; do
     if [[ -z "$input_path" || -z "$sample_name" ]]; then
@@ -100,5 +116,4 @@ tail -n +2 "$pair_tsv" | while IFS=$'\t' read -r input_path sample_name; do
         echo "Exit status: $status"
         exit "$status"
     fi
-
 done
