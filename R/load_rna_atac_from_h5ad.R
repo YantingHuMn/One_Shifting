@@ -14,21 +14,22 @@ load_rna_atac_from_h5ad <- function(path, sample_name, out_dir, upstream = 2000)
     save_sample_hist <- function(mat, out_file, title, sample_frac = 0.10, max_sample = 1e6, x_max = 40) {
         nr <- nrow(mat)
         nc <- ncol(mat)
-        total_n <- nr * nc
-
+        total_n <- as.numeric(nr) * as.numeric(nc)
+    
         sample_size <- min(ceiling(total_n * sample_frac), max_sample)
-
+        sample_size <- as.integer(sample_size)
+    
         set.seed(123)
         sample_idx <- sample.int(total_n, size = sample_size, replace = FALSE)
-
+    
         sample_rows <- ((sample_idx - 1) %% nr) + 1
         sample_cols <- ((sample_idx - 1) %/% nr) + 1
-
+    
         sampled_values <- as.numeric(mat[cbind(sample_rows, sample_cols)])
         sampled_values <- sampled_values[is.finite(sampled_values)]
-
+    
         png(out_file, width = 1200, height = 800, res = 150)
-
+    
         hist(
             sampled_values[sampled_values <= x_max],
             breaks = seq(-0.5, x_max + 0.5, by = 1),
@@ -37,9 +38,9 @@ load_rna_atac_from_h5ad <- function(path, sample_name, out_dir, upstream = 2000)
             xlab = "Count",
             ylab = "Proportion"
         )
-
+    
         dev.off()
-
+    
         cat("Saved histogram:", out_file, "\n")
         cat("Sampled zero proportion:", mean(sampled_values == 0), "\n")
     }
