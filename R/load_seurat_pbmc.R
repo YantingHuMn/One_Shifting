@@ -11,6 +11,39 @@ load_save_seurat_pbmc <- function(save_dir, keep_perc = NULL) {
         library(tibble)
     })
 
+    save_sample_hist <- function(mat, out_file, title, sample_frac = 0.10, max_sample = 1e6, x_max = 40) {
+        nr <- nrow(mat)
+        nc <- ncol(mat)
+        total_n <- nr * nc
+
+        sample_size <- min(ceiling(total_n * sample_frac), max_sample)
+
+        set.seed(123)
+        sample_idx <- sample.int(total_n, size = sample_size, replace = FALSE)
+
+        sample_rows <- ((sample_idx - 1) %% nr) + 1
+        sample_cols <- ((sample_idx - 1) %/% nr) + 1
+
+        sampled_values <- as.numeric(mat[cbind(sample_rows, sample_cols)])
+        sampled_values <- sampled_values[is.finite(sampled_values)]
+
+        png(out_file, width = 1200, height = 800, res = 150)
+
+        hist(
+            sampled_values[sampled_values <= x_max],
+            breaks = seq(-0.5, x_max + 0.5, by = 1),
+            probability = TRUE,
+            main = paste0(title, "\n10% sampled entries including zeros; n = ", sample_size),
+            xlab = "Count",
+            ylab = "Proportion"
+        )
+
+        dev.off()
+
+        cat("Saved histogram:", out_file, "\n")
+        cat("Sampled zero proportion:", mean(sampled_values == 0), "\n")
+    }
+
     out_dir <- save_dir
     if (!dir.exists(out_dir)) {
         dir.create(out_dir, recursive = TRUE)
@@ -158,7 +191,7 @@ load_save_seurat_pbmc <- function(save_dir, keep_perc = NULL) {
 
     ## cell corr
     temp_cell_cor <- sapply(1:ncol(activity_mat), function(x) {
-    cor(activity_mat[, x], rna_mat[, x])
+        cor(activity_mat[, x], rna_mat[, x])
     })
     names(temp_cell_cor) <- colnames(activity_mat)
 
@@ -167,7 +200,7 @@ load_save_seurat_pbmc <- function(save_dir, keep_perc = NULL) {
 
     ## gene corr
     temp_gene_cor <- sapply(1:nrow(activity_mat), function(x) {
-    cor(activity_mat[x, ], rna_mat[x, ])
+        cor(activity_mat[x, ], rna_mat[x, ])
     })
     names(temp_gene_cor) <- rownames(activity_mat)
 
@@ -204,15 +237,33 @@ load_save_seurat_pbmc <- function(save_dir, keep_perc = NULL) {
     activity_counts_df <- rownames_to_column(activity_counts_df, var = "pos") 
     activity_counts_df[1:5,1:5]
     write_feather(activity_counts_df, paste0(out_dir, "/PBMC_ATAC/activity_counts.feather"))
+    save_sample_hist(
+        atac_counts,
+        paste0(out_dir, "/PBMC_ATAC/atac_peak_counts_hist.png"),
+        "PBMC ATAC peak-level counts histogram (10% sample)"
+    )
+    save_sample_hist(
+        activity_counts,
+        paste0(out_dir, "/PBMC_ATAC/activity_counts_hist.png"),
+        "PBMC ATAC activity histogram (10% sample)"
+    )
 
     # RNA raw counts: gene x cell
     rna_counts_df <- as.data.frame(rna_counts)
     rna_counts_df <- rownames_to_column(rna_counts_df, var = "pos") 
     rna_counts_df[1:5,1:5]
     write_feather(rna_counts_df, paste0(out_dir, "/PBMC_RNA/rna_counts.feather"))
+    save_sample_hist(
+        rna_counts,
+        paste0(out_dir, "/PBMC_RNA/rna_counts_hist.png"),
+        "PBMC RNA counts histogram (10% sample)"
+    )
 
     cat("  - activity_counts.feather\n")
     cat("  - rna_counts.feather\n")
+    cat("  - atac_peak_counts_hist.png\n")
+    cat("  - activity_counts_hist.png\n")
+    cat("  - rna_counts_hist.png\n")
 
     return(list(rna_counts = rna_counts, activity_counts_df = activity_counts_df))
 }

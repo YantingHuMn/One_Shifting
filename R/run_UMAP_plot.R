@@ -1,5 +1,6 @@
 source("../One_Shifting/R/plot_multiple_umap.R")
 source("../One_Shifting/R/plot_ari_bubble.R")
+source("../One_Shifting/R/plot_ari_bubble_trans.R")
 
 args <- commandArgs(trailingOnly = TRUE)
 read_dir <- args[1]
@@ -106,5 +107,5 @@ gc()
 }
 
 
-plot_ari_bubble(output_dir)
+# plot_ari_bubble(output_dir)
 plot_ari_bubble_trans(output_dir)

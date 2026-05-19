@@ -11,6 +11,39 @@ load_rna_atac_from_h5ad <- function(path, sample_name, out_dir, upstream = 2000)
         library(arrow)
     })
 
+    save_sample_hist <- function(mat, out_file, title, sample_frac = 0.10, max_sample = 1e6, x_max = 40) {
+        nr <- nrow(mat)
+        nc <- ncol(mat)
+        total_n <- nr * nc
+
+        sample_size <- min(ceiling(total_n * sample_frac), max_sample)
+
+        set.seed(123)
+        sample_idx <- sample.int(total_n, size = sample_size, replace = FALSE)
+
+        sample_rows <- ((sample_idx - 1) %% nr) + 1
+        sample_cols <- ((sample_idx - 1) %/% nr) + 1
+
+        sampled_values <- as.numeric(mat[cbind(sample_rows, sample_cols)])
+        sampled_values <- sampled_values[is.finite(sampled_values)]
+
+        png(out_file, width = 1200, height = 800, res = 150)
+
+        hist(
+            sampled_values[sampled_values <= x_max],
+            breaks = seq(-0.5, x_max + 0.5, by = 1),
+            probability = TRUE,
+            main = paste0(title, "\n10% sampled entries including zeros; n = ", sample_size),
+            xlab = "Count",
+            ylab = "Proportion"
+        )
+
+        dev.off()
+
+        cat("Saved histogram:", out_file, "\n")
+        cat("Sampled zero proportion:", mean(sampled_values == 0), "\n")
+    }
+
     adata <- read_h5ad(path)
     mat <- adata$X
     mat <- t(mat)
@@ -176,8 +209,27 @@ load_rna_atac_from_h5ad <- function(path, sample_name, out_dir, upstream = 2000)
     write_feather(rna_counts_df, file.path(out_dir, paste0(sample_name, "_RNA"), "rna_counts.feather"))
     write_feather(activity_counts_df, file.path(out_dir, paste0(sample_name, "_ATAC"), "activity_counts.feather"))
 
+    save_sample_hist(
+        atac_mat,
+        file.path(out_dir, paste0(sample_name, "_ATAC"), "atac_peak_counts_hist.png"),
+        paste0(sample_name, " ATAC peak-level counts histogram (10% sample)")
+    )
+    save_sample_hist(
+        rna_counts,
+        file.path(out_dir, paste0(sample_name, "_RNA"), "rna_counts_hist.png"),
+        paste0(sample_name, " RNA counts histogram (10% sample)")
+    )
+    save_sample_hist(
+        activity_counts,
+        file.path(out_dir, paste0(sample_name, "_ATAC"), "activity_counts_hist.png"),
+        paste0(sample_name, " ATAC activity histogram (10% sample)")
+    )
+
     cat("  - rna_counts.feather\n")
     cat("  - activity_counts.feather\n")
+    cat("  - atac_peak_counts_hist.png\n")
+    cat("  - rna_counts_hist.png\n")
+    cat("  - activity_counts_hist.png\n")
     cat("Files saved to:", out_dir, "\n")
 }
 

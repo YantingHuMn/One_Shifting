@@ -173,9 +173,14 @@ def parse_grid(s, typ=int):
     return [typ(x) for x in s.split(",") if x.strip() != ""]
 
 
-def make_loader(X, idx, batch_size, shuffle):
+def make_loader(X, idx, batch_size, shuffle, drop_last=False):
     subset = Subset(TensorDataset(X), idx)
-    return DataLoader(subset, batch_size=batch_size, shuffle=shuffle)
+    return DataLoader(
+        subset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        drop_last=drop_last
+    )
 
 
 def _apply_trans(df, trans):
@@ -193,12 +198,18 @@ def _apply_trans(df, trans):
         df.iloc[:, 1:] = np.sqrt(df.iloc[:, 1:] + 10)
     elif trans == "sqrt+1_then_minus_1":
         df.iloc[:, 1:] = np.sqrt(df.iloc[:, 1:] + 1) - 1
+    elif trans == "count+1":
+        df.iloc[:, 1:] = df.iloc[:, 1:] + 1
+    elif trans == "log(count+2)":
+        df.iloc[:, 1:] = np.log(df.iloc[:, 1:] + 2)
     elif trans == "log2(count+2)":
         df.iloc[:, 1:] = np.log2(df.iloc[:, 1:] + 2)
     elif trans == "log2(count+1)+1":
         df.iloc[:, 1:] = np.log2(df.iloc[:, 1:] + 1) + 1
     elif trans == "no_trans":
         pass
+    else:
+        raise ValueError(f"Unknown transformation: {trans}")
 
 
 def filter_and_transform(df1, threshold_value, trans1, data_path1=None, save=False):
@@ -284,8 +295,6 @@ def outer10_inner_holdout(
     fold_test_losses = []
 
     all_val_results = []
-    all_test_results = []
-
     for fold_id, (outer_train_idx, outer_test_idx) in enumerate(kf.split(df1_raw), 1):
         print(f"\n========== Fold {fold_id}/{n_splits} ==========")
         tr_idx, val_idx = train_test_split(outer_train_idx, test_size=inner_val_frac, random_state=seed, shuffle=True)
@@ -294,7 +303,6 @@ def outer10_inner_holdout(
         best_val = float("inf")
 
         fold_val_combinations = []
-        fold_test_combinations = []
 
         print(f"[Fold {fold_id}] Evaluating all hyperparameter combinations on validation set...")
         for threshold, trans1, hidden_dim1, hidden_dim2, latent_dim, lr, bs, dropout, zero_w, nonzero_w in product(
@@ -305,8 +313,8 @@ def outer10_inner_holdout(
             X = tensor_cache[cache_key]
             input_dim = X.shape[1]
 
-            tr_loader = make_loader(X, tr_idx, batch_size=bs, shuffle=True)
-            val_loader = make_loader(X, val_idx, batch_size=bs, shuffle=False)
+            tr_loader = make_loader(X, tr_idx, batch_size=bs, shuffle=True, drop_last=True)
+            val_loader = make_loader(X, val_idx, batch_size=bs, shuffle=False, drop_last=False)
 
             model = DCA(input_dim, hidden_dim1, hidden_dim2, latent_dim, dropout_rate=dropout).to(device)
             optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -325,7 +333,7 @@ def outer10_inner_holdout(
 
             val_loss = eval_loss(model, val_loader, device, weight_strategy, zero_w, nonzero_w, trans1)
 
-            config_name = f"{zero_w}_{nonzero_w}_{trans1}_{threshold}_{hidden_dim1}_{hidden_dim2}_{latent_dim}_{dropout}"
+            config_name = f"{zero_w}_{nonzero_w}_{trans1}_{threshold}_{hidden_dim1}_{hidden_dim2}_{latent_dim}_{lr}_{bs}_{dropout}"
             fold_val_combinations.append({
                 'config_name': config_name,
                 'val_metric': val_loss,
@@ -349,96 +357,87 @@ def outer10_inner_holdout(
         fold_best_cfgs.append(best_cfg)
         fold_val_losses.append(best_val)
 
-        # Retrain all configs on full training set and evaluate on test set
-        print(f"[Fold {fold_id}] Retraining all combinations on full training set...")
+        # Retrain only the best config on full training set and evaluate on test set
+        print(f"[Fold {fold_id}] Retraining best config on full training set...")
         train_idx_full = outer_train_idx
 
-        for threshold, trans1, hidden_dim1, hidden_dim2, latent_dim, lr, bs, dropout, zero_w, nonzero_w in product(
-            threshold_grid, trans1_grid, hidden_grid1, hidden_grid2, latent_grid, lr_grid, bs_grid,
-            dropout_grid, zero_weight_grid, nonzero_weight_grid):
+        threshold = best_cfg["threshold"]
+        trans1 = best_cfg["trans1"]
+        hidden_dim1 = best_cfg["hidden_dim1"]
+        hidden_dim2 = best_cfg["hidden_dim2"]
+        latent_dim = best_cfg["latent_dim"]
+        lr = best_cfg["lr"]
+        bs = best_cfg["batch_size"]
+        dropout = best_cfg["dropout"]
+        zero_w = best_cfg["zero_weight"]
+        nonzero_w = best_cfg["nonzero_weight"]
 
-            cache_key = (threshold, trans1)
-            X = tensor_cache[cache_key]
-            input_dim = X.shape[1]
+        cache_key = (threshold, trans1)
+        X = tensor_cache[cache_key]
+        input_dim = X.shape[1]
 
-            use_outer_val = (outer_es_val_frac > 0.0)
-            if use_outer_val:
-                tr_full_idx, outer_val_idx = train_test_split(train_idx_full, test_size=outer_es_val_frac, random_state=seed, shuffle=True)
-            else:
-                tr_full_idx = train_idx_full
+        use_outer_val = (outer_es_val_frac > 0.0)
+        if use_outer_val:
+            tr_full_idx, outer_val_idx = train_test_split(train_idx_full, test_size=outer_es_val_frac, random_state=seed, shuffle=True)
+        else:
+            tr_full_idx = train_idx_full
 
-            train_loader_full = make_loader(X, tr_full_idx, batch_size=bs, shuffle=True)
-            if use_outer_val:
-                outer_val_loader = make_loader(X, outer_val_idx, batch_size=bs, shuffle=False)
+        train_loader_full = make_loader(X, tr_full_idx, batch_size=bs, shuffle=True, drop_last=True)
+        if use_outer_val:
+            outer_val_loader = make_loader(X, outer_val_idx, batch_size=bs, shuffle=False, drop_last=False)
 
-            model = DCA(input_dim, hidden_dim1, hidden_dim2, latent_dim, dropout_rate=dropout).to(device)
-            optimizer = optim.Adam(model.parameters(), lr=lr)
+        model = DCA(input_dim, hidden_dim1, hidden_dim2, latent_dim, dropout_rate=dropout).to(device)
+        optimizer = optim.Adam(model.parameters(), lr=lr)
 
-            if early_stop:
-                es_outer = EarlyStopping(patience=patience, min_delta=min_delta)
-            for ep in range(1, epochs_outer + 1):
-                tr_loss = train_one_epoch(model, train_loader_full, optimizer, device,
-                                          weight_strategy, zero_w, nonzero_w, trans1)
-                if early_stop and (ep % check_every == 0):
-                    if use_outer_val:
-                        monitor = eval_loss(model, outer_val_loader, device,
-                                            weight_strategy, zero_w, nonzero_w, trans1)
-                    else:
-                        monitor = tr_loss
+        if early_stop:
+            es_outer = EarlyStopping(patience=patience, min_delta=min_delta)
+        for ep in range(1, epochs_outer + 1):
+            tr_loss = train_one_epoch(model, train_loader_full, optimizer, device,
+                                      weight_strategy, zero_w, nonzero_w, trans1)
+            if early_stop and (ep % check_every == 0):
+                if use_outer_val:
+                    monitor = eval_loss(model, outer_val_loader, device,
+                                        weight_strategy, zero_w, nonzero_w, trans1)
+                else:
+                    monitor = tr_loss
 
-                    if es_outer.step(monitor, model):
-                        tag = "val" if use_outer_val else "train"
-                        print(f"[outer retrain] early-stopped at epoch {ep}, best_{tag}={es_outer.best:.4f}", flush=True)
-                        if es_outer.best_state is not None:
-                            model.load_state_dict(es_outer.best_state)
-                        break
+                if es_outer.step(monitor, model):
+                    tag = "val" if use_outer_val else "train"
+                    print(f"[outer retrain] early-stopped at epoch {ep}, best_{tag}={es_outer.best:.4f}", flush=True)
+                    if es_outer.best_state is not None:
+                        model.load_state_dict(es_outer.best_state)
+                    break
 
-            test_loader = make_loader(X, outer_test_idx, batch_size=bs, shuffle=False)
-            test_loss = eval_loss(model, test_loader, device,
-                                  weight_strategy, zero_w, nonzero_w, trans1)
+        test_loader = make_loader(X, outer_test_idx, batch_size=bs, shuffle=False, drop_last=False)
+        test_loss = eval_loss(model, test_loader, device,
+                              weight_strategy, zero_w, nonzero_w, trans1)
 
-            config_name = f"{zero_w}_{nonzero_w}_{trans1}_{threshold}_{hidden_dim1}_{hidden_dim2}_{latent_dim}_{dropout}"
-            fold_test_combinations.append({
-                'config_name': config_name,
-                'test_metric': test_loss,
-                'fold': fold_id
-            })
+        fold_test_losses.append(test_loss)
 
-            # Save model if this is the best config
-            if (threshold == best_cfg["threshold"] and trans1 == best_cfg["trans1"] and
-                hidden_dim1 == best_cfg["hidden_dim1"] and hidden_dim2 == best_cfg["hidden_dim2"] and
-                latent_dim == best_cfg["latent_dim"] and lr == best_cfg["lr"] and
-                bs == best_cfg["batch_size"] and dropout == best_cfg["dropout"] and
-                zero_w == best_cfg["zero_weight"] and nonzero_w == best_cfg["nonzero_weight"]):
-
-                fold_test_losses.append(test_loss)
-
-                fold_dir = os.path.join(save_dir, f"fold_{fold_id}")
-                os.makedirs(fold_dir, exist_ok=True)
-                torch.save(model.state_dict(), os.path.join(fold_dir, "dca_weights.pt"))
-                with open(os.path.join(fold_dir, "dca_config.json"), "w") as f:
-                    json.dump({
-                        "input_dim": int(input_dim),
-                        "threshold": float(best_cfg["threshold"]),
-                        "trans1": str(best_cfg["trans1"]),
-                        "hidden_dim1": int(best_cfg["hidden_dim1"]),
-                        "hidden_dim2": int(best_cfg["hidden_dim2"]),
-                        "latent_dim": int(best_cfg["latent_dim"]),
-                        "lr": float(best_cfg["lr"]),
-                        "batch_size": int(best_cfg["batch_size"]),
-                        "dropout": float(best_cfg["dropout"]),
-                        "zero_weight": float(best_cfg["zero_weight"]),
-                        "nonzero_weight": float(best_cfg["nonzero_weight"]),
-                        "weight_strategy": weight_strategy,
-                        "eval_metric": eval_metric,
-                        "inner_val_loss": float(best_val),
-                        "outer_test_loss": float(test_loss),
-                        "seed": int(seed)
-                    }, f)
-                print(f"[Test - Best Config] Test_loss={test_loss:.4f}")
-                print(f"[SAVE] saved to: {fold_dir}")
-
-        all_test_results.extend(fold_test_combinations)
+        fold_dir = os.path.join(save_dir, f"fold_{fold_id}")
+        os.makedirs(fold_dir, exist_ok=True)
+        torch.save(model.state_dict(), os.path.join(fold_dir, "dca_weights.pt"))
+        with open(os.path.join(fold_dir, "dca_config.json"), "w") as f:
+            json.dump({
+                "input_dim": int(input_dim),
+                "threshold": float(best_cfg["threshold"]),
+                "trans1": str(best_cfg["trans1"]),
+                "hidden_dim1": int(best_cfg["hidden_dim1"]),
+                "hidden_dim2": int(best_cfg["hidden_dim2"]),
+                "latent_dim": int(best_cfg["latent_dim"]),
+                "lr": float(best_cfg["lr"]),
+                "batch_size": int(best_cfg["batch_size"]),
+                "dropout": float(best_cfg["dropout"]),
+                "zero_weight": float(best_cfg["zero_weight"]),
+                "nonzero_weight": float(best_cfg["nonzero_weight"]),
+                "weight_strategy": weight_strategy,
+                "eval_metric": eval_metric,
+                "inner_val_loss": float(best_val),
+                "outer_test_loss": float(test_loss),
+                "seed": int(seed)
+            }, f)
+        print(f"[Test - Best Config] Test_loss={test_loss:.4f}")
+        print(f"[SAVE] saved to: {fold_dir}")
 
     # Validation results
     val_df = pd.DataFrame(all_val_results)
@@ -449,22 +448,9 @@ def outer10_inner_holdout(
     val_df_grouped.to_csv(val_path, index=False)
     print(f"\n[SAVE] All validation results saved to: {val_path}")
 
-    # Test results
-    test_df = pd.DataFrame(all_test_results)
-    test_df_grouped = test_df.groupby('config_name')['test_metric'].mean().reset_index()
-    test_df_grouped.columns = ['config_name', 'mean_test_metric']
-    test_df_grouped = test_df_grouped.sort_values('mean_test_metric')
-    test_path = os.path.join(save_dir, 'all_test_results.csv')
-    test_df_grouped.to_csv(test_path, index=False)
-    print(f"[SAVE] All test results saved to: {test_path}")
-
     print(f"\n{'='*60}")
     print("TOP 5 CONFIGURATIONS BY VALIDATION METRIC:")
     print(val_df_grouped.head())
-
-    print(f"\n{'='*60}")
-    print("TOP 5 CONFIGURATIONS BY TEST METRIC:")
-    print(test_df_grouped.head())
 
     mean_test = float(np.mean(fold_test_losses))
     std_test = float(np.std(fold_test_losses, ddof=1)) if len(fold_test_losses) > 1 else 0.0
@@ -477,15 +463,15 @@ def outer10_inner_holdout(
         "test_losses_per_fold": fold_test_losses,
         "test_loss_mean": mean_test,
         "test_loss_sd": std_test,
-        "validation_df": val_df_grouped,
-        "test_df": test_df_grouped
+        "validation_df": val_df_grouped
     }
 
 
 def main(args):
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
-    torch.cuda.manual_seed_all(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
@@ -577,7 +563,7 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--cpu', action='store_true')
     parser.add_argument('--out_summary', type=str, required=True)
-    parser.add_argument('--early_stop', action='store_true', default=True)
+    parser.add_argument('--early_stop', action='store_true', default=False)
     parser.add_argument('--patience', type=int, default=10)
     parser.add_argument('--min_delta', type=float, default=0.001)
     parser.add_argument('--check_every', type=int, default=1)

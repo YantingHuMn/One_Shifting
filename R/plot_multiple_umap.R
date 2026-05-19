@@ -7,18 +7,7 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
         library(dplyr)
         library(patchwork)
         library(mclust)
-        library(reticulate)
     })
-
-    if (clustering_method == "leiden") {
-        if (!py_module_available("numpy")) {
-            stop("Python module 'numpy' is not available. Please configure reticulate to use a Python environment with numpy and leidenalg installed.\n",
-                 "Example: reticulate::use_condaenv('your_env_name', required = TRUE)")
-        }
-        if (!py_module_available("leidenalg")) {
-            stop("Python module 'leidenalg' is not available. Please install it: pip install leidenalg")
-        }
-    }
 
     if (length(data_paths) != length(data_names)) {
         stop("data_paths and data_names must have the same length")
@@ -38,6 +27,31 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
     output_dir <- file.path(output_dir, clustering_method)
     dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
     
+    run_find_clusters_safe <- function(obj, resolution, algorithm, verbose = FALSE) {
+        tryCatch(
+            FindClusters(obj, resolution = resolution, algorithm = algorithm, verbose = verbose),
+            error = function(e) {
+                msg <- conditionMessage(e)
+                if (algorithm == 4 && grepl("numpy|leidenalg|igraph|reticulate|python|ModuleNotFoundError|No module named", msg, ignore.case = TRUE)) {
+                    stop(
+                        "Leiden clustering failed. This may be due to the Python environment used by Seurat/reticulate.\n\n",
+                        "Original error:\n",
+                        msg, "\n\n",
+                        "If needed, please install the required Python packages in the environment used by R/reticulate:\n",
+                        "  conda install -c conda-forge numpy leidenalg python-igraph\n",
+                        "or:\n",
+                        "  pip install numpy leidenalg igraph\n\n",
+                        "Alternatively, set RETICULATE_PYTHON before running R, for example:\n",
+                        "  export RETICULATE_PYTHON=/path/to/python\n",
+                        call. = FALSE
+                    )
+                } else {
+                    stop(e)
+                }
+            }
+        )
+    }
+
     process_one <- function(feather_path, data_name) {
         cat(paste0("\n===== Processing: ", data_name, " =====\n"))
         
@@ -120,7 +134,7 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
             best_res <- 0.8
             best_ari <- -1
             for (res in seq(0.1, 2.0, by = 0.1)) {
-                obj_temp <- FindClusters(obj, resolution = res, algorithm = algorithm, verbose = FALSE)
+                obj_temp <- run_find_clusters_safe(obj, resolution = res, algorithm = algorithm, verbose = FALSE)
                 temp_labels <- as.character(obj_temp$seurat_clusters)
                 temp_true <- obj_temp$cell_type
                 temp_valid <- temp_true != "Unknown"
@@ -130,7 +144,7 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
                     best_res <- res
                 }
             }
-            obj <- FindClusters(obj, resolution = best_res, algorithm = algorithm, verbose = FALSE)
+            obj <- run_find_clusters_safe(obj, resolution = best_res, algorithm = algorithm, verbose = FALSE)
             cluster_labels <- as.character(obj$seurat_clusters)
             obj$self_cluster <- cluster_labels
         } else {

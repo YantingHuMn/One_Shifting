@@ -16,14 +16,20 @@ from pathlib import Path
 import collections
 
 
-#  FCLayers – faithful re-implementation of scvi.nn.FCLayers
+# FCLayers – scVI-style fully connected block
 class FCLayers(nn.Module):
-    """Fully-connected layers with optional BatchNorm, LayerNorm, covariate injection.
+    """Fully-connected layers inspired by scvi-tools FCLayers.
 
-    Network architecture faithfully reproduces scvi-tools VAE:
-    Encoder:  FCLayers (with BatchNorm, inject_covariates) → mu / logvar → reparameterize
-    Library:  FCLayers (1-layer) → log-library mean / var  (observed library size shortcut)
-    Decoder:  FCLayers (with BatchNorm, inject_covariates) → Softmax(scale) * library → rate
+    This block supports BatchNorm, LayerNorm, dropout, activation, and optional
+    covariate injection. In this script, no covariates are used, so it acts as a
+    BatchNorm/dropout MLP block.
+
+    The overall model is scVI-inspired, but it is not a full scVI likelihood model:
+    - the encoder uses a Gaussian latent variable z;
+    - the decoder maps z back to the input dimension with a ReLU output;
+    - reconstruction is trained with MSE / weighted MSE;
+    - NB/ZINB likelihood, dispersion, dropout probability, softmax scale,
+      and library-size rate parameterization are removed.
     """
 
     def __init__(
@@ -153,8 +159,14 @@ class EncoderSCVI(nn.Module):
         z = dist.rsample()
         return q_m, q_v, z
 
-#  Decoder – scVI style (FCLayers → linear heads for scale, rate, dropout)
+# Decoder – scVI-inspired decoder block for MSE reconstruction
 class DecoderSCVI(nn.Module):
+    """Decoder using scVI-style FCLayers followed by a ReLU output head.
+
+    Unlike the original scVI decoder, this decoder does not use softmax gene
+    proportions, library-size scaling, NB/ZINB parameters, or dropout logits.
+    It directly outputs a non-negative reconstruction on the transformed count scale.
+    """
     def __init__(
         self,
         n_input: int,
@@ -194,16 +206,33 @@ class DecoderSCVI(nn.Module):
     #     return px_rate
 
 
-#  Full scVI-structure model  (encoder + library + decoder, no distribution)
+# Full scVI-structure model
 class ScVIModel(nn.Module):
     """
-    scVI architecture (encoder → z, library encoder → l, decoder → rate)
-    with plain MSE loss instead of negative-binomial likelihood.
+    scVI-inspired VAE architecture with MSE reconstruction.
 
-    Parameters mirror scVI defaults:
-      n_layers=1, n_hidden=128, n_latent=10, dropout_rate=0.1,
-      use_batch_norm encoder+decoder, log_variational=False,
-      use_observed_lib_size=True
+    This model keeps the main scVI-style latent encoder structure:
+      input -> FCLayers with BatchNorm/dropout -> latent mean/variance -> z
+
+    It uses a simplified decoder:
+      z -> FCLayers -> Linear -> ReLU reconstruction
+
+    Differences from full scVI:
+      - no NB/ZINB likelihood;
+      - no gene-specific dispersion parameter;
+      - no dropout probability head;
+      - no softmax gene-proportion decoder;
+      - no observed-library-size scaling in the output;
+      - reconstruction loss is MSE / weighted MSE instead of negative log likelihood.
+
+    Therefore, this should be described as a scVI-inspired MSE autoencoder/VAE,
+    not as the full scVI generative model.
+
+    This model keeps the scVI-style FCLayers encoder/decoder and Gaussian latent
+    regularization, but replaces the original NB/ZINB likelihood with MSE or weighted
+    MSE reconstruction. The decoder directly outputs a non-negative reconstruction
+    through a ReLU head. It does not use softmax scale, library-size rate scaling,
+    dispersion, or dropout probability heads.
     """
 
     def __init__(
@@ -464,9 +493,14 @@ def parse_grid(s, typ=int):
     return [typ(x) for x in s.split(",") if x.strip() != ""]
 
 
-def make_loader(X, idx, batch_size, shuffle):
+def make_loader(X, idx, batch_size, shuffle, drop_last=False):
     subset = Subset(TensorDataset(X), idx)
-    return DataLoader(subset, batch_size=batch_size, shuffle=shuffle)
+    return DataLoader(
+        subset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        drop_last=drop_last
+    )
 
 def _apply_trans(df, trans):
     if trans == "sqrt+1":
@@ -493,6 +527,8 @@ def _apply_trans(df, trans):
         df.iloc[:, 1:] = np.log2(df.iloc[:, 1:] + 1) + 1
     elif trans == "no_trans":
         pass
+    else:
+        raise ValueError(f"Unknown transformation: {trans}")
 
 def filter_and_transform(df1, df2, threshold_value, trans1, trans2,
                          data_path1=None, data_path2=None, save=False):
@@ -640,8 +676,8 @@ def outer10_inner_holdout(
             X, X2 = tensor_cache[cache_key]
             input_dim = X.shape[1]
 
-            tr_loader = make_loader(X, tr_idx, batch_size=bs, shuffle=True)
-            val_loader = make_loader(X, val_idx, batch_size=bs, shuffle=False)
+            tr_loader = make_loader(X, tr_idx, batch_size=bs, shuffle=True, drop_last=True)
+            val_loader = make_loader(X, val_idx, batch_size=bs, shuffle=False, drop_last=False)
 
             model = ScVIModel(
                 n_input=input_dim,
@@ -685,8 +721,10 @@ def outer10_inner_holdout(
             else:
                 raise ValueError(f"Unknown eval_metric: {eval_metric}")
 
-            config_name = (f"{zero_w}_{nonzero_w}_{trans1}_{trans2}_{threshold}_"
-                           f"{n_hidden}_{n_latent}_{n_layers}_{beta}")
+            config_name = (
+                f"{zero_w}_{nonzero_w}_{trans1}_{trans2}_{threshold}_"
+                f"{n_hidden}_{n_latent}_{n_layers}_{lr}_{bs}_{beta}"
+            )
             fold_val_combinations.append({
                 'config_name': config_name, 'val_metric': val_metric, 'fold': fold_id
             })
@@ -736,9 +774,9 @@ def outer10_inner_holdout(
         else:
             tr_full_idx = outer_train_idx
 
-        train_loader_full = make_loader(X, tr_full_idx, batch_size=c["batch_size"], shuffle=True)
+        train_loader_full = make_loader(X, tr_full_idx, batch_size=c["batch_size"], shuffle=True, drop_last=True)
         if use_outer_val:
-            outer_val_loader = make_loader(X, outer_val_idx, batch_size=c["batch_size"], shuffle=False)
+            outer_val_loader = make_loader(X, outer_val_idx, batch_size=c["batch_size"], shuffle=False, drop_last=False)
 
         model = ScVIModel(
             n_input=input_dim,
@@ -776,7 +814,7 @@ def outer10_inner_holdout(
                     break
 
         # test evaluation
-        test_loader = make_loader(X, outer_test_idx, batch_size=c["batch_size"], shuffle=False)
+        test_loader = make_loader(X, outer_test_idx, batch_size=c["batch_size"], shuffle=False, drop_last=False)
         test_loss = eval_loss(
             model, test_loader, device, c["beta"],
             weight_strategy, c["zero_weight"], c["nonzero_weight"], c["trans1"])
@@ -859,7 +897,8 @@ def outer10_inner_holdout(
 def main(args):
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
-    torch.cuda.manual_seed_all(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
@@ -948,7 +987,7 @@ if __name__ == "__main__":
     parser.add_argument('--data_path2', type=str, required=True)
     parser.add_argument('--threshold_grid', type=str, default="1")
     parser.add_argument('--trans1_grid', type=str, default="sqrt+1,log2,sqrt,no_trans")
-    parser.add_argument('--trans2_grid', type=str, default="sqrt+1,log2,sqrt,no_trans")
+    parser.add_argument('--trans2_grid', type=str, default="no_trans")
     parser.add_argument('--hidden_grid', type=str, default="128",
                         help="n_hidden per layer (scVI uses same width for all layers)")
     parser.add_argument('--latent_grid', type=str, default="10")
@@ -969,7 +1008,7 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--cpu', action='store_true')
     parser.add_argument('--out_summary', type=str, required=True)
-    parser.add_argument('--early_stop', action='store_true', default=True)
+    parser.add_argument('--early_stop', action='store_true', default=False)
     parser.add_argument('--patience', type=int, default=10)
     parser.add_argument('--min_delta', type=float, default=0.001)
     parser.add_argument('--check_every', type=int, default=1)

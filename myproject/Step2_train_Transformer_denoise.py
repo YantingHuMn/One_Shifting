@@ -335,12 +335,18 @@ def _apply_trans(df, trans):
         df.iloc[:, 1:] = np.sqrt(df.iloc[:, 1:] + 10)
     elif trans == "sqrt+1_then_minus_1":
         df.iloc[:, 1:] = np.sqrt(df.iloc[:, 1:] + 1) - 1
+    elif trans == "count+1":
+        df.iloc[:, 1:] = df.iloc[:, 1:] + 1
+    elif trans == "log(count+2)":
+        df.iloc[:, 1:] = np.log(df.iloc[:, 1:] + 2)
     elif trans == "log2(count+2)":
         df.iloc[:, 1:] = np.log2(df.iloc[:, 1:] + 2)
     elif trans == "log2(count+1)+1":
         df.iloc[:, 1:] = np.log2(df.iloc[:, 1:] + 1) + 1
     elif trans == "no_trans":
         pass
+    else:
+        raise ValueError(f"Unknown transformation: {trans}")
 
 
 def filter_and_transform(df1, df2, threshold_value, trans1, trans2, data_path1=None, data_path2=None, save=False):
@@ -471,6 +477,7 @@ def outer_cv_inner_holdout(
             zero_weight_grid, nonzero_weight_grid):
 
             if d_model % nhead != 0:
+                print(f"[SKIP] d_model={d_model} not divisible by nhead={nhead}")
                 continue
 
             cache_key = (threshold, trans1, trans2)
@@ -708,7 +715,8 @@ def outer_cv_inner_holdout(
 def main(args):
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
-    torch.cuda.manual_seed_all(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
@@ -798,7 +806,7 @@ if __name__ == "__main__":
     parser.add_argument('--threshold_grid', type=str, default="1")
     parser.add_argument('--trans1_grid', type=str, default="sqrt+1,log2,sqrt,no_trans",
                         help='Transformation types for V1')
-    parser.add_argument('--trans2_grid', type=str, default="sqrt+1,log2,sqrt,no_trans",
+    parser.add_argument('--trans2_grid', type=str, default="no_trans",
                         help='Transformation types for V2')
 
     # Transformer architecture hyperparameters
@@ -829,7 +837,7 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--cpu', action='store_true')
     parser.add_argument('--out_summary', type=str, required=True)
-    parser.add_argument('--early_stop', action='store_true', default=True)
+    parser.add_argument('--early_stop', action='store_true', default=False)
     parser.add_argument('--patience', type=int, default=10)
     parser.add_argument('--min_delta', type=float, default=0.001)
     parser.add_argument('--check_every', type=int, default=1)
