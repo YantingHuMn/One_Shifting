@@ -65,10 +65,12 @@ load_rna_atac_from_h5ad <- function(path, sample_name, out_dir, upstream = 2000)
     ensg_indices <- grep("^ENSG", rownames(rna_mat))
     if (length(ensg_indices) > 0) {
         ensg_ids <- sub("\\..*", "", rownames(rna_mat)[ensg_indices])
-        gene_map <- ensembldb::select(EnsDb.Hsapiens.v86,
-                                        keys = ensg_ids,
-                                        keytype = "GENEID",
-                                        columns = c("GENEID", "SYMBOL"))
+        gene_map <- ensembldb::select(
+            EnsDb.Hsapiens.v86,
+            keys = ensg_ids,
+            keytype = "GENEID",
+            columns = c("GENEID", "SYMBOL")
+        )
         id_to_symbol <- setNames(gene_map$SYMBOL, gene_map$GENEID)
         new_names <- id_to_symbol[sub("\\..*", "", rownames(rna_mat))]
 
@@ -94,7 +96,15 @@ load_rna_atac_from_h5ad <- function(path, sample_name, out_dir, upstream = 2000)
 
     # Gene annotation
     annotations <- GetGRangesFromEnsDb(ensdb = EnsDb.Hsapiens.v86)
-    seqlevelsStyle(annotations) <- "UCSC"
+
+    # Necessary change:
+    # Avoid seqlevelsStyle(annotations) <- "UCSC",
+    # because it may try to download NCBI assembly reports.
+    old_seq <- seqlevels(annotations)
+    new_seq <- ifelse(old_seq == "MT", "chrM", paste0("chr", old_seq))
+    names(new_seq) <- old_seq
+    annotations <- renameSeqlevels(annotations, new_seq)
+
     genome(annotations) <- "hg38"
 
     gene_annot <- annotations
@@ -120,12 +130,16 @@ load_rna_atac_from_h5ad <- function(path, sample_name, out_dir, upstream = 2000)
     gene_coords <- GRanges(
         seqnames = gene_summary$chr,
         ranges = IRanges(
-            start = ifelse(gene_summary$strand == "+",
-                           gene_summary$start - upstream,
-                           gene_summary$start),
-            end = ifelse(gene_summary$strand == "-",
-                         gene_summary$end + upstream,
-                         gene_summary$end)
+            start = ifelse(
+                gene_summary$strand == "+",
+                gene_summary$start - upstream,
+                gene_summary$start
+            ),
+            end = ifelse(
+                gene_summary$strand == "-",
+                gene_summary$end + upstream,
+                gene_summary$end
+            )
         ),
         strand = gene_summary$strand,
         gene_name = gene_summary$gene_name
@@ -140,10 +154,12 @@ load_rna_atac_from_h5ad <- function(path, sample_name, out_dir, upstream = 2000)
     cat("Number of overlaps:", length(overlaps), "\n")
 
     gene_names <- gene_coords$gene_name
-    gene.activities <- matrix(0,
-                              nrow = length(gene_coords),
-                              ncol = ncol(atac_mat),
-                              dimnames = list(gene_names, colnames(atac_mat)))
+    gene.activities <- matrix(
+        0,
+        nrow = length(gene_coords),
+        ncol = ncol(atac_mat),
+        dimnames = list(gene_names, colnames(atac_mat))
+    )
 
     for (i in seq_along(gene_coords)) {
         peak_idx <- queryHits(overlaps)[subjectHits(overlaps) == i]
@@ -178,7 +194,7 @@ load_rna_atac_from_h5ad <- function(path, sample_name, out_dir, upstream = 2000)
 
     cat("Aligned matrix dim:", dim(rna_counts), "\n")
 
-    # Correlation (on raw counts, just for diagnostics)
+    # Correlation on raw counts, just for diagnostics
     cell_cor <- sapply(1:ncol(activity_counts), function(x) cor(activity_counts[, x], rna_counts[, x]))
     cat("Cell correlation - Mean:", mean(cell_cor, na.rm = TRUE), "\n")
     cat("Cell correlation - Median:", median(cell_cor, na.rm = TRUE), "\n")
