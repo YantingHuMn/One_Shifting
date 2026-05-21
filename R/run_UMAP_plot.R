@@ -42,7 +42,7 @@ other_paths <- c(
 )
 
 other_names <- c(
-  "Original",
+    "Original",
     "Original (Norm 1K)",
     "Original (Norm 10K)",
     "Original (Norm 100K)",
@@ -62,48 +62,48 @@ output_dir <- paste0(read_dir, "/plots")
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 if ("kmeans" %in% clustering_methods) {
-result <- plot_multiple_umap(
-  data_paths = data_paths,
-  data_names = data_names,
-  celltype_df = celltype_df,
-  output_dir = output_dir,
-  n_clusters = length(unique(na.omit(celltype_df$cell_type))),
-  clustering_method = "kmeans",
-  ncol = 5,
-  width = 30
-)
-rm(result)
-gc()
+    result <- plot_multiple_umap(
+        data_paths = data_paths,
+        data_names = data_names,
+        celltype_df = celltype_df,
+        output_dir = output_dir,
+        n_clusters = length(unique(na.omit(celltype_df$cell_type))),
+        clustering_method = "kmeans",
+        ncol = 5,
+        width = 30
+    )
+    rm(result)
+    gc()
 }
 
 if ("louvain" %in% clustering_methods) {
-result <- plot_multiple_umap(
-  data_paths = data_paths,
-  data_names = data_names,
-  celltype_df = celltype_df,
-  output_dir = output_dir,
-  n_clusters = length(unique(na.omit(celltype_df$cell_type))),
-  clustering_method = "louvain",
-  ncol = 5,
-  width = 30
-)
-rm(result)
-gc()
+    result <- plot_multiple_umap(
+        data_paths = data_paths,
+        data_names = data_names,
+        celltype_df = celltype_df,
+        output_dir = output_dir,
+        n_clusters = length(unique(na.omit(celltype_df$cell_type))),
+        clustering_method = "louvain",
+        ncol = 5,
+        width = 30
+    )
+    rm(result)
+    gc()
 }
 
 if ("leiden" %in% clustering_methods) {
-result <- plot_multiple_umap(
-  data_paths = data_paths,
-  data_names = data_names,
-  celltype_df = celltype_df,
-  output_dir = output_dir,
-  n_clusters = length(unique(na.omit(celltype_df$cell_type))),
-  clustering_method = "leiden",
-  ncol = 5,
-  width = 30
-)
-rm(result)
-gc()
+    result <- plot_multiple_umap(
+        data_paths = data_paths,
+        data_names = data_names,
+        celltype_df = celltype_df,
+        output_dir = output_dir,
+        n_clusters = length(unique(na.omit(celltype_df$cell_type))),
+        clustering_method = "leiden",
+        ncol = 5,
+        width = 30
+    )
+    rm(result)
+    gc()
 }
 
 

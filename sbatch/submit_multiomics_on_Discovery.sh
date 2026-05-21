@@ -3,20 +3,33 @@
 #SBATCH --partition=cpu
 #SBATCH --time=3-00:00:00
 #SBATCH --mem=64G
-#SBATCH --output=/projects/foundation_model_for_single_cell_multiomics_data/yhu157/logs/submit_multi.out
-#SBATCH --error=/projects/foundation_model_for_single_cell_multiomics_data/yhu157/logs/submit_multi.err
+#SBATCH --array=0-1
+#SBATCH --output=/projects/foundation_model_for_single_cell_multiomics_data/yhu157/logs/submit_multi_%A_%a.out
+#SBATCH --error=/projects/foundation_model_for_single_cell_multiomics_data/yhu157/logs/submit_multi_%A_%a.err
 #SBATCH --mail-user=yhu157@jh.edu
 #SBATCH --mail-type=END,FAIL
 # #SBATCH --dependency=afterok:31582287
 
 my_dir="/home/yhu157/Autoencoder"
 project_dir="/projects/foundation_model_for_single_cell_multiomics_data/data_processed/scMultiomics"
-folder_name="HCA"
 out_dir="/projects/foundation_model_for_single_cell_multiomics_data/yhu157"
 
 mkdir -p "${out_dir}/logs"
 
-# Step 1: Find .h5ad only in immediate subfolders of HCA
+folder_names=("10x" "ENCODE")
+folder_name="${folder_names[$SLURM_ARRAY_TASK_ID]}"
+
+# Rscript-generated results go into out_dir/folder_name
+folder_out_dir="${out_dir}/${folder_name}"
+mkdir -p "${folder_out_dir}"
+
+echo "SLURM_ARRAY_JOB_ID=${SLURM_ARRAY_JOB_ID}"
+echo "SLURM_ARRAY_TASK_ID=${SLURM_ARRAY_TASK_ID}"
+echo "folder_name=${folder_name}"
+echo "folder_out_dir=${folder_out_dir}"
+
+# Step 1: Find .h5ad only in immediate subfolders
+# Keep this list outside folder_out_dir
 h5ad_list="${out_dir}/${folder_name}_h5ad_files.txt"
 
 > "$h5ad_list"
@@ -46,10 +59,11 @@ for subdir in "${project_dir}/${folder_name}/"*; do
     fi
 done
 
-echo "Number of selected h5ad files:"
+echo "Number of selected h5ad files for ${folder_name}:"
 wc -l "$h5ad_list"
 
 # Step 2: Generate Sample Name
+# Keep this TSV outside folder_out_dir
 pair_tsv="${out_dir}/${folder_name}_input_sample_pairs.tsv"
 
 echo -e "input_path\tsample_name" > "$pair_tsv"
@@ -69,7 +83,7 @@ while read -r input_path; do
     echo -e "${input_path}\t${sample_name}"
 done < "$h5ad_list" >> "$pair_tsv"
 
-echo "First few input/sample pairs:"
+echo "First few input/sample pairs for ${folder_name}:"
 head "$pair_tsv"
 
 # Step 3: Create Count Matrix
@@ -100,20 +114,21 @@ tail -n +2 "$pair_tsv" | while IFS=$'\t' read -r input_path sample_name; do
 
     echo "======================================"
     echo "Running:"
+    echo "folder_name=${folder_name}"
     echo "input_path=${input_path}"
     echo "sample_name=${sample_name}"
-    echo "out_dir=${out_dir}"
+    echo "folder_out_dir=${folder_out_dir}"
     echo "======================================"
 
     Rscript "${my_dir}/One_Shifting/R/load_rna_atac_from_h5ad.R" \
         "$input_path" \
         "$sample_name" \
-        "$out_dir"
+        "$folder_out_dir"
 
     status=$?
 
     if [[ "$status" -ne 0 ]]; then
-        echo "ERROR: Rscript failed for sample_name=${sample_name}"
+        echo "ERROR: Rscript failed for folder_name=${folder_name}, sample_name=${sample_name}"
         echo "Exit status: $status"
         exit "$status"
     fi
