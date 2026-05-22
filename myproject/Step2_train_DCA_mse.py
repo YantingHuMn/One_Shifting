@@ -286,6 +286,13 @@ def parse_grid(s, typ=int):
     return [typ(x) for x in s.split(",") if x.strip() != ""]
 
 
+def should_drop_last_train(n, bs, min_bn_batch=16):
+    if n <= bs:
+        return False
+    remainder = n % bs
+    return 0 < remainder < min_bn_batch
+
+
 def make_loader(X, idx, batch_size, shuffle, drop_last=False):
     subset = Subset(TensorDataset(X), idx)
     return DataLoader(
@@ -452,7 +459,13 @@ def outer10_inner_holdout(
             X, X2 = tensor_cache[cache_key]
             input_dim = X.shape[1]
 
-            tr_loader = make_loader(X, tr_idx, batch_size=bs, shuffle=True, drop_last=True)
+            tr_loader = make_loader(
+                X,
+                tr_idx,
+                batch_size=bs,
+                shuffle=True,
+                drop_last=should_drop_last_train(len(tr_idx), bs, min_bn_batch=16),
+            )
             val_loader = make_loader(X, val_idx, batch_size=bs, shuffle=False, drop_last=False)
 
             model = DCA(input_dim, hidden_dim1, hidden_dim2, latent_dim, dropout_rate=dropout).to(device)
@@ -547,7 +560,13 @@ def outer10_inner_holdout(
         else:
             tr_full_idx = train_idx_full
 
-        train_loader_full = make_loader(X, tr_full_idx, batch_size=bs, shuffle=True, drop_last=True)
+        train_loader_full = make_loader(
+            X,
+            tr_full_idx,
+            batch_size=bs,
+            shuffle=True,
+            drop_last=should_drop_last_train(len(tr_full_idx), bs, min_bn_batch=16),
+        )
         if use_outer_val:
             outer_val_loader = make_loader(X, outer_val_idx, batch_size=bs, shuffle=False, drop_last=False)
 
@@ -768,7 +787,7 @@ if __name__ == "__main__":
     parser.add_argument('--patience', type=int, default=10)
     parser.add_argument('--min_delta', type=float, default=0.001)
     parser.add_argument('--check_every', type=int, default=1)
-    parser.add_argument('--outer_es_val_frac', type=float, default=0.0)
+    parser.add_argument('--outer_es_val_frac', type=float, default=0.1)
     parser.add_argument('--n_splits', type=int, default=5)
 
     args = parser.parse_args()

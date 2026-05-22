@@ -493,6 +493,13 @@ def parse_grid(s, typ=int):
     return [typ(x) for x in s.split(",") if x.strip() != ""]
 
 
+def should_drop_last_train(n, bs, min_bn_batch=16):
+    if n <= bs:
+        return False
+    remainder = n % bs
+    return 0 < remainder < min_bn_batch
+
+
 def make_loader(X, idx, batch_size, shuffle, drop_last=False):
     subset = Subset(TensorDataset(X), idx)
     return DataLoader(
@@ -676,7 +683,13 @@ def outer10_inner_holdout(
             X, X2 = tensor_cache[cache_key]
             input_dim = X.shape[1]
 
-            tr_loader = make_loader(X, tr_idx, batch_size=bs, shuffle=True, drop_last=True)
+            tr_loader = make_loader(
+                X,
+                tr_idx,
+                batch_size=bs,
+                shuffle=True,
+                drop_last=should_drop_last_train(len(tr_idx), bs, min_bn_batch=16),
+            )
             val_loader = make_loader(X, val_idx, batch_size=bs, shuffle=False, drop_last=False)
 
             model = ScVIModel(
@@ -774,7 +787,13 @@ def outer10_inner_holdout(
         else:
             tr_full_idx = outer_train_idx
 
-        train_loader_full = make_loader(X, tr_full_idx, batch_size=c["batch_size"], shuffle=True, drop_last=True)
+        train_loader_full = make_loader(
+            X,
+            tr_full_idx,
+            batch_size=c["batch_size"],
+            shuffle=True,
+            drop_last=should_drop_last_train(len(tr_full_idx), c["batch_size"], min_bn_batch=16),
+        )
         if use_outer_val:
             outer_val_loader = make_loader(X, outer_val_idx, batch_size=c["batch_size"], shuffle=False, drop_last=False)
 

@@ -567,7 +567,7 @@ if __name__ == "__main__":
     parser.add_argument('--patience', type=int, default=10)
     parser.add_argument('--min_delta', type=float, default=0.001)
     parser.add_argument('--check_every', type=int, default=1)
-    parser.add_argument('--outer_es_val_frac', type=float, default=0.0)
+    parser.add_argument('--outer_es_val_frac', type=float, default=0.1)
     parser.add_argument('--n_splits', type=int, default=5)
 
     args = parser.parse_args()

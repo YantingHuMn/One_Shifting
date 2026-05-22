@@ -141,10 +141,10 @@ for this_trans_factor in "${trans_factor[@]}"; do
 
     for factor in "${norm_factor[@]}"; do
 
-        # Skip incompatible (standardize + sqrt/log) combinations
+        # Skip incompatible (standardize + count+1/sqrt/log) combinations
         if [ "$factor" = "standardize" ]; then
             case "$this_trans_factor" in
-                no_trans|count+1) ;;  # allow
+                no_trans) ;;  # allow
                 *) echo "[SKIP] $this_trans_factor incompatible with standardize (negative values)"
                    continue ;;
             esac
