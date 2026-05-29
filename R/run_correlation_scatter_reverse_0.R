@@ -309,7 +309,6 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
     intersection_df$residual <- intersection_df$ORIG - intersection_df$VAE
     residual_sum <- sum(intersection_df$residual)
     residual_avg <- mean(intersection_df$residual)
-    weighted_residual_avg <- mean(intersection_df$residual * intersection_df$VAE)
 
     subtitle_text_with_stats <- paste0(
         subtitle_text,
@@ -317,8 +316,7 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
         " | Corr_type: ", corr,
         " | x-axis_mean: ", round(x_avg, 4),
         "\n| Residual_sum: ", round(residual_sum, 4),
-        " | Residual_mean: ", round(residual_avg, 4),
-        " | Weighted_residual_mean: ", round(weighted_residual_avg, 4)
+        " | Residual_mean: ", round(residual_avg, 4)
     )
 
     # Add filter info to subtitle
@@ -346,12 +344,10 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
     n_above <- sum(intersection_df$position == "above")
     n_below <- sum(intersection_df$position == "below")
     n_on    <- sum(intersection_df$position == "on")
-    below_percentage <- n_below / n_points
 
     subtitle_text_with_stats <- paste0(
         subtitle_text_with_stats,
-        "\nAbove: ", n_above, ", Below: ", n_below, ", On line: ", n_on,
-        " | Below_percentage: ", round(below_percentage, 4)
+        "\nAbove: ", n_above, ", Below: ", n_below, ", On line: ", n_on
     )
 
     #  Method-specific plot styling
@@ -414,8 +410,6 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
         corr_type = corr,
         x_mean = round(x_avg, 4),
         residual_mean = round(residual_avg, 4),
-        weighted_residual_mean = round(weighted_residual_avg, 4),
-        below_percentage = round(below_percentage, 4),
         filter_zero_gt = filter_zero_gt,
         n_removed = n_removed,
         data_mode = data_mode,
@@ -522,3 +516,4 @@ tryCatch(
     ),
     error = function(e) cat("ERROR in Spearman unfiltered:", conditionMessage(e), "\n")
 )
+
