@@ -411,7 +411,7 @@ def outer_cv_inner_holdout(
             val_loss = val_metric
 
             config_name = (
-                f"{zero_w}_{nonzero_w}_{trans1}_{trans2}_{threshold}_"
+                f"{zero_w}_{nonzero_w}_{trans1}_{threshold}_"
                 f"{n_tokens}_{d_model}_{nhead}_{num_layers}_{dim_ff}_{dropout}_{lr}_{bs}"
             )
             fold_val_combinations.append({

@@ -118,7 +118,10 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
 
         if (is.null(obj)) {
             all_ari <- rbind(all_ari, data.frame(
-                method = data_names[i], n_clusters = NA, ARI = NA
+                method = data_names[i],
+                n_clusters = NA,
+                ARI = NA,
+                best_res = NA
             ))
             next
         }
@@ -129,24 +132,60 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
             km_res <- kmeans(pca_embed, centers = n_clusters, nstart = 20)
             cluster_labels <- as.character(km_res$cluster)
             obj$self_cluster <- cluster_labels
+            selected_res <- NA
+
         } else if (clustering_method %in% c("louvain", "leiden")) {
             algorithm <- ifelse(clustering_method == "louvain", 1, 4)
             best_res <- 0.8
             best_ari <- -1
-            for (res in seq(0.1, 2.0, by = 0.1)) {
-                obj_temp <- run_find_clusters_safe(obj, resolution = res, algorithm = algorithm, verbose = FALSE)
+
+            res_grid <- if (clustering_method == "leiden") {
+                # seq(0.2, 1.2, by = 0.2)
+                seq(0.1, 2.0, by = 0.2)
+            } else {
+                seq(0.1, 2.0, by = 0.2)
+            }   
+                     
+            for (res in res_grid) {
+                obj_temp <- run_find_clusters_safe(
+                    obj,
+                    resolution = res,
+                    algorithm = algorithm,
+                    verbose = FALSE
+                )
+                
                 temp_labels <- as.character(obj_temp$seurat_clusters)
                 temp_true <- obj_temp$cell_type
                 temp_valid <- temp_true != "Unknown"
-                temp_ari <- adjustedRandIndex(temp_labels[temp_valid], temp_true[temp_valid])
+                
+                temp_ari <- adjustedRandIndex(
+                    temp_labels[temp_valid],
+                    temp_true[temp_valid]
+                )
+                
                 if (!is.na(temp_ari) && temp_ari > best_ari) {
                     best_ari <- temp_ari
                     best_res <- res
                 }
+                
+                rm(obj_temp, temp_labels, temp_true, temp_valid, temp_ari)
+                
+                if (clustering_method == "leiden") {
+                    gc()
+                }
             }
-            obj <- run_find_clusters_safe(obj, resolution = best_res, algorithm = algorithm, verbose = FALSE)
+            
+            obj <- run_find_clusters_safe(
+                obj,
+                resolution = best_res,
+                algorithm = algorithm,
+                verbose = FALSE
+            )
+            
             cluster_labels <- as.character(obj$seurat_clusters)
             obj$self_cluster <- cluster_labels
+            selected_res <- best_res
+
         } else {
             stop("clustering_method must be 'kmeans', 'louvain', or 'leiden'")
         }
@@ -160,15 +199,23 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
         }
         found_clusters <- length(unique(cluster_labels))
 
-        cat(paste0("  ", data_names[i], ": k=", found_clusters, ", ARI=", round(ari, 4), "\n"))
+        cat(paste0(
+            "  ", data_names[i],
+            ": k=", found_clusters,
+            ", ARI=", round(ari, 4),
+            ", best_res=", selected_res,
+            "\n"
+        ))
 
         seurat_list[[i]] <- obj
 
         all_ari <- rbind(all_ari, data.frame(
             method = data_names[i],
             n_clusters = found_clusters,
-            ARI = round(ari, 4)
+            ARI = round(ari, 4),
+            best_res = selected_res
         ))
+
     }
 
     # Sort ARI and get top methods

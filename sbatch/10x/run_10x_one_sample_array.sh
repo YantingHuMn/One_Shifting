@@ -3,7 +3,7 @@
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --time=3-00:00:00
-#SBATCH --mem=256G
+#SBATCH --mem=128G
 #SBATCH --array=0-7
 #SBATCH --output=/dcs07/hongkai/data/yhu1/One_Shifting_Results/10x/AAA_logs/submit_10x_pip_%A_%a.out
 #SBATCH --error=/dcs07/hongkai/data/yhu1/One_Shifting_Results/10x/AAA_logs/submit_10x_pip_%A_%a.err

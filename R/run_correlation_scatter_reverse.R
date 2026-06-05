@@ -214,6 +214,7 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
 
         cat(paste("data_mode: v1_trans_v2_trans_norm_100000 | ground truth library size norm *100000 + trans:", this_trans_factor, "\n"))
     }
+
     # Filter out all-zero columns/rows in ground truth (df1), sync df2 & df3
     n_before <- if (corr == "col") ncol(df1) else nrow(df1)
 
@@ -356,13 +357,9 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
 
     #  Method-specific plot styling
     if (corr_method == "pearson") {
-        point_color <- "blue"
-        point_alpha <- 0.7
         file_prefix <- "d_pearson_"
         method_label <- "Pearson"
     } else {
-        point_color <- "darkred"
-        point_alpha <- 0.7
         file_prefix <- "g_spearman_"
         method_label <- "Spearman"
     }
@@ -377,11 +374,23 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
         file_prefix <- paste0(file_prefix, data_mode, "_")
     }
 
-    #  Generate scatter plot
-    p <- ggplot(intersection_df, aes(x = VAE, y = ORIG)) +
-        geom_point(color = point_color, size = 2, alpha = point_alpha) +
-        geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
-        geom_smooth(method = "lm", se = FALSE, color = "blue", alpha = 0.2, linewidth = 0.5) +
+    #  Generate density-style scatter plot
+    use_hexbin <- requireNamespace("hexbin", quietly = TRUE)
+
+    p <- ggplot(intersection_df, aes(x = VAE, y = ORIG))
+
+    if (use_hexbin) {
+        p <- p + geom_hex(bins = 60)
+    } else {
+        p <- p + geom_bin_2d(bins = 60)
+    }
+
+    p <- p +
+        scale_fill_gradientn(
+            colours = c("#440154", "#31688e", "#35b779", "#fde725"),
+            name = "count"
+        ) +
+        geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red", linewidth = 0.7) +
         geom_text(data = intersection_df %>% filter(Value %in% highlight_points),
                   aes(label = Value),
                   hjust = 0.5, vjust = -0.5, size = 3, color = "red") +

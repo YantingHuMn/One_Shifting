@@ -2,7 +2,7 @@
 #SBATCH --job-name=10x_plot
 #SBATCH --partition=shared
 #SBATCH --time=12:00:00
-#SBATCH --mem=32G
+#SBATCH --mem=2G
 #SBATCH --output=/dcs07/hongkai/data/yhu1/One_Shifting_Results/10x/AAA_logs/plot_10x_%A.out
 #SBATCH --error=/dcs07/hongkai/data/yhu1/One_Shifting_Results/10x/AAA_logs/plot_10x_%A.err
 #SBATCH --mail-user=yhu157@jh.edu

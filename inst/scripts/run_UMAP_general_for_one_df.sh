@@ -62,16 +62,27 @@ echo "===Finish build count matrix==="
   
 echo "=== Starting ${method} pipeline ==="
 
+# if [ "$method" = "VAE" ]; then
+#     METHOD_ARGS="--beta_grid 0 --hidden_grid1 4096 --hidden_grid2 1024"
+# elif [ "$method" = "DCA_mse" ]; then
+#     METHOD_ARGS="--dropout_grid 0.0 --hidden_grid1 4096 --hidden_grid2 1024"
+# elif [ "$method" = "scVI_mse" ]; then
+#     METHOD_ARGS="--hidden_grid 512,256,128,64"
+# elif [ "$method" = "Transformer_denoise" ]; then
+#     METHOD_ARGS="--n_tokens_grid 32 --d_model_grid 64 --nhead_grid 4 --num_layers_grid 1 --dim_feedforward_grid 128 --dropout_grid 0.1"
+# fi
+        
+# dimension for 2000 hvg
 if [ "$method" = "VAE" ]; then
-    METHOD_ARGS="--beta_grid 0 --hidden_grid1 4096 --hidden_grid2 1024"
+    METHOD_ARGS="--beta_grid 0 --hidden_grid1 1024 --hidden_grid2 256 --lr_grid 0.00001"
 elif [ "$method" = "DCA_mse" ]; then
-    METHOD_ARGS="--dropout_grid 0.0 --hidden_grid1 4096 --hidden_grid2 1024"
+    METHOD_ARGS="--dropout_grid 0.0 --hidden_grid1 1024 --hidden_grid2 256 --lr_grid 0.00001"
 elif [ "$method" = "scVI_mse" ]; then
     METHOD_ARGS="--hidden_grid 512,256,128,64"
 elif [ "$method" = "Transformer_denoise" ]; then
     METHOD_ARGS="--n_tokens_grid 32 --d_model_grid 64 --nhead_grid 4 --num_layers_grid 1 --dim_feedforward_grid 128 --dropout_grid 0.1"
 fi
-        
+
 # train - find par
 echo "=== Step 4: Training ${method} on filtered data ==="
 for this_trans_factor in "${trans_factor[@]}"; do

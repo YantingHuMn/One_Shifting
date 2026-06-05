@@ -1,4 +1,4 @@
-plot_ari_bubble_trans <- function(read_dir, methods = c("kmeans", "leiden", "louvain")) {
+plot_ari_bubble_trans <- function(read_dir, methods = NULL) {
     suppressPackageStartupMessages({
         library(ggplot2)
         library(dplyr)
@@ -8,6 +8,21 @@ plot_ari_bubble_trans <- function(read_dir, methods = c("kmeans", "leiden", "lou
 
     target_prefixes <- c("VAE", "DCA_mse", "scVI_mse", "Transformer_denoise")
     norm_patterns <- c("_no_norm$", "_standardize$", "_1000000$", "_100000$", "_10000$", "_1000$")
+
+    if (is.null(methods)) {
+        method_dirs <- list.dirs(read_dir, full.names = FALSE, recursive = FALSE)
+        methods <- method_dirs[
+            file.exists(file.path(read_dir, method_dirs, paste0("ARI_", method_dirs, "_best_norm.csv")))
+        ]
+        methods <- sort(methods)
+    }
+
+    if (length(methods) == 0) {
+        cat("No clustering method folders with ARI_*_best_norm.csv found in: ", read_dir, "\n")
+        return(invisible(NULL))
+    }
+
+    cat("Methods to plot: ", paste(methods, collapse = ", "), "\n")
 
     parse_method_name <- function(m) {
         for (pfx in target_prefixes) {
@@ -27,16 +42,26 @@ plot_ari_bubble_trans <- function(read_dir, methods = c("kmeans", "leiden", "lou
     }
 
     all_data <- data.frame()
+
     for (cm in methods) {
         path <- file.path(read_dir, cm, paste0("ARI_", cm, "_best_norm.csv"))
+
+        if (!file.exists(path)) {
+            cat(paste0("[SKIP] Missing file: ", path, "\n"))
+            next
+        }
+
         df <- read.csv(path)
         df$criteria <- cm
 
-        parsed <- do.call(rbind, lapply(df$method, function(m) parse_method_name(m)))
-        if (is.null(parsed) || nrow(parsed) == 0) next
-
         keep <- !sapply(seq_len(nrow(df)), function(i) is.null(parse_method_name(df$method[i])))
         df <- df[keep, ]
+
+        if (nrow(df) == 0) {
+            cat(paste0("[SKIP] No target methods in: ", path, "\n"))
+            next
+        }
+
         parsed <- do.call(rbind, lapply(df$method, function(m) parse_method_name(m)))
 
         df$prefix <- parsed$prefix
@@ -44,7 +69,17 @@ plot_ari_bubble_trans <- function(read_dir, methods = c("kmeans", "leiden", "lou
         all_data <- rbind(all_data, df)
     }
 
+    if (nrow(all_data) == 0) {
+        cat("No ARI data found. Skip bubble plots.\n")
+        return(invisible(NULL))
+    }
+
     all_data <- all_data %>% filter(!is.na(ARI))
+
+    if (nrow(all_data) == 0) {
+        cat("All ARI values are NA. Skip bubble plots.\n")
+        return(invisible(NULL))
+    }
 
     make_bubble <- function(plot_df, plot_title, out_path) {
         plot_df <- plot_df %>%
@@ -54,23 +89,27 @@ plot_ari_bubble_trans <- function(read_dir, methods = c("kmeans", "leiden", "lou
 
         avg_rank <- plot_df %>%
             group_by(trans) %>%
-            summarise(avg_rank = mean(rank_ari, na.rm = TRUE)) %>%
+            summarise(avg_rank = mean(rank_ari, na.rm = TRUE), .groups = "drop") %>%
             arrange(avg_rank)
 
         trans_order <- avg_rank %>% pull(trans) %>% as.character()
         plot_df$trans <- factor(plot_df$trans, levels = rev(trans_order))
         avg_rank$trans <- factor(avg_rank$trans, levels = rev(trans_order))
+
         avg_rank <- avg_rank %>%
-            mutate(bar_len = max(avg_rank) - avg_rank + min(avg_rank))
+            mutate(bar_len = max(avg_rank, na.rm = TRUE) - avg_rank + min(avg_rank, na.rm = TRUE))
 
         p_bar <- ggplot(avg_rank, aes(x = bar_len, y = trans)) +
             geom_bar(stat = "identity", fill = "steelblue", width = 0.7) +
             scale_x_reverse() +
             theme_minimal() +
             theme(
-                axis.text.y = element_blank(), axis.title.y = element_blank(),
-                axis.ticks.y = element_blank(), axis.text.x = element_blank(),
-                axis.title.x = element_blank(), axis.ticks.x = element_blank(),
+                axis.text.y = element_blank(),
+                axis.title.y = element_blank(),
+                axis.ticks.y = element_blank(),
+                axis.text.x = element_blank(),
+                axis.title.x = element_blank(),
+                axis.ticks.x = element_blank(),
                 panel.grid = element_blank()
             )
 
@@ -83,7 +122,8 @@ plot_ari_bubble_trans <- function(read_dir, methods = c("kmeans", "leiden", "lou
             ) +
             scale_color_viridis_c(
                 name = "ARI\n(larger = better)",
-                option = "D", direction = 1,
+                option = "D",
+                direction = 1,
                 guide = guide_colorbar(order = 1)
             ) +
             theme_minimal() +
@@ -95,31 +135,49 @@ plot_ari_bubble_trans <- function(read_dir, methods = c("kmeans", "leiden", "lou
                 legend.position = "right",
                 plot.title = element_text(hjust = 0.5, face = "bold")
             ) +
-            labs(x = "Method", y = "Transformation", title = plot_title)
+            labs(
+                x = "Method",
+                y = "Transformation",
+                title = plot_title
+            )
 
-        p_combined <- plot_grid(p_bar, p_main, nrow = 1, rel_widths = c(0.15, 0.85),
-                                align = "h", axis = "tb")
+        p_combined <- plot_grid(
+            p_bar,
+            p_main,
+            nrow = 1,
+            rel_widths = c(0.15, 0.85),
+            align = "h",
+            axis = "tb"
+        )
 
         ggsave(out_path, p_combined, width = 12, height = 8, dpi = 300)
         cat(paste0("[SAVE] ", out_path, "\n"))
+
         return(p_combined)
     }
 
-    # One plot per clustering method
+    # One plot per existing clustering method
     for (cm in methods) {
         sub_df <- all_data %>% filter(criteria == cm)
-        if (nrow(sub_df) == 0) next
+
+        if (nrow(sub_df) == 0) {
+            cat(paste0("[SKIP] No data for method: ", cm, "\n"))
+            next
+        }
+
         out_path <- file.path(read_dir, paste0("bubble_ARI_", cm, ".png"))
         make_bubble(sub_df, paste0("ARI - ", cm), out_path)
     }
 
-    # Average ARI across all clustering methods
+    # Average ARI across existing clustering methods only
     avg_df <- all_data %>%
         group_by(prefix, trans) %>%
         summarise(ARI = mean(ARI, na.rm = TRUE), .groups = "drop")
 
-    out_path <- file.path(read_dir, "bubble_ARI_average.png")
-    make_bubble(avg_df, "ARI - Average across clustering methods", out_path)
+    if (nrow(avg_df) > 0) {
+        out_path <- file.path(read_dir, "bubble_ARI_average.png")
+        make_bubble(avg_df, "ARI - Average across available clustering methods", out_path)
+    }
 
     cat("All bubble plots saved!\n")
 }

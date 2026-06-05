@@ -650,7 +650,7 @@ def outer10_inner_holdout(
             val_loss = val_metric
 
             config_name = (
-                f"{zero_w}_{nonzero_w}_{trans1}_{trans2}_{threshold}_"
+                f"{zero_w}_{nonzero_w}_{trans1}_{threshold}_"
                 f"{n_hidden}_{n_latent}_{n_layers}_{lr}_{bs}_{beta}"
             )
             fold_val_combinations.append({

@@ -33,25 +33,25 @@ python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared
 conda deactivate 
 
 
-# echo "======Run DCA======"
-# source ~/.bashrc
-# conda activate dca_env
-# python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
+echo "======Run DCA======"
+source ~/.bashrc
+conda activate dca_env
+python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
-# python ../One_Shifting/myproject/Step2_3_train_DCA.py \
-#     --input "$INPUT_PATH" \
-#     --output "${READ_DIR}/DCA/reconstruct_DCA_trans_by_no_trans_norm_by_no_norm.feather" \
-#     --ae_type "${LOSS}"
+python ../One_Shifting/myproject/Step2_3_train_DCA.py \
+    --input "$INPUT_PATH" \
+    --output "${READ_DIR}/DCA/reconstruct_DCA_trans_by_no_trans_norm_by_no_norm.feather" \
+    --ae_type "${LOSS}"
 
-# python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
-# conda deactivate 
+python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
+conda deactivate 
 
 
-# echo "======Run SAVER======"
-# module load conda_R
+echo "======Run SAVER======"
+module load conda_R
 
-# Rscript ../One_Shifting/myproject/Step2_3_train_Saver.R \
-#     "$INPUT_PATH" \
-#     "${READ_DIR}/SAVER/reconstruct_SAVER_trans_by_no_trans_norm_by_no_norm.feather" \
-#     $(nproc)
+Rscript ../One_Shifting/myproject/Step2_3_train_Saver.R \
+    "$INPUT_PATH" \
+    "${READ_DIR}/SAVER/reconstruct_SAVER_trans_by_no_trans_norm_by_no_norm.feather" \
+    $(nproc)
 
