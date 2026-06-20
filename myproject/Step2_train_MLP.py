@@ -127,7 +127,9 @@ class EarlyStopping:
         return self.stopped
 
 
-def apply_trans(arr, trans):
+def _apply_trans(arr, trans):
+    arr = np.asarray(arr, dtype=np.float32)
+
     if trans == "no_trans":
         return arr.copy()
     elif trans == "sqrt":
@@ -153,8 +155,7 @@ def apply_trans(arr, trans):
     elif trans == "log2(count+1)+1":
         return np.log2(np.clip(arr, 0, None) + 1) + 1
     else:
-        raise ValueError(f"Unknown transform: {trans}")
-
+        raise ValueError(f"Unknown transformation: {trans}")
 
 def train_one_gene(X_train_np, y_train_np,
                    X_val_np, y_val_np,
@@ -180,9 +181,9 @@ def train_one_gene(X_train_np, y_train_np,
     for h1, h2, lr, bs in product(
         hidden_grid1, hidden_grid2, lr_grid, bs_grid
     ):
-        X_tr = torch.tensor(apply_trans(X_train_np, trans), dtype=torch.float32)
+        X_tr = torch.tensor(_apply_trans(X_train_np, trans), dtype=torch.float32)
         y_tr = torch.tensor(y_train_np, dtype=torch.float32).unsqueeze(1)
-        X_va = torch.tensor(apply_trans(X_val_np, trans), dtype=torch.float32)
+        X_va = torch.tensor(_apply_trans(X_val_np, trans), dtype=torch.float32)
         y_va = torch.tensor(y_val_np, dtype=torch.float32).unsqueeze(1)
 
         train_loader = DataLoader(TensorDataset(X_tr, y_tr), batch_size=bs, shuffle=True)
@@ -216,9 +217,29 @@ def train_one_gene(X_train_np, y_train_np,
     X_trainval = np.concatenate([X_train_np, X_val_np], axis=0)
     y_trainval = np.concatenate([y_train_np, y_val_np], axis=0)
 
-    X_tv = torch.tensor(apply_trans(X_trainval, cfg['trans']), dtype=torch.float32)
+    X_tv = torch.tensor(_apply_trans(X_trainval, cfg['trans']), dtype=torch.float32)
     y_tv = torch.tensor(y_trainval, dtype=torch.float32).unsqueeze(1)
-    trainval_loader = DataLoader(TensorDataset(X_tv, y_tv), batch_size=cfg['bs'], shuffle=True)
+
+    use_outer_val = (args.outer_es_val_frac > 0.0)
+    if use_outer_val:
+        n_tv = X_tv.shape[0]
+        n_outer_val = round(n_tv * args.outer_es_val_frac)
+        rng = np.random.RandomState(args.seed)
+        perm = rng.permutation(n_tv)
+        outer_val_idx = perm[:n_outer_val]
+        train_idx_full = perm[n_outer_val:]
+        trainval_loader = DataLoader(
+            TensorDataset(X_tv[train_idx_full], y_tv[train_idx_full]),
+            batch_size=cfg['bs'],
+            shuffle=True
+        )
+        outer_val_loader = DataLoader(
+            TensorDataset(X_tv[outer_val_idx], y_tv[outer_val_idx]),
+            batch_size=cfg['bs'],
+            shuffle=False
+        )
+    else:
+        trainval_loader = DataLoader(TensorDataset(X_tv, y_tv), batch_size=cfg['bs'], shuffle=True)
 
     model = MLP(X_tv.shape[1], cfg['h1'], cfg['h2'], dropout=args.dropout).to(device)
     optimizer = optim.Adam(model.parameters(), lr=cfg['lr'])
@@ -227,16 +248,21 @@ def train_one_gene(X_train_np, y_train_np,
     for ep in range(1, args.epochs + 1):
         tr_loss = train_one_epoch(model, trainval_loader, optimizer, device, args.weight_strategy)
         if ep % args.check_every == 0:
-            # No separate val set, use train loss for early stopping
-            if es.step(tr_loss, model):
-                print(f"    [retrain] early-stopped at epoch {ep}")
+            if use_outer_val:
+                val_loss, val_pcc, _ = evaluate(model, outer_val_loader, device, args.weight_strategy)
+                monitor = -val_pcc if args.eval_metric == 'pearson' else val_loss
+            else:
+                monitor = tr_loss
+            if es.step(monitor, model):
+                tag = "val" if use_outer_val else "train"
+                print(f"    [retrain] early-stopped at epoch {ep}, best_{tag}={es.best:.4f}")
                 break
 
     if es.best_state is not None:
         model.load_state_dict(es.best_state)
 
     # Step 3: Final evaluation on test set
-    X_te = torch.tensor(apply_trans(X_test_np, cfg['trans']), dtype=torch.float32)
+    X_te = torch.tensor(_apply_trans(X_test_np, cfg['trans']), dtype=torch.float32)
     y_te = torch.tensor(y_test_np, dtype=torch.float32).unsqueeze(1)
     test_loader = DataLoader(TensorDataset(X_te, y_te), batch_size=cfg['bs'], shuffle=False)
 
@@ -406,6 +432,7 @@ if __name__ == "__main__":
     parser.add_argument('--patience', type=int, default=15)
     parser.add_argument('--min_delta', type=float, default=0.001)
     parser.add_argument('--check_every', type=int, default=1)
+    parser.add_argument('--outer_es_val_frac', type=float, default=0.1)
 
     # Other
     parser.add_argument('--seed', type=int, default=42)

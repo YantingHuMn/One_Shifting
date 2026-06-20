@@ -229,7 +229,6 @@ def main(args):
     print(f"  trans1: {cfg['trans1']}")
     print(f"  trans2: {cfg['trans2']}")
     print(f"  architecture: n_hidden={cfg['n_hidden']}, n_latent={cfg['n_latent']}, n_layers={cfg['n_layers']}")
-    print(f"  beta: {cfg['beta']}")
 
     # 3) Load and preprocess
     print("\n[LOAD DATA]")

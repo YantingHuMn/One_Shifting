@@ -7,10 +7,19 @@ library(cowplot)
 args <- commandArgs(trailingOnly = TRUE)
 BASE_DIR <- args[1] 
 TSV_FILE <- args[2]
+sample_index_arg <- args[3]
+extra_subdir <- ""
+if (length(args) >= 4) {
+    extra_subdir <- args[4]
+}
 
-run_first_n_sample <- 9
+out_dir_suffix <- ifelse(extra_subdir == "", "no_extra_subdir", extra_subdir)
 
-OUT_DIR <- file.path(BASE_DIR, "Across_sample_bubble_plots")
+OUT_DIR <- file.path(
+    BASE_DIR,
+    "Across_sample_bubble_plots",
+    out_dir_suffix
+)
 dir.create(OUT_DIR, recursive = TRUE, showWarnings = FALSE)
 
 input_types <- c("RNA", "ATAC")
@@ -38,13 +47,22 @@ mode_suffix_map <- c(
 # Get sample names
 sample_table <- read_tsv(TSV_FILE, show_col_types = FALSE)
 
-sample_names <- sample_table[[2]][seq_len(min(run_first_n_sample, nrow(sample_table)))]
+sample_indices <- str_split(sample_index_arg, ",")[[1]]
+sample_indices <- as.integer(sample_indices)
+
+sample_indices <- sample_indices[
+    !is.na(sample_indices) &
+    sample_indices >= 1 &
+    sample_indices <= nrow(sample_table)
+]
+
+sample_names <- sample_table[[2]][sample_indices]
 sample_names <- sample_names[!is.na(sample_names) & sample_names != ""]
 
 print(sample_names)
 
 # Function: read one table_df file
-read_one_bubble_table <- function(sample_name, input_type, corr_dir, mode_suffix) {
+read_one_bubble_table <- function(sample_name, input_type, corr_dir, mode_suffix, extra_subdir = "") {
     corr_object <- corr_object_map[[corr_dir]]
     
     sample_dir <- file.path(
@@ -52,8 +70,9 @@ read_one_bubble_table <- function(sample_name, input_type, corr_dir, mode_suffix
         paste0(sample_name, "_INPUT_", input_type)
     )
     
-    file_path <- file.path(
+    path_parts <- c(
         sample_dir,
+        extra_subdir,
         paste0(
             "bubble_plot_summary_",
             corr_dir,
@@ -64,6 +83,10 @@ read_one_bubble_table <- function(sample_name, input_type, corr_dir, mode_suffix
             "_table_df.csv"
         )
     )
+    
+    path_parts <- path_parts[!is.na(path_parts) & path_parts != ""]
+    
+    file_path <- do.call(file.path, as.list(path_parts))
     
     if (!file.exists(file_path)) {
         message("[Missing] ", file_path)
@@ -78,6 +101,7 @@ read_one_bubble_table <- function(sample_name, input_type, corr_dir, mode_suffix
             input_type = input_type,
             corr_dir = corr_dir,
             mode_suffix = mode_suffix,
+            extra_subdir = extra_subdir,
             source_file = file_path
         )
     
@@ -117,7 +141,7 @@ aggregate_across_samples <- function(all_df) {
 }
 
 # Function: plot performance bubble plot
-plot_performance_bubble <- function(avg_df, title_text, out_png) {
+plot_performance_bubble <- function(avg_df, title_text, out_png, subtitle_text = NULL) {
     
     # Average rank across method combinations for each transformation
     # smaller avg_rank = better
@@ -174,10 +198,11 @@ plot_performance_bubble <- function(avg_df, title_text, out_png) {
         ) +
         scale_size_continuous(
             name = "Average rank\n(smaller = better)",
-            range = c(8, 3)
+            range = c(12, 1.5)
         ) +
         labs(
             title = title_text,
+            subtitle = subtitle_text,
             x = "Method Combination",
             y = "Transformation",
             color = "Average mean performance\n(larger = better)"
@@ -189,7 +214,8 @@ plot_performance_bubble <- function(avg_df, title_text, out_png) {
             panel.grid.major = element_line(color = "grey90"),
             panel.grid.minor = element_blank(),
             legend.position = "right",
-            plot.title = element_text(hjust = 0.5, face = "bold")
+            plot.title = element_text(hjust = 0.5, face = "bold"),
+            plot.subtitle = element_text(hjust = 0.5, size = 9)
         )
     
     p_bar <- ggplot(avg_rank_perf, aes(x = bar_len, y = trans)) +
@@ -219,7 +245,7 @@ plot_performance_bubble <- function(avg_df, title_text, out_png) {
 }
 
 # Function: plot residual bubble plot
-plot_residual_bubble <- function(avg_df, title_text, out_png) {
+plot_residual_bubble <- function(avg_df, title_text, out_png, subtitle_text = NULL) {
     
     # Average rank across method combinations for each transformation
     # smaller avg_rank = better
@@ -276,10 +302,11 @@ plot_residual_bubble <- function(avg_df, title_text, out_png) {
         ) +
         scale_size_continuous(
             name = "Average rank\n(smaller = better)",
-            range = c(8, 3)
+            range = c(12, 1.5)
         ) +
         labs(
             title = title_text,
+            subtitle = subtitle_text,
             x = "Method Combination",
             y = "Transformation",
             color = "Average mean residual\n(smaller = better)"
@@ -291,7 +318,8 @@ plot_residual_bubble <- function(avg_df, title_text, out_png) {
             panel.grid.major = element_line(color = "grey90"),
             panel.grid.minor = element_blank(),
             legend.position = "right",
-            plot.title = element_text(hjust = 0.5, face = "bold")
+            plot.title = element_text(hjust = 0.5, face = "bold"),
+            plot.subtitle = element_text(hjust = 0.5, size = 9)
         )
     
     p_bar <- ggplot(avg_rank_resid, aes(x = bar_len, y = trans)) +
@@ -338,7 +366,8 @@ for (input_type in input_types) {
                 read_one_bubble_table,
                 input_type = input_type,
                 corr_dir = corr_dir,
-                mode_suffix = mode_suffix
+                mode_suffix = mode_suffix,
+                extra_subdir = extra_subdir
             )
             
             all_df <- bind_rows(df_list)
@@ -347,6 +376,12 @@ for (input_type in input_types) {
                 message("[Skip] No files found for: ", input_type, " | ", corr_dir, " | ", mode_suffix)
                 next
             }
+            
+            samples_used <- paste(sort(unique(all_df$sample_name)), collapse = ", ")
+            subtitle_text <- str_wrap(
+                paste0("Samples included: ", samples_used),
+                width = 120
+            )
             
             avg_df <- aggregate_across_samples(all_df)
             corr_object <- corr_object_map[[corr_dir]]
@@ -417,13 +452,15 @@ for (input_type in input_types) {
             plot_performance_bubble(
                 avg_df,
                 title_text = paste0("Average Performance across Samples: ", input_type, " | ", corr_dir, " | ", mode_suffix),
-                out_png = perf_out_png
+                out_png = perf_out_png,
+                subtitle_text = subtitle_text
             )
             
             plot_residual_bubble(
                 avg_df,
                 title_text = paste0("Average Residual across Samples: ", input_type, " | ", corr_dir, " | ", mode_suffix),
-                out_png = resid_out_png
+                out_png = resid_out_png,
+                subtitle_text = subtitle_text
             )
             
             all_aggregated[[paste(input_type, corr_dir, mode_suffix, sep = "__")]] <- avg_df

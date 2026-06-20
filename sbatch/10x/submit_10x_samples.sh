@@ -1,7 +1,7 @@
 #!/bin/bash
 
 tsv="/dcs07/hongkai/data/yhu1/One_Shifting_Results/10x_input_sample_pairs.tsv"
-run_first_n_sample=9
+run_first_n_sample=1
 
 worker_script="/dcs10/hongkai/data/yhu1/One_Shifting/sbatch/10x/run_10x_one_sample_array.sh"
 plot_script="/dcs10/hongkai/data/yhu1/One_Shifting/sbatch/10x/run_10x_one_sample_plot.sh"
@@ -19,7 +19,6 @@ tail -n +2 "$tsv" | awk -v n="$run_first_n_sample" 'NR <= n {print $2}' | while 
 
     train_job_id=$(sbatch \
         --job-name="10x_${sample_name}" \
-        --array=0-7 \
         --exclude=compute-170 \
         --export=ALL,sample_name="${sample_name}" \
         --output="${log_dir}/submit_10x_${sample_name}_%a.out" \

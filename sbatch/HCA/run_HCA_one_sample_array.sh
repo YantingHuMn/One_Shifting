@@ -3,8 +3,8 @@
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --time=3-00:00:00
-#SBATCH --mem=128G
-#SBATCH --array=0-7
+#SBATCH --mem=80G
+#SBATCH --array=0-3
 #SBATCH --output=/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/AAA_logs/submit_HCA_pip_%A_%a.out
 #SBATCH --error=/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/AAA_logs/submit_HCA_pip_%A_%a.err
 #SBATCH --mail-user=yhu157@jh.edu
@@ -17,18 +17,38 @@ if [[ -z "${sample_name}" ]]; then
     exit 1
 fi
 
+dropout_keep_par="${dropout_keep_par:-}"
+
 export sample_name
 export folder_name="HCA"
+export dropout_keep_par
 
 methods=("VAE" "DCA_mse" "scVI_mse" "Transformer_denoise")
+# methods=("VAE" "DCA_mse" "scVI_mse")
 
 configs=(
     "../One_Shifting/inst/config/config_run_multi_RNA_HCA_10x_ENCODE.sh"
     "../One_Shifting/inst/config/config_run_multi_ATAC_HCA_10x_ENCODE.sh"
 )
 
-method=${methods[$((SLURM_ARRAY_TASK_ID % 4))]}
-config=${configs[$((SLURM_ARRAY_TASK_ID / 4))]}
+n_methods=${#methods[@]}
+n_configs=${#configs[@]}
+n_total=$((n_methods * n_configs))
+
+task_id=${SLURM_ARRAY_TASK_ID}
+
+if (( task_id >= n_total )); then
+    echo "ERROR: SLURM_ARRAY_TASK_ID=${task_id} exceeds total tasks=${n_total}"
+    exit 1
+fi
+
+method_id=$((task_id % n_methods))
+config_id=$((task_id / n_methods))
+
+method=${methods[$method_id]}
+# config=${configs[$config_id]}
+
+config="../One_Shifting/inst/config/config_run_multi_RNA_HCA_10x_ENCODE.sh"
 
 echo "======================================"
 echo "SLURM_JOB_ID=${SLURM_JOB_ID}"
@@ -36,6 +56,7 @@ echo "SLURM_ARRAY_TASK_ID=${SLURM_ARRAY_TASK_ID}"
 echo "sample_name=${sample_name}"
 echo "folder_name=${folder_name}"
 echo "method=${method}"
+echo "dropout_keep_par=${dropout_keep_par}"
 echo "config=${config}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
 echo "HOSTNAME=$(hostname)"
@@ -45,7 +66,8 @@ nvidia-smi
 
 bash ../One_Shifting/inst/scripts/run_pbmc_general_mse_reverse.sh \
     "$config" \
-    "$method"
+    "$method" \
+    "$dropout_keep_par"
 
 # bash ../One_Shifting/inst/scripts/run_bubble_method_plot.sh \
 #     "../One_Shifting/inst/config/config_run_multi_RNA.sh"

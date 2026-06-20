@@ -803,8 +803,8 @@ if __name__ == "__main__":
     parser.add_argument('--threshold_grid', type=str, default="1", help='Threshold values for filtering')
     parser.add_argument('--trans1_grid', type=str, default="sqrt+1,log2,sqrt,no_trans", help='Transformation types for V1')
     parser.add_argument('--trans2_grid', type=str, default="no_trans", help='Transformation types for V2')
-    parser.add_argument('--hidden_grid1', type=str, default="256")
-    parser.add_argument('--hidden_grid2', type=str, default="128")
+    parser.add_argument('--hidden_grid1', type=str, default="512,1024,2048,4096")
+    parser.add_argument('--hidden_grid2', type=str, default="128,256,512,1024")
     parser.add_argument('--latent_grid', type=str, default="32")
     parser.add_argument('--lr_grid', type=str, default="0.0001")
     parser.add_argument('--batch_size_grid', type=str, default="64")
@@ -812,7 +812,7 @@ if __name__ == "__main__":
     parser.add_argument('--weight_strategy', type=str, default='fixed', 
                        choices=['fixed', 'sparsity_aware', 'magnitude', 'focal'])
     parser.add_argument('--zero_weight_grid', type=str, default="1.0")
-    parser.add_argument('--nonzero_weight_grid', type=str, default="1.0,5.0,10.0,20.0")
+    parser.add_argument('--nonzero_weight_grid', type=str, default="1.0")
     parser.add_argument('--eval_metric', type=str, default='val_loss', 
                        choices=['val_loss', 'pearson', 'spearman'],
                        help='Evaluation metric for hyperparameter selection')

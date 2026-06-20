@@ -208,6 +208,24 @@ load_rna_atac_from_h5ad <- function(path, sample_name, out_dir, upstream = 2000)
     dir.create(file.path(out_dir, paste0(sample_name, "_RNA")), recursive = TRUE, showWarnings = FALSE)
     dir.create(file.path(out_dir, paste0(sample_name, "_ATAC")), recursive = TRUE, showWarnings = FALSE)
 
+    # Save raw peak-level ATAC counts: peak x cell with pos column
+    # Filter out peaks that are all-zero across cells
+    keep_peaks <- Matrix::rowSums(atac_mat > 0) > 0
+    cat("ATAC peaks kept (non-zero):", sum(keep_peaks), "/", length(keep_peaks), "\n")
+
+    atac_peak_counts <- as.matrix(atac_mat[keep_peaks, ])
+
+    atac_peak_counts_df <- as.data.frame(atac_peak_counts)
+    atac_peak_counts_df <- cbind(pos = rownames(atac_peak_counts), atac_peak_counts_df)
+    rownames(atac_peak_counts_df) <- NULL
+
+    write_feather(
+        atac_peak_counts_df,
+        file.path(out_dir, paste0(sample_name, "_ATAC"), "atac_peak_counts.feather")
+    )
+
+    
+    
     # Filter to keep only genes non-zero in both
     keep_genes <- rowSums(rna_counts) > 0 & rowSums(activity_counts) > 0
     rna_counts <- rna_counts[keep_genes, ]
@@ -241,6 +259,38 @@ load_rna_atac_from_h5ad <- function(path, sample_name, out_dir, upstream = 2000)
         file.path(out_dir, paste0(sample_name, "_ATAC"), "activity_counts_hist.png"),
         paste0(sample_name, " ATAC activity histogram (10% sample)")
     )
+
+    tryCatch({
+        # peaks p90
+        peak_assay <- CreateChromatinAssay(
+            counts = atac_mat[keep_peaks, ],
+            ranges = peak_gr[keep_peaks]
+        )
+
+        peak_obj <- Seurat::CreateSeuratObject(
+            counts = peak_assay,
+            assay = "peaks"
+        )
+
+        peak_obj <- RunTFIDF(peak_obj, assay = "peaks")
+        peak_obj <- FindTopFeatures(peak_obj, assay = "peaks", min.cutoff = "q90")
+
+        top_peaks_q90 <- Seurat::VariableFeatures(peak_obj)
+        cat("ATAC top q90 peaks kept:", length(top_peaks_q90), "\n")
+
+        atac_peak_counts_top_q90 <- as.matrix(atac_mat[top_peaks_q90, ])
+
+        atac_peak_counts_top_q90_df <- as.data.frame(atac_peak_counts_top_q90)
+        atac_peak_counts_top_q90_df <- cbind(pos = rownames(atac_peak_counts_top_q90), atac_peak_counts_top_q90_df)
+        rownames(atac_peak_counts_top_q90_df) <- NULL
+
+        write_feather(
+            atac_peak_counts_top_q90_df,
+            file.path(out_dir, paste0(sample_name, "_ATAC"), "atac_peak_counts_top_q90.feather")
+        )
+    }, error = function(e) {
+        cat("Warning: failed to save atac_peak_counts_top_q90.feather:", conditionMessage(e), "\n")
+    })
 
     cat("  - rna_counts.feather\n")
     cat("  - activity_counts.feather\n")

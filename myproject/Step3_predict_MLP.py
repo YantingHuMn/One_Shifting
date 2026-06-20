@@ -48,7 +48,9 @@ class MLP(nn.Module):
         return self.fc3(h)
 
 
-def apply_trans(arr, trans):
+def _apply_trans(arr, trans):
+    arr = np.asarray(arr, dtype=np.float32)
+
     if trans == "no_trans":
         return arr.copy()
     elif trans == "sqrt":
@@ -74,7 +76,7 @@ def apply_trans(arr, trans):
     elif trans == "log2(count+1)+1":
         return np.log2(np.clip(arr, 0, None) + 1) + 1
     else:
-        raise ValueError(f"Unknown transform: {trans}")
+        raise ValueError(f"Unknown transformation: {trans}")
     
 
 def main(args):
@@ -137,7 +139,7 @@ def main(args):
         bs = int(config.get('bs', 64))
 
         # Transform input
-        X_transformed = apply_trans(X_test_np, trans)
+        X_transformed = _apply_trans(X_test_np, trans)
         X_t = torch.tensor(X_transformed, dtype=torch.float32)
 
         # Load model

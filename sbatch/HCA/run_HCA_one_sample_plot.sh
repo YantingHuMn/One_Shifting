@@ -2,7 +2,7 @@
 #SBATCH --job-name=HCA_plot
 #SBATCH --partition=shared
 #SBATCH --time=12:00:00
-#SBATCH --mem=2G
+#SBATCH --mem=1G
 #SBATCH --output=/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/AAA_logs/plot_HCA_%A.out
 #SBATCH --error=/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/AAA_logs/plot_HCA_%A.err
 #SBATCH --mail-user=yhu157@jh.edu
@@ -17,12 +17,14 @@ fi
 
 export sample_name
 export folder_name="HCA"
+export dropout_keep_par
 
 echo "======================================"
 echo "Running bubble plots"
 echo "SLURM_JOB_ID=${SLURM_JOB_ID}"
 echo "sample_name=${sample_name}"
 echo "folder_name=${folder_name}"
+echo "dropout_keep_par=${dropout_keep_par}"
 echo "HOSTNAME=$(hostname)"
 echo "======================================"
 

@@ -1,7 +1,6 @@
 #!/bin/bash
 CONFIG_FILE="$1"
 method="$2"
-dropout_keep_par="$3"
 
 if [ -z "$CONFIG_FILE" ] || [ -z "$method" ]; then
     echo "Usage: bash run_pipeline.sh <config_file> <method>"
@@ -20,15 +19,16 @@ echo "OUTPUT_CATEGORY: $V2"
 echo "V2_norm_factor: $V2_norm_factor"
 echo "V2_trans_factor: $V2_trans_factor"
 echo "METHOD: $method"
-echo "dropout_keep_par: $dropout_keep_par"
 
 
 CONDITION="given_${V2}_${V2_norm_factor}_${V2_trans_factor}"
 OUTPUT_DIR="${READ_DIR}/${method}/${CONDITION}"
 mkdir -p $OUTPUT_DIR
 
-trans_factor=("no_trans" "sqrt" "sqrt+1" "log2" "count+1" "log2(count+2)")
-norm_factor=("no_norm" 1000000 100000 10000 1000 "standardize")
+# trans_factor=("no_trans" "sqrt" "sqrt+1" "log2" "count+1" "log2(count+2)")
+trans_factor=("log2" "count+1" "log2(count+2)")
+# norm_factor=("no_norm" 1000000 100000 10000 1000 "standardize")
+norm_factor=("no_norm")
 norm_factor_string=$(IFS=','; echo "${norm_factor[*]}")
 
 module load conda_R
@@ -51,9 +51,7 @@ if [ ! -f "$LOCK_FILE" ]; then
               "$norm_factor_string" \
               "$norm_factor_string" \
               "TRUE" \
-              "p25" \
-              "$dropout_keep_par"
-
+              "p25"
 
             touch "$LOCK_FILE"
             rmdir "$LOCK_DIR"
@@ -134,15 +132,15 @@ fi
 
 echo "Bubble reset done, proceeding with $method..."
 
-if [ "$method" = "VAE" ]; then
-    METHOD_ARGS="--beta_grid 0 --hidden_grid1 4096 --hidden_grid2 1024"
-elif [ "$method" = "DCA_mse" ]; then
-    METHOD_ARGS="--dropout_grid 0.0 --hidden_grid1 4096 --hidden_grid2 1024"
-elif [ "$method" = "scVI_mse" ]; then
-    METHOD_ARGS="--hidden_grid 512,256,128,64"
-elif [ "$method" = "Transformer_denoise" ]; then
-    METHOD_ARGS="--n_tokens_grid 32 --d_model_grid 64 --nhead_grid 4 --num_layers_grid 1 --dim_feedforward_grid 128 --dropout_grid 0.1"
-fi
+# if [ "$method" = "VAE" ]; then
+#     METHOD_ARGS="--beta_grid 0 --hidden_grid1 4096 --hidden_grid2 1024"
+# elif [ "$method" = "DCA_mse" ]; then
+#     METHOD_ARGS="--dropout_grid 0.0 --hidden_grid1 4096 --hidden_grid2 1024"
+# elif [ "$method" = "scVI_mse" ]; then
+#     METHOD_ARGS="--beta_grid 0 --hidden_grid 512,256,128,64"
+# elif [ "$method" = "Transformer_denoise" ]; then
+#     METHOD_ARGS="--n_tokens_grid 32 --d_model_grid 64 --nhead_grid 4 --num_layers_grid 1 --dim_feedforward_grid 128 --dropout_grid 0.1"
+# fi
         
 # train - find par
 echo "=== Step 4: Training ${method} on filtered data ==="
@@ -151,91 +149,71 @@ for this_trans_factor in "${trans_factor[@]}"; do
 
     mkdir -p "$OUT_DIR"
 
-    for factor in "${norm_factor[@]}"; do
+    DATA_PATH1="$READ_DIR/$V1/Count_Matrix_norm_by_no_norm.feather"
+    DATA_PATH2="$READ_DIR/$V2/Count_Matrix_norm_by_no_norm.feather"
+    SUMMARY_FILE="${OUT_DIR}/hyper_par_report.tsv"
 
-        # Skip incompatible (standardize + count+1/sqrt/log) combinations
-        if [ "$factor" = "standardize" ]; then
-            case "$this_trans_factor" in
-                no_trans) ;;  # allow
-                *) echo "[SKIP] $this_trans_factor incompatible with standardize (negative values)"
-                   continue ;;
-            esac
+    source ~/.bashrc
+    conda activate vae_env2
+    python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
+
+    python -u ../One_Shifting/myproject/Step2_3_train_${method}_norm.py \
+    --data_path "$DATA_PATH1" \
+    --out_summary "$SUMMARY_FILE" \
+    --early_stop \
+    --patience 10 \
+    --n_splits 5 \
+    --trans_grid "$this_trans_factor" \
+    $METHOD_ARGS
+    
+    # reconstruct
+    SAVED_DIR="${OUT_DIR}/saved_models"
+
+    factor=$(awk -F'\t' '$1=="# selected_norm"{print $2; exit}' "$SUMMARY_FILE")
+
+    OUT_PATH="${OUT_DIR}/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather"
+    INPUT_TRANS_PATH="${SAVED_DIR}/input_trans_by_${this_trans_factor}_norm_by_${factor}.feather"
+
+    python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
+    conda deactivate 
+
+    # correlation
+    echo "=== Step 7: Correlation analysis ==="
+    module load conda_R
+
+    for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
+        if [ "$data_mode" = "default" ]; then
+            mode_suffix="v1_trans_v2_no_trans"
+        elif [ "$data_mode" = "v1_trans_v2_trans" ]; then
+            mode_suffix="v1_trans_v2_trans"
+        elif [ "$data_mode" = "v1_reverse" ]; then
+            mode_suffix="v1_reverse_v2_no_trans"
+        elif [ "$data_mode" = "v1_trans_v2_trans_norm_100000" ]; then
+            mode_suffix="v1_trans_v2_trans_norm_100000"
         fi
 
-        DATA_PATH1="$READ_DIR/$V1/Count_Matrix_norm_by_$factor.feather"
-        DATA_PATH2="$READ_DIR/$V2/Count_Matrix_norm_by_$V2_norm_factor.feather"
-        SUMMARY_FILE="${OUT_DIR}/hyper_par_norm_by_${factor}.tsv"
+        for corr_dir in col row; do
+            Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
+            mkdir -p "$Figure_DIR"
 
-        source ~/.bashrc
-        conda activate vae_env2
-        python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
-
-        python -u ../One_Shifting/myproject/Step2_train_${method}.py \
-        --data_path1 "$DATA_PATH1" \
-        --data_path2 "$DATA_PATH2" \
-        --out_summary "$SUMMARY_FILE" \
-        --early_stop \
-        --patience 5 \
-        --n_splits 2 \
-        --eval_metric val_loss \
-        --trans1_grid "$this_trans_factor" \
-        --trans2_grid "$V2_trans_factor" \
-        --nonzero_weight_grid 1.0 \
-        $METHOD_ARGS
-        
-        # reconstruct
-        SAVED_DIR="${OUT_DIR}/saved_models"
-        OUT_PATH="${OUT_DIR}/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather"
-
-        python -u ../One_Shifting/myproject/Step3_reconstruct_${method}.py \
-        --data_path1 "$DATA_PATH1" \
-        --data_path2 "$DATA_PATH2" \
-        --transformed_out_dir "$OUT_DIR" \
-        --saved_models_dir "$SAVED_DIR" \
-        --out_path "$OUT_PATH"
-
-        python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
-        conda deactivate 
-
-        # correlation
-        echo "=== Step 7: Correlation analysis ==="
-        module load conda_R
-
-        for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
-            if [ "$data_mode" = "default" ]; then
-                mode_suffix="v1_trans_v2_no_trans"
-            elif [ "$data_mode" = "v1_trans_v2_trans" ]; then
-                mode_suffix="v1_trans_v2_trans"
-            elif [ "$data_mode" = "v1_reverse" ]; then
-                mode_suffix="v1_reverse_v2_no_trans"
-            elif [ "$data_mode" = "v1_trans_v2_trans_norm_100000" ]; then
-                mode_suffix="v1_trans_v2_trans_norm_100000"
-            fi
-
-            for corr_dir in col row; do
-                Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
-                mkdir -p "$Figure_DIR"
-
-                Rscript ../One_Shifting/R/run_correlation_scatter_reverse.R \
-                    "$OUT_DIR/Count_matrix_transformed_rep2.feather" \
-                    "$OUT_DIR/Count_matrix_transformed_rep1.feather" \
-                    "$OUT_DIR/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather" \
-                    "$Figure_DIR"  \
-                    "$OUT_DIR/saved_models" \
-                    "$factor" \
-                    "$V2_norm_factor" \
-                    "$this_trans_factor" \
-                    "$V2_trans_factor" \
-                    "${Figure_DIR}" \
-                    "$corr_dir" \
-                    "${V1}" \
-                    "${method}" \
-                    "$data_mode"
-            done
-
-            sleep 2
-
+            Rscript ../One_Shifting/R/run_correlation_scatter_reverse.R \
+                "$DATA_PATH2" \
+                "$INPUT_TRANS_PATH" \
+                "$OUT_PATH" \
+                "$Figure_DIR"  \
+                "$OUT_DIR/saved_models" \
+                "$factor" \
+                "$V2_norm_factor" \
+                "$this_trans_factor" \
+                "$V2_trans_factor" \
+                "${Figure_DIR}" \
+                "$corr_dir" \
+                "${V1}" \
+                "${method}" \
+                "$data_mode"
         done
+
+        sleep 2
 
     done
 done

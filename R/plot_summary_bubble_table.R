@@ -94,7 +94,7 @@ plot_summary_bubble_table <- function(csv_path, filter_method = NULL) {
         geom_point(aes(size = rank_perf, color = mean_performance), alpha = 0.9) +
         scale_size_continuous(
             name = "Rank\n(smaller = better)",
-            range = c(8, 3),
+            range = c(12, 1.5),
             guide = guide_legend(order = 2)
         ) +
         scale_color_viridis_c(
@@ -134,7 +134,7 @@ plot_summary_bubble_table <- function(csv_path, filter_method = NULL) {
         geom_point(aes(size = rank_residual, color = mean_residual), alpha = 0.9) +
         scale_size_continuous(
             name = "Rank\n(smaller = better)",
-            range = c(8, 1),
+            range = c(12, 1.5),
             guide = guide_legend(order = 2)
         ) +
         scale_color_viridis_c(

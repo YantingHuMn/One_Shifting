@@ -29,5 +29,5 @@ echo "======================================"
 bash ../One_Shifting/inst/scripts/run_bubble_method_plot.sh \
     "../One_Shifting/inst/config/config_run_multi_RNA_HCA_10x_ENCODE.sh"
 
-bash ../One_Shifting/inst/scripts/run_bubble_method_plot.sh \
-    "../One_Shifting/inst/config/config_run_multi_ATAC_HCA_10x_ENCODE.sh"
+# bash ../One_Shifting/inst/scripts/run_bubble_method_plot.sh \
+#     "../One_Shifting/inst/config/config_run_multi_ATAC_HCA_10x_ENCODE.sh"

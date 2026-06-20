@@ -46,10 +46,10 @@ load_UMAP_GBM_darmanis <- function(save_dir) {
 
     clean_field <- function(x) gsub("^[^:]+:\\s*", "", x)
 
-    gsm_ids     <- extract_field(all_lines, "!Sample_geo_accession")
-    plate_ids   <- clean_field(extract_field(all_lines, "!Sample_characteristics_ch1", occurrence = 2))
-    wells       <- clean_field(extract_field(all_lines, "!Sample_characteristics_ch1", occurrence = 3))
-    cell_types  <- clean_field(extract_field(all_lines, "!Sample_characteristics_ch1", occurrence = 7))
+    gsm_ids <- extract_field(all_lines, "!Sample_geo_accession")
+    plate_ids <- clean_field(extract_field(all_lines, "!Sample_characteristics_ch1", occurrence = 2))
+    wells <- clean_field(extract_field(all_lines, "!Sample_characteristics_ch1", occurrence = 3))
+    cell_types <- clean_field(extract_field(all_lines, "!Sample_characteristics_ch1", occurrence = 7))
 
     meta <- data.frame(
         gsm = gsm_ids,
