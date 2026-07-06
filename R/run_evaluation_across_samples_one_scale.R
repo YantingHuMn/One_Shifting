@@ -12,41 +12,28 @@ sample_index_arg <- args[3]
 
 # ============================================================
 # args4:
-#
-# missing:
-#   only read original no-extra-subdir results
-#
-# dropout_0p1:
-#   only read BASE_DIR/sample_INPUT_xxx/dropout_0p1/...
-#
-# no_extra_subdir,dropout_0p1,dropout_0p5:
-#   read:
-#       BASE_DIR/sample_INPUT_xxx/...
-#       BASE_DIR/sample_INPUT_xxx/dropout_0p1/...
-#       BASE_DIR/sample_INPUT_xxx/dropout_0p5/...
-#
-# Important:
-#   extra_subdir affects input reading path only.
-#   Combined output is saved to Across_sample_bubble_plots/...
+#   missing:
+#       use no_extra_subdir only
+#   dropout_0p1:
+#       use dropout_0p1 only
+#   no_extra_subdir,dropout_0p1,dropout_0p5:
+#       combine all these groups into one plot
 # ============================================================
 
 if (length(args) >= 4 && !is.na(args[4]) && args[4] != "") {
-    extra_subdir_labels <- str_split(args[4], ",")[[1]]
-    extra_subdir_labels <- str_trim(extra_subdir_labels)
-    extra_subdir_labels <- extra_subdir_labels[extra_subdir_labels != ""]
+    extra_subdirs <- str_split(args[4], ",")[[1]]
+    extra_subdirs <- str_trim(extra_subdirs)
+    extra_subdirs <- extra_subdirs[extra_subdirs != ""]
 } else {
-    extra_subdir_labels <- c("no_extra_subdir")
+    extra_subdirs <- c("no_extra_subdir")
 }
 
-# Labels used in plot / output folder
-# Paths used for input reading
-# no_extra_subdir means there is no extra folder between sample_dir and csv file.
-extra_subdir_paths <- extra_subdir_labels
-extra_subdir_paths[extra_subdir_paths %in% c("no_extra_subdir", "none", "default", "original")] <- ""
+# Convert label to real folder path
+# no_extra_subdir / none / default means no extra folder
+extra_subdir_path_map <- extra_subdirs
+extra_subdir_path_map[extra_subdir_path_map %in% c("no_extra_subdir", "none", "default")] <- ""
 
-# Output folder name only.
-# This does NOT affect input reading path.
-out_dir_suffix <- paste(extra_subdir_labels, collapse = "__")
+out_dir_suffix <- paste(extra_subdirs, collapse = "__")
 
 OUT_DIR <- file.path(
     BASE_DIR,
@@ -96,30 +83,12 @@ sample_indices <- sample_indices[
 sample_names <- sample_table[[2]][sample_indices]
 sample_names <- sample_names[!is.na(sample_names) & sample_names != ""]
 
-message("Samples:")
 print(sample_names)
+print(extra_subdirs)
 
-message("Extra subdir labels:")
-print(extra_subdir_labels)
 
-message("Extra subdir input paths:")
-print(extra_subdir_paths)
-
-message("Output directory:")
-print(OUT_DIR)
-
-# ============================================================
 # Function: read one table_df file
-# ============================================================
-
-read_one_bubble_table <- function(
-    sample_name,
-    input_type,
-    corr_dir,
-    mode_suffix,
-    extra_subdir_path = "",
-    extra_subdir_label = "no_extra_subdir"
-) {
+read_one_bubble_table <- function(sample_name, input_type, corr_dir, mode_suffix, extra_subdir = "", extra_subdir_label = "no_extra_subdir") {
     corr_object <- corr_object_map[[corr_dir]]
 
     sample_dir <- file.path(
@@ -129,7 +98,7 @@ read_one_bubble_table <- function(
 
     path_parts <- c(
         sample_dir,
-        extra_subdir_path,
+        extra_subdir,
         paste0(
             "bubble_plot_summary_",
             corr_dir,
@@ -145,8 +114,6 @@ read_one_bubble_table <- function(
 
     file_path <- do.call(file.path, as.list(path_parts))
 
-    message("[Reading] ", file_path)
-
     if (!file.exists(file_path)) {
         message("[Missing] ", file_path)
         return(NULL)
@@ -160,23 +127,15 @@ read_one_bubble_table <- function(
             input_type = input_type,
             corr_dir = corr_dir,
             mode_suffix = mode_suffix,
-
-            # This is the actual input folder path.
-            # For no_extra_subdir, this is "".
-            extra_subdir = extra_subdir_path,
-
-            # This is the label shown in plot.
+            extra_subdir = extra_subdir,
             extra_subdir_label = extra_subdir_label,
-
             source_file = file_path
         )
 
     return(df)
 }
 
-# ============================================================
 # Function: aggregate across samples
-# ============================================================
 
 aggregate_across_samples <- function(all_df) {
 
@@ -209,8 +168,10 @@ aggregate_across_samples <- function(all_df) {
         mutate(
             method_combination = paste(method, metric, sep = " | "),
 
-            # x-axis column:
-            # dropout group | corr_dir | method | metric
+            # This is the new x-axis column.
+            # Example:
+            # no_extra_subdir | col | DCA_mse | pearson
+            # dropout_0p1     | row | scVI_mse | spearman
             x_group = paste(
                 extra_subdir_label,
                 corr_dir,
@@ -218,6 +179,7 @@ aggregate_across_samples <- function(all_df) {
                 sep = " | "
             ),
 
+            # keep these columns, although plotting below uses avg_rank directly
             rank_score_perf = max(avg_rank_perf, na.rm = TRUE) + 1 - avg_rank_perf,
             rank_score_residual = max(avg_rank_residual, na.rm = TRUE) + 1 - avg_rank_residual,
             rank_score_combined = max(avg_combined_rank, na.rm = TRUE) + 1 - avg_combined_rank
@@ -226,10 +188,7 @@ aggregate_across_samples <- function(all_df) {
     return(avg_df)
 }
 
-# ============================================================
 # Function: make x-axis order
-# ============================================================
-
 make_x_order <- function(avg_df) {
 
     x_order <- avg_df %>%
@@ -242,7 +201,7 @@ make_x_order <- function(avg_df) {
         mutate(
             extra_subdir_label = factor(
                 extra_subdir_label,
-                levels = extra_subdir_labels
+                levels = extra_subdirs
             ),
             corr_dir = factor(
                 corr_dir,
@@ -260,12 +219,11 @@ make_x_order <- function(avg_df) {
     return(x_order)
 }
 
-# ============================================================
 # Function: plot performance bubble plot
-# ============================================================
-
 plot_performance_bubble <- function(avg_df, title_text, out_png, subtitle_text = NULL) {
 
+    # Average rank across all x groups for each transformation
+    # smaller avg_rank = better
     avg_rank_perf <- avg_df %>%
         group_by(trans) %>%
         summarise(
@@ -273,11 +231,13 @@ plot_performance_bubble <- function(avg_df, title_text, out_png, subtitle_text =
             .groups = "drop"
         )
 
+    # Transformation order: best average rank first
     perf_order <- avg_rank_perf %>%
         arrange(avg_rank) %>%
         pull(trans) %>%
         as.character()
 
+    # Put best transformation on top of y-axis
     avg_rank_perf <- avg_rank_perf %>%
         mutate(
             trans = factor(trans, levels = rev(perf_order)),
@@ -351,15 +311,16 @@ plot_performance_bubble <- function(avg_df, title_text, out_png, subtitle_text =
         axis = "tb"
     )
 
+    # wider plot because x-axis can have 24 columns
     ggsave(out_png, p, width = 22, height = 10, dpi = 300)
 }
 
-# ============================================================
-# Function: plot residual bubble plot
-# ============================================================
 
+# Function: plot residual bubble plot
 plot_residual_bubble <- function(avg_df, title_text, out_png, subtitle_text = NULL) {
 
+    # Average rank across all x groups for each transformation
+    # smaller avg_rank = better
     avg_rank_resid <- avg_df %>%
         group_by(trans) %>%
         summarise(
@@ -367,11 +328,13 @@ plot_residual_bubble <- function(avg_df, title_text, out_png, subtitle_text = NU
             .groups = "drop"
         )
 
+    # Transformation order: best average rank first
     resid_order <- avg_rank_resid %>%
         arrange(avg_rank) %>%
         pull(trans) %>%
         as.character()
 
+    # Put best transformation on top of y-axis
     avg_rank_resid <- avg_rank_resid %>%
         mutate(
             trans = factor(trans, levels = rev(resid_order)),
@@ -445,13 +408,12 @@ plot_residual_bubble <- function(avg_df, title_text, out_png, subtitle_text = NU
         axis = "tb"
     )
 
+    # wider plot because x-axis can have 24 columns
     ggsave(out_png, p, width = 22, height = 10, dpi = 300)
 }
 
-# ============================================================
-# Main
-# ============================================================
 
+# Main
 all_aggregated <- list()
 
 for (input_type in input_types) {
@@ -461,16 +423,16 @@ for (input_type in input_types) {
 
         message("========================================")
         message("Processing combined plot: ", input_type, " | ", mode_suffix)
-        message("Extra subdir labels: ", paste(extra_subdir_labels, collapse = ", "))
+        message("Extra subdir groups: ", paste(extra_subdirs, collapse = ", "))
         message("corr_dir groups: ", paste(corr_dirs, collapse = ", "))
         message("========================================")
 
         df_list_all <- list()
 
-        for (extra_i in seq_along(extra_subdir_labels)) {
+        for (extra_i in seq_along(extra_subdirs)) {
 
-            extra_subdir_label <- extra_subdir_labels[extra_i]
-            extra_subdir_path <- extra_subdir_paths[extra_i]
+            extra_subdir_label <- extra_subdirs[extra_i]
+            extra_subdir_path <- extra_subdir_path_map[extra_i]
 
             for (corr_dir in corr_dirs) {
 
@@ -480,7 +442,7 @@ for (input_type in input_types) {
                     input_type = input_type,
                     corr_dir = corr_dir,
                     mode_suffix = mode_suffix,
-                    extra_subdir_path = extra_subdir_path,
+                    extra_subdir = extra_subdir_path,
                     extra_subdir_label = extra_subdir_label
                 )
 
@@ -502,7 +464,7 @@ for (input_type in input_types) {
         subtitle_text <- str_wrap(
             paste0(
                 "Samples included: ", samples_used,
-                " | Groups: ", dropout_used,
+                " | Dropout groups: ", dropout_used,
                 " | corr_dir: ", corr_used
             ),
             width = 150
@@ -523,7 +485,7 @@ for (input_type in input_types) {
             paste0(
                 "bubble_plot_summary_col_row_",
                 mode_suffix,
-                "_all_extra_subdir_groups_across_samples_raw_table_df.csv"
+                "_all_dropout_groups_across_samples_raw_table_df.csv"
             )
         )
 
@@ -532,7 +494,7 @@ for (input_type in input_types) {
             paste0(
                 "bubble_plot_summary_col_row_",
                 mode_suffix,
-                "_all_extra_subdir_groups_across_samples_avg_rank_table_df.csv"
+                "_all_dropout_groups_across_samples_avg_rank_table_df.csv"
             )
         )
 
@@ -541,7 +503,7 @@ for (input_type in input_types) {
             paste0(
                 "bubble_plot_summary_col_row_",
                 mode_suffix,
-                "_all_extra_subdir_groups_across_samples_avg_rank_performance.png"
+                "_all_dropout_groups_across_samples_avg_rank_performance.png"
             )
         )
 
@@ -550,7 +512,7 @@ for (input_type in input_types) {
             paste0(
                 "bubble_plot_summary_col_row_",
                 mode_suffix,
-                "_all_extra_subdir_groups_across_samples_avg_rank_residual.png"
+                "_all_dropout_groups_across_samples_avg_rank_residual.png"
             )
         )
 
@@ -564,7 +526,7 @@ for (input_type in input_types) {
                 input_type,
                 " | col + row | ",
                 mode_suffix,
-                " | all groups"
+                " | all dropout groups"
             ),
             out_png = perf_out_png,
             subtitle_text = subtitle_text
@@ -577,7 +539,7 @@ for (input_type in input_types) {
                 input_type,
                 " | col + row | ",
                 mode_suffix,
-                " | all groups"
+                " | all dropout groups"
             ),
             out_png = resid_out_png,
             subtitle_text = subtitle_text
@@ -585,22 +547,20 @@ for (input_type in input_types) {
 
         all_aggregated[[paste(input_type, mode_suffix, sep = "__")]] <- avg_df
 
-        message("[Saved raw] ", raw_out_csv)
-        message("[Saved avg] ", avg_out_csv)
-        message("[Saved performance plot] ", perf_out_png)
-        message("[Saved residual plot] ", resid_out_png)
+        message("[Saved] ", raw_out_csv)
+        message("[Saved] ", avg_out_csv)
+        message("[Saved] ", perf_out_png)
+        message("[Saved] ", resid_out_png)
     }
 }
 
-# ============================================================
-# Save one combined summary table for all input types and modes
-# ============================================================
 
+# Save one combined summary table for all input types and modes
 combined_avg_df <- bind_rows(all_aggregated)
 
 combined_out_csv <- file.path(
     OUT_DIR,
-    "bubble_plot_summary_all_input_types_all_modes_all_extra_subdir_groups_across_samples_avg_rank_table_df.csv"
+    "bubble_plot_summary_all_input_types_all_modes_all_dropout_groups_across_samples_avg_rank_table_df.csv"
 )
 
 write_csv(combined_avg_df, combined_out_csv)

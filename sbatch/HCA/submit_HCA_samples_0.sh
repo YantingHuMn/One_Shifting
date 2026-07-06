@@ -1,5 +1,5 @@
 #!/bin/bash
-dropout_keep_par=""
+dropout_keep_par=0.5
 tsv="/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA_input_sample_pairs.tsv"
 # run_first_n_sample=4
 
@@ -10,19 +10,15 @@ log_dir="/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/AAA_logs"
 mkdir -p "$log_dir"
 
 # tail -n +2 "$tsv" | awk -v n="$run_first_n_sample" 'NR <= n {print $2}' | while read -r sample_name; do
-selected_rows="1,2,3,4,5,6,7"
-selected_rows=""
+# selected_rows="1,3,5,7"
+selected_rows="3"
 
 tail -n +2 "$tsv" | awk -v rows="$selected_rows" '
 BEGIN {
-    if (rows == "") {
-        all = 1
-    } else {
-        split(rows, a, ",")
-        for (i in a) keep[a[i]] = 1
-    }
+    split(rows, a, ",")
+    for (i in a) keep[a[i]] = 1
 }
-all || keep[NR] {print $2}
+keep[NR] {print $2}
 ' | while read -r sample_name; do
     if [[ -z "$sample_name" ]]; then
         echo "Skipping empty sample_name"

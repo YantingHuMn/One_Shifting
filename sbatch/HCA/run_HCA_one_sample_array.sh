@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=HCA
-#SBATCH --partition=gpu
-#SBATCH --gres=gpu:1
-#SBATCH --time=3-00:00:00
-#SBATCH --mem=80G
+#SBATCH --partition=shared
+# #SBATCH --gres=gpu:1
+#SBATCH --time=7-00:00:00
+#SBATCH --mem=100G
 #SBATCH --array=0-3
 #SBATCH --output=/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/AAA_logs/submit_HCA_pip_%A_%a.out
 #SBATCH --error=/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/AAA_logs/submit_HCA_pip_%A_%a.err

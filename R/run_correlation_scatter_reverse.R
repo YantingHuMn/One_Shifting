@@ -47,8 +47,8 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
     if (!corr_method %in% c("pearson", "spearman")) {
         stop("Error: corr_method must be either 'pearson' or 'spearman'")
     }
-    if (!data_mode %in% c("default", "v1_trans_v2_trans", "v1_reverse", "v1_trans_v2_trans_norm_100000")) {
-        stop("Error: data_mode must be 'default', 'v1_trans_v2_trans', 'v1_reverse', or 'v1_trans_v2_trans_norm_100000'")
+    if (!data_mode %in% c("default", "v1_trans_v2_trans", "v1_reverse", "v1_trans_v2_trans_norm_100000", "v1_trans_v2_trans_norm_factor")) {
+        stop("Error: data_mode must be 'default', 'v1_trans_v2_trans', 'v1_reverse', 'v1_trans_v2_trans_norm_100000', or 'v1_trans_v2_trans_norm_factor'")
     }
 
     # Helper: apply transformation
@@ -176,15 +176,64 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
     df2 <- read_feather(path2)  # rep1 (control)
     df3 <- read_feather(path3)  # reconstruction (treatment)
 
-    col1 <- colnames(df1)
-    col2 <- colnames(df2)
-    all_equal <- identical(col1, col2)
-    print(paste("colnames for df1 and df2 are all equal:", all_equal))
-
     # Drop pos column if present
     if ("pos" %in% names(df1)) df1 <- df1[, !(names(df1) %in% "pos")]
     if ("pos" %in% names(df2)) df2 <- df2[, !(names(df2) %in% "pos")]
     if ("pos" %in% names(df3)) df3 <- df3 %>% dplyr::select(-pos)
+
+    # Check dimensions / column names across three dataframes
+    same_dim <- identical(dim(df1), dim(df2)) && identical(dim(df1), dim(df3))
+    same_colnames <- identical(colnames(df1), colnames(df2)) && identical(colnames(df1), colnames(df3))
+
+    cat("Dimension check:\n")
+    cat("  df1:", paste(dim(df1), collapse = " x "), "\n")
+    cat("  df2:", paste(dim(df2), collapse = " x "), "\n")
+    cat("  df3:", paste(dim(df3), collapse = " x "), "\n")
+    cat("  same_dim:", same_dim, "\n")
+    cat("  same_colnames:", same_colnames, "\n")
+
+    if (!same_dim || !same_colnames) {
+        warning("Dimension or column-name mismatch detected. Filtering df1, df2, and df3 to intersected columns.")
+
+        common_cols <- Reduce(intersect, list(colnames(df1), colnames(df2), colnames(df3)))
+
+        if (length(common_cols) == 0) {
+            stop("Error: No intersected columns found among df1, df2, and df3.")
+        }
+
+        cat("  Number of intersected columns:", length(common_cols), "\n")
+
+        df1 <- df1[, common_cols, drop = FALSE]
+        df2 <- df2[, common_cols, drop = FALSE]
+        df3 <- df3[, common_cols, drop = FALSE]
+
+        # Save filtered files to the same directory as path3 / OUT_PATH
+        filtered_dir <- dirname(path3)
+
+        make_filtered_path <- function(x) {
+            base <- basename(x)
+            base_no_ext <- sub("\\.feather$", "", base)
+            file.path(filtered_dir, paste0(base_no_ext, "_filtered.feather"))
+        }
+
+        df1_filtered_path <- make_filtered_path(path1)
+        df2_filtered_path <- make_filtered_path(path2)
+        df3_filtered_path <- make_filtered_path(path3)
+
+        write_feather(df1, df1_filtered_path)
+        write_feather(df2, df2_filtered_path)
+        write_feather(df3, df3_filtered_path)
+
+        cat("Filtered feather files saved:\n")
+        cat("  df1:", df1_filtered_path, "\n")
+        cat("  df2:", df2_filtered_path, "\n")
+        cat("  df3:", df3_filtered_path, "\n")
+
+        cat("Dimension after filtering:\n")
+        cat("  df1:", paste(dim(df1), collapse = " x "), "\n")
+        cat("  df2:", paste(dim(df2), collapse = " x "), "\n")
+        cat("  df3:", paste(dim(df3), collapse = " x "), "\n")
+    }
 
     # Apply data_mode transformations
     if (data_mode == "v1_trans_v2_trans") {
@@ -213,6 +262,31 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
         df1 <- as.data.frame(mat1)
 
         cat(paste("data_mode: v1_trans_v2_trans_norm_100000 | ground truth library size norm *100000 + trans:", this_trans_factor, "\n"))
+    } else if (data_mode == "v1_trans_v2_trans_norm_factor") {
+        # Same as v1_trans_v2_trans but also apply the provided normalization factor to ground truth (df1)
+        mat1 <- as.matrix(df1)
+
+        if (factor == "no_norm") {
+            mat1 <- mat1
+        } else if (factor == "standardize") {
+            mat1 <- scale(mat1)
+            mat1[is.na(mat1)] <- 0
+        } else {
+            lib_sizes <- rowSums(mat1)
+            lib_sizes[lib_sizes == 0] <- 1  # avoid division by zero
+
+            current_norm_factor <- as.numeric(factor)
+            if (is.na(current_norm_factor)) {
+                stop("data_mode v1_trans_v2_trans_norm_factor requires factor to be one of no_norm, standardize, or numeric. Got: ", factor)
+            }
+
+            mat1 <- mat1 / lib_sizes * current_norm_factor
+        }
+
+        mat1 <- apply_trans(mat1, this_trans_factor)
+        df1 <- as.data.frame(mat1)
+
+        cat(paste("data_mode: v1_trans_v2_trans_norm_factor | ground truth norm:", factor, "+ trans:", this_trans_factor, "\n"))
     }
 
     # Filter out all-zero columns/rows in ground truth (df1), sync df2 & df3
@@ -454,7 +528,6 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
 
     print(paste0("Summary statistics saved to ", save_csv_path))
 }
-
 
 # Run all 4 combinations: {pearson, spearman} x {unfiltered, filtered} 
 

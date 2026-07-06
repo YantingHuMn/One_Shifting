@@ -1,4 +1,4 @@
-plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, n_clusters = NULL, clustering_method = "kmeans", ncol = 5, width = 30, height = NULL, dpi = 300, hvg_gene_path = NULL) {
+plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, n_clusters = NULL, clustering_method = "kmeans", ncol = 5, width = 30, height = NULL, dpi = 300) {
     # Load Libraries
     suppressPackageStartupMessages({
         library(arrow)
@@ -26,17 +26,6 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
 
     output_dir <- file.path(output_dir, clustering_method)
     dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
-    
-    hvg_genes <- NULL
-    if (!is.null(hvg_gene_path) && !is.na(hvg_gene_path) && hvg_gene_path != "") {
-        if (!file.exists(hvg_gene_path)) {
-            stop("[HVG] hvg_gene_path was provided but does not exist: ", hvg_gene_path)
-        }
-        hvg_genes <- readLines(hvg_gene_path)
-        hvg_genes <- unique(hvg_genes)
-        hvg_genes <- hvg_genes[!is.na(hvg_genes) & hvg_genes != ""]
-        cat(paste0("[HVG] Loaded ", length(hvg_genes), " genes from: ", hvg_gene_path, "\n"))
-    }
     
     run_find_clusters_safe <- function(obj, resolution, algorithm, verbose = FALSE) {
         tryCatch(
@@ -68,15 +57,6 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
         
         df <- read_feather(feather_path)
         cat(paste0("Data shape: ", nrow(df), " cells x ", ncol(df)-1, " genes\n"))
-        
-        if (!is.null(hvg_genes)) {
-            keep_genes <- intersect(hvg_genes, colnames(df))
-            if (length(keep_genes) == 0) {
-                stop("[HVG] No HVG genes found in dataframe columns: ", feather_path)
-            }
-            df <- df[, c("pos", keep_genes), drop = FALSE]
-            cat(paste0("[HVG] After filtering: ", nrow(df), " cells x ", ncol(df)-1, " genes\n"))
-        }
         
         cell_ids <- df$pos
         df$pos <- NULL
@@ -264,7 +244,6 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
     
     combined_plot <- wrap_plots(plot_list, ncol = ncol)
     umap_path <- file.path(output_dir, "UMAP_color_by_reference_top20.png")
-    dir.create(dirname(umap_path), showWarnings = FALSE, recursive = TRUE)
     ggsave(umap_path, combined_plot, width = width, height = height_umap, dpi = dpi, limitsize = FALSE)
     cat(paste0("\n[SAVE] UMAP plot: ", umap_path, "\n"))
 
@@ -285,13 +264,11 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
     
     combined_plot_self <- wrap_plots(plot_list_self, ncol = ncol)
     umap_self_path <- file.path(output_dir, "UMAP_color_by_self_top20.png")
-    dir.create(dirname(umap_self_path), showWarnings = FALSE, recursive = TRUE)
     ggsave(umap_self_path, combined_plot_self, width = width, height = height_umap, dpi = dpi, limitsize = FALSE)
     cat(paste0("[SAVE] UMAP plot: ", umap_self_path, "\n"))
     
     # Save ARI CSV
     csv_path <- file.path(output_dir, paste0("ARI_", clustering_method, ".csv"))
-    dir.create(dirname(csv_path), showWarnings = FALSE, recursive = TRUE)
     write.csv(all_ari, csv_path, row.names = FALSE)
     cat(paste0("\n[SAVE] ARI table: ", csv_path, "\n"))
 
@@ -334,7 +311,6 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
     keep_idx <- sort(c(unlist(best_norm_rows), unlist(other_rows)))
     all_ari_best_norm <- all_ari[keep_idx, ]
     csv_best_path <- file.path(output_dir, paste0("ARI_", clustering_method, "_best_norm.csv"))
-    dir.create(dirname(csv_best_path), showWarnings = FALSE, recursive = TRUE)
     write.csv(all_ari_best_norm, csv_best_path, row.names = FALSE)
     cat(paste0("[SAVE] ARI best norm table: ", csv_best_path, "\n"))
 
@@ -349,7 +325,6 @@ plot_multiple_umap <- function(data_paths, data_names, celltype_df, output_dir, 
         theme(legend.position = "none")
 
     ari_plot_path <- file.path(output_dir, paste0("ARI_", clustering_method, ".png"))
-    dir.create(dirname(ari_plot_path), showWarnings = FALSE, recursive = TRUE)
     ggsave(ari_plot_path, p_ari, width = 12, height = 10, dpi = 300)
     cat(paste0("[SAVE] ARI plot: ", ari_plot_path, "\n"))
     

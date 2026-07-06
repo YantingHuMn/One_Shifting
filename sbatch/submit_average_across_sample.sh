@@ -2,17 +2,17 @@
 #SBATCH --job-name=multi_One_Shifting
 #SBATCH --partition=shared
 #SBATCH --time=3-00:00:00
-#SBATCH --mem=18G
+#SBATCH --mem=8G
 #SBATCH --output=/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/submit_average.out
 #SBATCH --error=/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/submit_average.err
 #SBATCH --mail-user=yhu157@jh.edu
 #SBATCH --mail-type=END,FAIL
-# #SBATCH --dependency=afterok:31582287
+#SBATCH --dependency=afterok:33324229
 
 sample_names=("Hr3" "LGS10S" "PF_specimen")
 
 export folder_name="HCA"
-export dropout_keep_par=0.5
+export dropout_keep_par=0.1
 
 for sample_name in "${sample_names[@]}"; do
     export sample_name
@@ -39,12 +39,20 @@ cd /dcs10/hongkai/data/yhu1/One_Shifting
 
 module load conda_R
 
-Rscript ../One_Shifting/R/run_evaluation_across_samples.R \
+# Rscript ../One_Shifting/R/run_evaluation_across_samples.R \
+#     $BASE_DIR \
+#     $TSV_FILE \
+#     "1,3,7" \
+#     "dropout_0p1"
+
+Rscript ../One_Shifting/R/run_evaluation_across_samples_one_scale.R \
     $BASE_DIR \
     $TSV_FILE \
     "1,3,7" \
-    "dropout_0p5"
+    "no_extra_subdir,dropout_0p1,dropout_0p5"
+
 
 # Rscript ../One_Shifting/R/check_HCA_sparsity.R \
 #     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA" 
+
 

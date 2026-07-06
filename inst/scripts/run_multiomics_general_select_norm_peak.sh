@@ -24,7 +24,8 @@ CONDITION="given_${V2}_${V2_norm_factor}_${V2_trans_factor}"
 OUTPUT_DIR="${READ_DIR}/${method}/${CONDITION}"
 mkdir -p $OUTPUT_DIR
 
-trans_factor=("no_trans" "sqrt" "sqrt+1" "log2" "count+1" "log2(count+2)")
+# trans_factor=("no_trans" "count+1" "sqrt" "sqrt+1" "log2" "log2(count+2)")
+trans_factor=("no_trans" "count+1")
 
 module load conda_R
 
@@ -41,6 +42,15 @@ if [ ! -f "$LOCK_FILE" ]; then
 
             Rscript ../One_Shifting/R/Step1_build_count_matrix.R \
               $INPUT_FILE \
+              "" \
+              "$READ_DIR" \
+              "no_norm" \
+              "no_norm" \
+              "TRUE" \
+              "p25"
+
+            Rscript ../One_Shifting/R/Step1_build_count_matrix.R \
+              $GROUND_TRUTH_FILE \
               "" \
               "$READ_DIR" \
               "no_norm" \
@@ -85,7 +95,8 @@ echo "===Finish build count matrix==="
   
 echo "=== Starting ${method} pipeline ==="
 
-for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
+# for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
+for data_mode in default v1_trans_v2_trans v1_trans_v2_trans_norm_100000 v1_trans_v2_trans_norm_factor; do
     if [ "$data_mode" = "default" ]; then
         mode_suffix="v1_trans_v2_no_trans"
     elif [ "$data_mode" = "v1_trans_v2_trans" ]; then
@@ -94,7 +105,10 @@ for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100
         mode_suffix="v1_reverse_v2_no_trans"
     elif [ "$data_mode" = "v1_trans_v2_trans_norm_100000" ]; then
         mode_suffix="v1_trans_v2_trans_norm_100000"
+    elif [ "$data_mode" = "v1_trans_v2_trans_norm_factor" ]; then
+        mode_suffix="v1_trans_v2_trans_norm_factor"
     fi
+
 
     for corr_dir in col row; do
         Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
@@ -128,13 +142,13 @@ fi
 echo "Bubble reset done, proceeding with $method..."
 
 if [ "$method" = "VAE" ]; then
-    METHOD_ARGS="--beta_grid 0 --hidden_grid1 8192 --hidden_grid2 2048"
+    METHOD_ARGS="--beta_grid 0 --hidden_grid1 512 --hidden_grid2 128 --batch_size_grid 16"
 elif [ "$method" = "DCA_mse" ]; then
-    METHOD_ARGS="--dropout_grid 0.0 --hidden_grid1 8192 --hidden_grid2 2048"
+    METHOD_ARGS="--dropout_grid 0.0 --hidden_grid1 512 --hidden_grid2 128 --batch_size_grid 16"
 elif [ "$method" = "scVI_mse" ]; then
-    METHOD_ARGS="--hidden_grid 512,256,128"
+    METHOD_ARGS="--hidden_grid 256 --batch_size_grid 16"
 elif [ "$method" = "Transformer_denoise" ]; then
-    METHOD_ARGS="--n_tokens_grid 16 --d_model_grid 32 --nhead_grid 2 --num_layers_grid 1 --dim_feedforward_grid 64 --dropout_grid 0.1"
+    METHOD_ARGS="--n_tokens_grid 16 --d_model_grid 32 --nhead_grid 2 --num_layers_grid 1 --dim_feedforward_grid 64 --dropout_grid 0.1 --batch_size_grid 16"
 fi
         
 # train - find par
@@ -145,22 +159,175 @@ for this_trans_factor in "${trans_factor[@]}"; do
     mkdir -p "$OUT_DIR"
 
     DATA_PATH1="$READ_DIR/$V1/Count_Matrix_norm_by_no_norm.feather"
+    DATA_PATH2="$READ_DIR/$V2/Count_Matrix_norm_by_no_norm.feather"
     SUMMARY_FILE="${OUT_DIR}/hyper_par_report.tsv"
 
-    source ~/.bashrc
-    conda activate vae_env2
-    python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
-    python -u ../One_Shifting/myproject/Step2_3_train_${method}_norm.py \
-    --data_path "$DATA_PATH1" \
-    --out_summary "$SUMMARY_FILE" \
-    --early_stop \
-    --patience 10 \
-    --n_splits 5 \
-    --trans_grid "$this_trans_factor" \
-    $METHOD_ARGS
+    # source ~/.bashrc
+    # conda activate vae_env2
+    # python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
+
+    # python -u ../One_Shifting/myproject/Step2_3_train_${method}_norm.py \
+    # --data_path "$DATA_PATH1" \
+    # --out_summary "$SUMMARY_FILE" \
+    # --early_stop \
+    # --patience 10 \
+    # --n_splits 5 \
+    # --trans_grid "$this_trans_factor" \
+    # $METHOD_ARGS
     
-    python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
-    conda deactivate 
+    # python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
+    # conda deactivate 
 
+    # reconstruct
+    SAVED_DIR="${OUT_DIR}/saved_models"
+
+    factor=$(awk -F'\t' '$1=="# selected_norm"{print $2; exit}' "$SUMMARY_FILE")
+
+    # recon
+    OUT_PATH="${OUT_DIR}/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather"
+    GA_PATH_filtered="${OUT_DIR}/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}_summarized_to_GA_filtered.feather"
+
+    # input
+    INPUT_TRANS_PATH="${OUT_DIR}/input_trans_by_${this_trans_factor}_norm_by_${factor}.feather"
+    INPUT_TRANS_PATH_filtered="${OUT_DIR}/input_trans_by_${this_trans_factor}_norm_by_${factor}_filtered.feather"
+
+    # output
+    GROUND_TRUTH_filtered="${OUT_DIR}/ground_truth_filtered.feather"
+
+    Rscript ../One_Shifting/R/run_summarize_peak_to_gene_activity.R \
+        "$OUT_PATH" \
+        "$GA_PATH_filtered" \
+        "$INPUT_TRANS_PATH" \
+        "$INPUT_TRANS_PATH_filtered" \
+        "$DATA_PATH2" \
+        "$GROUND_TRUTH_filtered" 
+        
+
+    # correlation
+    echo "=== Step 7: Correlation analysis ==="
+    module load conda_R
+
+    # for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
+    for data_mode in default v1_trans_v2_trans v1_trans_v2_trans_norm_100000 v1_trans_v2_trans_norm_factor; do
+        if [ "$data_mode" = "default" ]; then
+            mode_suffix="v1_trans_v2_no_trans"
+        elif [ "$data_mode" = "v1_trans_v2_trans" ]; then
+            mode_suffix="v1_trans_v2_trans"
+        elif [ "$data_mode" = "v1_reverse" ]; then
+            mode_suffix="v1_reverse_v2_no_trans"
+        elif [ "$data_mode" = "v1_trans_v2_trans_norm_100000" ]; then
+            mode_suffix="v1_trans_v2_trans_norm_100000"
+        elif [ "$data_mode" = "v1_trans_v2_trans_norm_factor" ]; then
+            mode_suffix="v1_trans_v2_trans_norm_factor"
+        fi
+
+
+        for corr_dir in col row; do
+            Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
+            mkdir -p "$Figure_DIR"
+
+            Rscript ../One_Shifting/R/run_correlation_scatter_reverse.R \
+                "$GROUND_TRUTH_filtered" \
+                "$INPUT_TRANS_PATH_filtered" \
+                "$GA_PATH_filtered" \
+                "$Figure_DIR"  \
+                "$OUT_DIR/saved_models" \
+                "$factor" \
+                "$V2_norm_factor" \
+                "$this_trans_factor" \
+                "$V2_trans_factor" \
+                "${Figure_DIR}" \
+                "$corr_dir" \
+                "${V1}" \
+                "${method}" \
+                "$data_mode"
+        done
+
+        sleep 2
+
+    done
+done
+
+
+# === Summary steps: run after all trans_factor x norm_factor combinations are done ===
+echo "=== Post-processing: combine figures and summary ==="
+module load conda_R
+
+
+# for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
+for data_mode in default v1_trans_v2_trans v1_trans_v2_trans_norm_100000 v1_trans_v2_trans_norm_factor; do
+    if [ "$data_mode" = "default" ]; then
+        mode_suffix="v1_trans_v2_no_trans"
+    elif [ "$data_mode" = "v1_trans_v2_trans" ]; then
+        mode_suffix="v1_trans_v2_trans"
+    elif [ "$data_mode" = "v1_reverse" ]; then
+        mode_suffix="v1_reverse_v2_no_trans"
+    elif [ "$data_mode" = "v1_trans_v2_trans_norm_100000" ]; then
+        mode_suffix="v1_trans_v2_trans_norm_100000"
+    elif [ "$data_mode" = "v1_trans_v2_trans_norm_factor" ]; then
+        mode_suffix="v1_trans_v2_trans_norm_factor"
+    fi
+
+
+    COL_Figure_DIR="$OUTPUT_DIR/Figures_col_${mode_suffix}"
+    ROW_Figure_DIR="$OUTPUT_DIR/Figures_row_${mode_suffix}"
+
+    for corr_dir in col row; do
+        Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
+
+        Rscript ../One_Shifting/R/run_combine_figures_reverse.R \
+            "${Figure_DIR}" \
+            "${corr_dir}"
+
+        if [ "$corr_dir" = "col" ]; then
+            obj="gene"
+        else
+            obj="cell"
+        fi
+        for corr_method in pearson spearman; do
+            if [ "$data_mode" = "default" ]; then
+                mode_tag=""
+            else
+                mode_tag="_${data_mode}"
+            fi
+            Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
+                "${Figure_DIR}/plots_summary_${corr_method}_${corr_dir}_${obj}${mode_tag}.csv" \
+                $method \
+                "log(count+2)"
+        done
+    done
+
+    for corr_method in pearson spearman; do
+        if [ "$data_mode" = "default" ]; then
+            mode_tag=""
+        else
+            mode_tag="_${data_mode}"
+        fi
+        Rscript ../One_Shifting/R/Step_post_summary_bubble_table.R \
+            "$method" \
+            "$V1" \
+            "$OUTPUT_DIR" \
+            "TRUE" \
+            "${COL_Figure_DIR}/plots_summary_${corr_method}_col_gene${mode_tag}.csv" \
+            "${READ_DIR}/bubble_plot_summary_col_gene_${mode_suffix}.csv" \
+            "$corr_method" \
+            "$V2_trans_factor" \
+            "$V2_norm_factor" \
+            "${trans_factor[@]}"
+
+        if [[ "$V1" == *RNA* && "$V2" == *ATAC* ]] || [[ "$V1" == *ATAC* && "$V2" == *RNA* ]]; then
+            Rscript ../One_Shifting/R/Step_post_summary_bubble_table.R \
+                "$method" \
+                "$V1" \
+                "$OUTPUT_DIR" \
+                "FALSE" \
+                "${ROW_Figure_DIR}/plots_summary_${corr_method}_row_cell${mode_tag}.csv" \
+                "${READ_DIR}/bubble_plot_summary_row_cell_${mode_suffix}.csv" \
+                "$corr_method" \
+                "$V2_trans_factor" \
+                "$V2_norm_factor" \
+                "${trans_factor[@]}"
+        fi
+    done
 done

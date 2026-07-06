@@ -7,10 +7,16 @@ read_dir <- args[1]
 cell_type_reference_path <- args[2] 
 data_path_df_path <- args[3]
 
-if (length(args) >= 4) {
+if (length(args) >= 4 && args[4] != "") {
     clustering_methods <- strsplit(args[4], ",")[[1]]
 } else {
     clustering_methods <- c("kmeans", "louvain", "leiden")
+}
+
+if (length(args) >= 5 && args[5] != "") {
+    hvg_gene_path <- args[5]
+} else {
+    hvg_gene_path <- NULL
 }
 
 celltype_df <- read.csv(cell_type_reference_path)
@@ -70,7 +76,8 @@ if ("kmeans" %in% clustering_methods) {
         n_clusters = length(unique(na.omit(celltype_df$cell_type))),
         clustering_method = "kmeans",
         ncol = 5,
-        width = 30
+        width = 30,
+        hvg_gene_path = hvg_gene_path
     )
     rm(result)
     gc()
@@ -85,7 +92,8 @@ if ("louvain" %in% clustering_methods) {
         n_clusters = length(unique(na.omit(celltype_df$cell_type))),
         clustering_method = "louvain",
         ncol = 5,
-        width = 30
+        width = 30,
+        hvg_gene_path = hvg_gene_path
     )
     rm(result)
     gc()
@@ -100,7 +108,8 @@ if ("leiden" %in% clustering_methods) {
         n_clusters = length(unique(na.omit(celltype_df$cell_type))),
         clustering_method = "leiden",
         ncol = 5,
-        width = 30
+        width = 30,
+        hvg_gene_path = hvg_gene_path
     )
     rm(result)
     gc()

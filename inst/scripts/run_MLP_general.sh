@@ -124,10 +124,8 @@ for this_trans_factor in "${trans_factor[@]}"; do
         python -u ../One_Shifting/myproject/Step2_train_MLP.py \
         --tf_train ${OUT_DIR}/tf_train.feather \
         --tf_val ${OUT_DIR}/tf_val.feather \
-        --tf_test ${OUT_DIR}/tf_test.feather \
         --target_train ${OUT_DIR}/target_train.feather \
         --target_val ${OUT_DIR}/target_val.feather \
-        --target_test ${OUT_DIR}/target_test.feather \
         --trans "${this_trans_factor}" \
         --epochs 60 \
         --patience 10 \
@@ -138,58 +136,21 @@ for this_trans_factor in "${trans_factor[@]}"; do
         OUT_PATH="${OUT_DIR}/input_predicted_trans_by_${this_trans_factor}_norm_by_${factor}.feather" # input predicted
         OUT_pre="${OUT_DIR}/input_true_trans_by_${this_trans_factor}_norm_by_${factor}.feather" # input
         OUT_GROUND_TRUTH="${OUT_DIR}/ground_truth_trans_by_${this_trans_factor}_norm_by_${factor}.feather" # ground truth
+        compare_combinations_save_path="${OUTPUT_DIR}/compare_combinations_trans_norm.csv"
 
         python ../One_Shifting/myproject/Step3_predict_MLP.py \
         --model_dir ${SAVED_DIR} \
         --tf_test ${OUT_DIR}/tf_test.feather \
         --target_test ${OUT_DIR}/target_test.feather \
-        --ground_test ${OUTPUT_DIR}/${V2}_Ground_TRUTH/target_test.feather \
         --out_pred ${OUT_PATH} \
         --out_truth ${OUT_pre} \
-        --out_ground_truth ${OUT_GROUND_TRUTH}
+        --norm_factor ${factor} \
+        --this_trans_factor ${this_trans_factor} \
+        --compare_combinations_save_path ${compare_combinations_save_path}
+
 
         python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
         conda deactivate 
-
-        # correlation
-        echo "=== Step 7: Correlation analysis ==="
-        module load conda_R
-
-        Figure_DIR="$OUTPUT_DIR/Figures_col"
-        mkdir -p "$Figure_DIR"
-
-        Rscript ../One_Shifting/R/run_correlation_scatter.R \
-          "$OUT_GROUND_TRUTH" \
-          "$OUT_pre" \
-          "$OUT_PATH" \
-          "$Figure_DIR"  \
-          "$SAVED_DIR" \
-          "$factor" \
-          "$V2_norm_factor" \
-          "$this_trans_factor" \
-          "$V2_trans_factor" \
-          "${OUTPUT_DIR}" \
-          "col" \
-          "${V1}" \
-          "${method}"        
-
-        Figure_DIR="$OUTPUT_DIR/Figures_row"
-        mkdir -p "$Figure_DIR"
-
-        Rscript ../One_Shifting/R/run_correlation_scatter.R \
-          "$OUT_GROUND_TRUTH" \
-          "$OUT_pre" \
-          "$OUT_PATH" \
-          "$Figure_DIR"  \
-          "$SAVED_DIR" \
-          "$factor" \
-          "$V2_norm_factor" \
-          "$this_trans_factor" \
-          "$V2_trans_factor" \
-          "${OUTPUT_DIR}" \
-          "row" \
-          "${V1}" \
-          "${method}"        
 
         sleep 2
 
@@ -197,65 +158,12 @@ for this_trans_factor in "${trans_factor[@]}"; do
 done
 
 
-module load conda_R
- 
-Rscript ../One_Shifting/R/run_combine_figures.R \
-  "$OUTPUT_DIR/Figures_col" 
-
-Rscript ../One_Shifting/R/run_combine_figures.R \
-  "$OUTPUT_DIR/Figures_row" \
-  "row"
-
-
-sleep 2
-
-# Summary scatter plots
-for corr_method in pearson spearman; do
-    for gt_suffix in "" "_noGTzero"; do
-        Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
-          "${OUTPUT_DIR}/plots_summary_${corr_method}_col_gene${gt_suffix}.csv" \
-          $method \
-          "log(count+2)"
-    done
-done
-
-for corr_method in pearson spearman; do
-    for gt_suffix in "" "_noGTzero"; do
-        Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
-          "${OUTPUT_DIR}/plots_summary_${corr_method}_row_cell${gt_suffix}.csv" \
-          $method \
-          "log(count+2)"
-    done
-done
-
-
-echo "=== Step 8: Bubble Plot ==="
-for corr_method in pearson spearman; do
-    for gt_suffix in "" "_noGTzero"; do
-        Rscript ../One_Shifting/R/Step_post_summary_bubble_table.R \
-            "$method" \
-            "$V1" \
-            "$OUTPUT_DIR" \
-            "TRUE" \
-            "${OUTPUT_DIR}/plots_summary_${corr_method}_col_gene${gt_suffix}.csv" \
-            "${READ_DIR}/bubble_plot_summary_col_gene${gt_suffix}.csv" \
-            "$corr_method" \
-            "$V2_trans_factor" \
-            "$V2_norm_factor" \
-            "${trans_factor[@]}"
-
-        if [[ "$V1" == *RNA* && "$V2" == *ATAC* ]] || [[ "$V1" == *ATAC* && "$V2" == *RNA* ]]; then
-            Rscript ../One_Shifting/R/Step_post_summary_bubble_table.R \
-                "$method" \
-                "$V1" \
-                "$OUTPUT_DIR" \
-                "FALSE" \
-                "${OUTPUT_DIR}/plots_summary_${corr_method}_row_cell${gt_suffix}.csv" \
-                "${READ_DIR}/bubble_plot_summary_row_cell${gt_suffix}.csv" \
-                "$corr_method" \
-                "$V2_trans_factor" \
-                "$V2_norm_factor" \
-                "${trans_factor[@]}"
-        fi
-    done
-done
+Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
+    "${compare_combinations_save_path}" \
+    "mlp_TF_gene" \
+    "log(count+2)" \
+    "" \
+    "trans" \
+    "norm_factor" \
+    "pearson_corr" \
+    "spearman_col"

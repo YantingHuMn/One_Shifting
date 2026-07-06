@@ -225,7 +225,6 @@ load_rna_atac_from_h5ad <- function(path, sample_name, out_dir, upstream = 2000)
     )
 
     
-    
     # Filter to keep only genes non-zero in both
     keep_genes <- rowSums(rna_counts) > 0 & rowSums(activity_counts) > 0
     rna_counts <- rna_counts[keep_genes, ]
@@ -261,7 +260,7 @@ load_rna_atac_from_h5ad <- function(path, sample_name, out_dir, upstream = 2000)
     )
 
     tryCatch({
-        # peaks p90
+        # peaks p95
         peak_assay <- CreateChromatinAssay(
             counts = atac_mat[keep_peaks, ],
             ranges = peak_gr[keep_peaks]
@@ -273,23 +272,62 @@ load_rna_atac_from_h5ad <- function(path, sample_name, out_dir, upstream = 2000)
         )
 
         peak_obj <- RunTFIDF(peak_obj, assay = "peaks")
-        peak_obj <- FindTopFeatures(peak_obj, assay = "peaks", min.cutoff = "q90")
+        peak_obj <- FindTopFeatures(peak_obj, assay = "peaks", min.cutoff = "q95")
 
-        top_peaks_q90 <- Seurat::VariableFeatures(peak_obj)
-        cat("ATAC top q90 peaks kept:", length(top_peaks_q90), "\n")
+        top_peaks_q95 <- Seurat::VariableFeatures(peak_obj)
+        cat("ATAC top q95 peaks kept:", length(top_peaks_q95), "\n")
 
-        atac_peak_counts_top_q90 <- as.matrix(atac_mat[top_peaks_q90, ])
+        atac_peak_counts_top_q95 <- as.matrix(atac_mat[top_peaks_q95, ])
 
-        atac_peak_counts_top_q90_df <- as.data.frame(atac_peak_counts_top_q90)
-        atac_peak_counts_top_q90_df <- cbind(pos = rownames(atac_peak_counts_top_q90), atac_peak_counts_top_q90_df)
-        rownames(atac_peak_counts_top_q90_df) <- NULL
+        atac_peak_counts_top_q95_df <- as.data.frame(atac_peak_counts_top_q95)
+        atac_peak_counts_top_q95_df <- cbind(pos = rownames(atac_peak_counts_top_q95), atac_peak_counts_top_q95_df)
+        rownames(atac_peak_counts_top_q95_df) <- NULL
 
         write_feather(
-            atac_peak_counts_top_q90_df,
-            file.path(out_dir, paste0(sample_name, "_ATAC"), "atac_peak_counts_top_q90.feather")
+            atac_peak_counts_top_q95_df,
+            file.path(out_dir, paste0(sample_name, "_ATAC"), "atac_peak_counts_top_q95.feather")
         )
+
+        # Summarize top q95 peak-level ATAC counts to gene activity score
+        top_q95_idx <- match(top_peaks_q95, names(peak_gr))
+        top_q95_overlaps <- findOverlaps(peak_gr[top_q95_idx], gene_coords)
+
+        gene.activities.top_q95 <- matrix(
+            0,
+            nrow = length(gene_coords),
+            ncol = ncol(atac_mat),
+            dimnames = list(gene_coords$gene_name, colnames(atac_mat))
+        )
+
+        for (i in seq_along(gene_coords)) {
+            peak_idx <- queryHits(top_q95_overlaps)[subjectHits(top_q95_overlaps) == i]
+
+            if (length(peak_idx) > 0) {
+                if (length(peak_idx) == 1) {
+                    gene.activities.top_q95[i, ] <- atac_mat[top_peaks_q95[peak_idx], ]
+                } else {
+                    gene.activities.top_q95[i, ] <- Matrix::colSums(atac_mat[top_peaks_q95[peak_idx], , drop = FALSE])
+                }
+            }
+        }
+
+        non_zero_mask_top_q95 <- rowSums(gene.activities.top_q95) > 0
+        gene.activities.top_q95 <- gene.activities.top_q95[non_zero_mask_top_q95, ]
+        rownames(gene.activities.top_q95) <- gsub("_", "-", rownames(gene.activities.top_q95))
+
+        activity_counts_top_q95_df <- as.data.frame(gene.activities.top_q95)
+        activity_counts_top_q95_df <- cbind(pos = rownames(activity_counts_top_q95_df), activity_counts_top_q95_df)
+        rownames(activity_counts_top_q95_df) <- NULL
+
+        write_feather(
+            activity_counts_top_q95_df,
+            file.path(out_dir, paste0(sample_name, "_ATAC"), "activity_counts_top_q95.feather")
+        )
+
+        cat("ATAC top q95 gene activity genes kept:", nrow(gene.activities.top_q95), "\n")
+
     }, error = function(e) {
-        cat("Warning: failed to save atac_peak_counts_top_q90.feather:", conditionMessage(e), "\n")
+        cat("Warning: failed to save atac_peak_counts_top_q95.feather:", conditionMessage(e), "\n")
     })
 
     cat("  - rna_counts.feather\n")

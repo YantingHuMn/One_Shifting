@@ -25,8 +25,8 @@ CONDITION="given_${V2}_${V2_norm_factor}_${V2_trans_factor}"
 OUTPUT_DIR="${READ_DIR}/${method}/${CONDITION}"
 mkdir -p $OUTPUT_DIR
 
-# trans_factor=("no_trans" "sqrt" "sqrt+1" "log2" "count+1" "log2(count+2)")
-trans_factor=("log2" "count+1" "log2(count+2)")
+trans_factor=("no_trans" "sqrt" "sqrt+1" "log2" "count+1" "log2(count+2)")
+# trans_factor=("log2" "count+1" "log2(count+2)")
 # norm_factor=("no_norm" 1000000 100000 10000 1000 "standardize")
 norm_factor=("no_norm")
 norm_factor_string=$(IFS=','; echo "${norm_factor[*]}")
@@ -90,7 +90,7 @@ echo "===Finish build count matrix==="
   
 echo "=== Starting ${method} pipeline ==="
 
-for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
+for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000 v1_trans_v2_trans_norm_factor; do
     if [ "$data_mode" = "default" ]; then
         mode_suffix="v1_trans_v2_no_trans"
     elif [ "$data_mode" = "v1_trans_v2_trans" ]; then
@@ -99,6 +99,8 @@ for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100
         mode_suffix="v1_reverse_v2_no_trans"
     elif [ "$data_mode" = "v1_trans_v2_trans_norm_100000" ]; then
         mode_suffix="v1_trans_v2_trans_norm_100000"
+    elif [ "$data_mode" = "v1_trans_v2_trans_norm_factor" ]; then
+        mode_suffix="v1_trans_v2_trans_norm_factor"
     fi
 
     for corr_dir in col row; do
@@ -132,15 +134,15 @@ fi
 
 echo "Bubble reset done, proceeding with $method..."
 
-# if [ "$method" = "VAE" ]; then
-#     METHOD_ARGS="--beta_grid 0 --hidden_grid1 4096 --hidden_grid2 1024"
-# elif [ "$method" = "DCA_mse" ]; then
-#     METHOD_ARGS="--dropout_grid 0.0 --hidden_grid1 4096 --hidden_grid2 1024"
-# elif [ "$method" = "scVI_mse" ]; then
-#     METHOD_ARGS="--beta_grid 0 --hidden_grid 512,256,128,64"
-# elif [ "$method" = "Transformer_denoise" ]; then
-#     METHOD_ARGS="--n_tokens_grid 32 --d_model_grid 64 --nhead_grid 4 --num_layers_grid 1 --dim_feedforward_grid 128 --dropout_grid 0.1"
-# fi
+if [ "$method" = "VAE" ]; then
+    METHOD_ARGS="--beta_grid 0 --hidden_grid1 4096 --hidden_grid2 1024"
+elif [ "$method" = "DCA_mse" ]; then
+    METHOD_ARGS="--dropout_grid 0.0 --hidden_grid1 4096 --hidden_grid2 1024"
+elif [ "$method" = "scVI_mse" ]; then
+    METHOD_ARGS="--beta_grid 0 --hidden_grid 512,256,128,64"
+elif [ "$method" = "Transformer_denoise" ]; then
+    METHOD_ARGS="--n_tokens_grid 32 --d_model_grid 64 --nhead_grid 4 --num_layers_grid 1 --dim_feedforward_grid 128 --dropout_grid 0.1"
+fi
         
 # train - find par
 echo "=== Step 4: Training ${method} on filtered data ==="
@@ -153,35 +155,36 @@ for this_trans_factor in "${trans_factor[@]}"; do
     DATA_PATH2="$READ_DIR/$V2/Count_Matrix_norm_by_no_norm.feather"
     SUMMARY_FILE="${OUT_DIR}/hyper_par_report.tsv"
 
-    source ~/.bashrc
-    conda activate vae_env2
-    python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
+    # source ~/.bashrc
+    # conda activate vae_env2
+    # python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
-    python -u ../One_Shifting/myproject/Step2_3_train_${method}_norm.py \
-    --data_path "$DATA_PATH1" \
-    --out_summary "$SUMMARY_FILE" \
-    --early_stop \
-    --patience 10 \
-    --n_splits 5 \
-    --trans_grid "$this_trans_factor" \
-    $METHOD_ARGS
+    # python -u ../One_Shifting/myproject/Step2_3_train_${method}_norm.py \
+    # --data_path "$DATA_PATH1" \
+    # --out_summary "$SUMMARY_FILE" \
+    # --early_stop \
+    # --patience 10 \
+    # --n_splits 5 \
+    # --trans_grid "$this_trans_factor" \
+    # $METHOD_ARGS
     
+    # python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
+    # conda deactivate 
+
     # reconstruct
     SAVED_DIR="${OUT_DIR}/saved_models"
 
     factor=$(awk -F'\t' '$1=="# selected_norm"{print $2; exit}' "$SUMMARY_FILE")
 
     OUT_PATH="${OUT_DIR}/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather"
-    INPUT_TRANS_PATH="${SAVED_DIR}/input_trans_by_${this_trans_factor}_norm_by_${factor}.feather"
-
-    python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
-    conda deactivate 
+    INPUT_TRANS_PATH="${OUT_DIR}/input_trans_by_${this_trans_factor}_norm_by_${factor}.feather"
 
     # correlation
     echo "=== Step 7: Correlation analysis ==="
     module load conda_R
 
-    for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
+    # for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
+    for data_mode in default v1_trans_v2_trans v1_trans_v2_trans_norm_100000 v1_trans_v2_trans_norm_factor; do
         if [ "$data_mode" = "default" ]; then
             mode_suffix="v1_trans_v2_no_trans"
         elif [ "$data_mode" = "v1_trans_v2_trans" ]; then
@@ -190,6 +193,8 @@ for this_trans_factor in "${trans_factor[@]}"; do
             mode_suffix="v1_reverse_v2_no_trans"
         elif [ "$data_mode" = "v1_trans_v2_trans_norm_100000" ]; then
             mode_suffix="v1_trans_v2_trans_norm_100000"
+        elif [ "$data_mode" = "v1_trans_v2_trans_norm_factor" ]; then
+            mode_suffix="v1_trans_v2_trans_norm_factor"
         fi
 
         for corr_dir in col row; do
@@ -224,7 +229,7 @@ echo "=== Post-processing: combine figures and summary ==="
 module load conda_R
 
 
-for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
+for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000 v1_trans_v2_trans_norm_factor; do
     if [ "$data_mode" = "default" ]; then
         mode_suffix="v1_trans_v2_no_trans"
     elif [ "$data_mode" = "v1_trans_v2_trans" ]; then
@@ -233,6 +238,8 @@ for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100
         mode_suffix="v1_reverse_v2_no_trans"
     elif [ "$data_mode" = "v1_trans_v2_trans_norm_100000" ]; then
         mode_suffix="v1_trans_v2_trans_norm_100000"
+    elif [ "$data_mode" = "v1_trans_v2_trans_norm_factor" ]; then
+        mode_suffix="v1_trans_v2_trans_norm_factor"
     fi
 
     COL_Figure_DIR="$OUTPUT_DIR/Figures_col_${mode_suffix}"

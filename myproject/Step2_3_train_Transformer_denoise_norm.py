@@ -509,8 +509,13 @@ def outer_cv_inner_holdout(
         print(f"[INFO] Negative values detected, filtered trans grid to: trans={trans_grid}")
 
     if str(norm) == "standardize":
+        if len(trans_grid) == 1 and trans_grid[0] != "no_trans":
+            raise ValueError(
+                f"norm=standardize is incompatible with fixed trans={trans_grid[0]}. "
+                "Remove standardize from --norm_grid or use --trans_grid no_trans."
+            )
         trans_grid = ["no_trans"]
-        print(f"[INFO] norm=standardize can create negative values, forced trans grid to: trans={trans_grid}")
+        print(f"[INFO] norm=standardize uses trans=no_trans only.")
 
     transform_cache = {}
     tensor_cache = {}
@@ -805,6 +810,11 @@ def main(args):
     norm_grid = [x.strip() for x in args.norm_grid.split(",") if x.strip() != ""]
     trans_grid = [x.strip() for x in args.trans_grid.split(",") if x.strip() != ""]
 
+    if len(trans_grid) != 1:
+        raise ValueError(
+            f"This script expects one fixed trans at a time. Got trans_grid={trans_grid}"
+        )
+
     save_dir = os.path.join(os.path.dirname(args.out_summary), "saved_models")
     os.makedirs(save_dir, exist_ok=True)
 
@@ -812,35 +822,40 @@ def main(args):
     norm_results = {}
 
     for norm in norm_grid:
-        results = outer_cv_inner_holdout(
-            df_raw=df_raw,
-            norm=norm,
-            device=device,
-            n_tokens_grid=n_tokens_grid,
-            d_model_grid=d_model_grid,
-            nhead_grid=nhead_grid,
-            num_layers_grid=num_layers_grid,
-            dim_feedforward_grid=dim_feedforward_grid,
-            dropout_grid=dropout_grid,
-            lr_grid=lr_grid,
-            bs_grid=bs_grid,
-            threshold_grid=threshold_grid,
-            trans_grid=trans_grid,
-            epochs_inner=args.epochs_inner,
-            epochs_outer=args.epochs_outer,
-            inner_val_frac=args.inner_val_frac,
-            seed=args.seed,
-            early_stop=args.early_stop,
-            patience=args.patience,
-            min_delta=args.min_delta,
-            check_every=args.check_every,
-            outer_es_val_frac=args.outer_es_val_frac,
-            n_splits=args.n_splits,
-            weight_strategy=args.weight_strategy,
-            zero_weight_grid=zero_weight_grid,
-            nonzero_weight_grid=nonzero_weight_grid,
-            save_dir=save_dir
-        )
+        try:
+            results = outer_cv_inner_holdout(
+                df_raw=df_raw,
+                norm=norm,
+                device=device,
+                n_tokens_grid=n_tokens_grid,
+                d_model_grid=d_model_grid,
+                nhead_grid=nhead_grid,
+                num_layers_grid=num_layers_grid,
+                dim_feedforward_grid=dim_feedforward_grid,
+                dropout_grid=dropout_grid,
+                lr_grid=lr_grid,
+                bs_grid=bs_grid,
+                threshold_grid=threshold_grid,
+                trans_grid=trans_grid,
+                epochs_inner=args.epochs_inner,
+                epochs_outer=args.epochs_outer,
+                inner_val_frac=args.inner_val_frac,
+                seed=args.seed,
+                early_stop=args.early_stop,
+                patience=args.patience,
+                min_delta=args.min_delta,
+                check_every=args.check_every,
+                outer_es_val_frac=args.outer_es_val_frac,
+                n_splits=args.n_splits,
+                weight_strategy=args.weight_strategy,
+                zero_weight_grid=zero_weight_grid,
+                nonzero_weight_grid=nonzero_weight_grid,
+                save_dir=save_dir
+            )
+        except Exception as e:
+            print(f"[WARNING] norm={norm} failed and will be skipped. Reason: {e}", flush=True)
+            continue
+
 
         mean_pearson, mean_spearman, per_col_corr_df = compute_input_recon_correlation(
             original_df=results["filtered_df_same_scale"],
@@ -925,6 +940,9 @@ def main(args):
             f.write(f"# selected_input_path\t{selected_input_path}\n")
             f.write(f"# selected_recon_path\t{selected_recon_path}\n")
             f.write("# norm selection rule: rank mean_pearson and mean_spearman descending; choose lowest avg_rank; if tied choose highest mean_pearson + mean_spearman\n")
+            f.write("# transformation was fixed externally by --trans_grid\n")
+            f.write("# normalization was selected within this fixed transformation\n")
+            f.write("# selection target is dataset-specific reconstruction similarity, not out-of-sample generalization\n")
             f.write("norm\ttrans\tmean_pearson\tmean_spearman\trank_pearson\trank_spearman\tavg_rank\tcorr_sum\ttest_loss_mean\ttest_loss_sd\n")
 
             for _, row in ranked_norm_df.iterrows():
