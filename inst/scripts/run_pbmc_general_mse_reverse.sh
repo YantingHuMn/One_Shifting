@@ -175,8 +175,6 @@ for this_trans_factor in "${trans_factor[@]}"; do
         --data_path2 "$DATA_PATH2" \
         --out_summary "$SUMMARY_FILE" \
         --early_stop \
-        --patience 5 \
-        --n_splits 2 \
         --eval_metric val_loss \
         --trans1_grid "$this_trans_factor" \
         --trans2_grid "$V2_trans_factor" \

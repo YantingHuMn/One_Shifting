@@ -4,7 +4,7 @@
 # #SBATCH --gres=gpu:1
 #SBATCH --time=7-00:00:00
 #SBATCH --mem=100G
-#SBATCH --array=0-3
+#SBATCH --array=0-7
 #SBATCH --output=/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/AAA_logs/submit_HCA_pip_%A_%a.out
 #SBATCH --error=/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/AAA_logs/submit_HCA_pip_%A_%a.err
 #SBATCH --mail-user=yhu157@jh.edu
@@ -46,9 +46,8 @@ method_id=$((task_id % n_methods))
 config_id=$((task_id / n_methods))
 
 method=${methods[$method_id]}
-# config=${configs[$config_id]}
+config=${configs[$config_id]}
 
-config="../One_Shifting/inst/config/config_run_multi_RNA_HCA_10x_ENCODE.sh"
 
 echo "======================================"
 echo "SLURM_JOB_ID=${SLURM_JOB_ID}"

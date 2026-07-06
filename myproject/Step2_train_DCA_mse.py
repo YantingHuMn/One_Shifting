@@ -773,7 +773,7 @@ if __name__ == "__main__":
     parser.add_argument('--weight_strategy', type=str, default='fixed',
                         choices=['fixed', 'sparsity_aware', 'magnitude', 'focal'])
     parser.add_argument('--zero_weight_grid', type=str, default="1.0")
-    parser.add_argument('--nonzero_weight_grid', type=str, default="1.0,5.0,10.0,20.0")
+    parser.add_argument('--nonzero_weight_grid', type=str, default="1.0")
     parser.add_argument('--eval_metric', type=str, default='val_loss',
                         choices=['val_loss', 'pearson', 'spearman'],
                         help='Evaluation metric for hyperparameter selection')

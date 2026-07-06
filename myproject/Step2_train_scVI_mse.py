@@ -1035,7 +1035,7 @@ if __name__ == "__main__":
     parser.add_argument('--weight_strategy', type=str, default='fixed',
                         choices=['fixed', 'sparsity_aware', 'magnitude', 'focal'])
     parser.add_argument('--zero_weight_grid', type=str, default="1.0")
-    parser.add_argument('--nonzero_weight_grid', type=str, default="1.0,5.0,10.0,20.0")
+    parser.add_argument('--nonzero_weight_grid', type=str, default="1.0")
     parser.add_argument('--eval_metric', type=str, default='val_loss',
                         choices=['val_loss', 'pearson', 'spearman'])
     parser.add_argument('--epochs_inner', type=int, default=60)
@@ -1045,7 +1045,7 @@ if __name__ == "__main__":
     parser.add_argument('--cpu', action='store_true')
     parser.add_argument('--out_summary', type=str, required=True)
     parser.add_argument('--early_stop', action='store_true', default=False)
-    parser.add_argument('--patience', type=int, default=45)
+    parser.add_argument('--patience', type=int, default=10)
     parser.add_argument('--min_delta', type=float, default=0.0)
     parser.add_argument('--check_every', type=int, default=1)
     parser.add_argument('--outer_es_val_frac', type=float, default=0.1)

@@ -825,13 +825,12 @@ if __name__ == "__main__":
                         help="Feedforward dimension (e.g., 128,256,512)")
     parser.add_argument('--dropout_grid', type=str, default="0.0,0.1",
                         help="Dropout rate (e.g., 0.0,0.1,0.2)")
-
     parser.add_argument('--lr_grid', type=str, default="0.0001")
     parser.add_argument('--batch_size_grid', type=str, default="64")
     parser.add_argument('--weight_strategy', type=str, default='fixed',
                         choices=['fixed', 'sparsity_aware', 'magnitude', 'focal'])
     parser.add_argument('--zero_weight_grid', type=str, default="1.0")
-    parser.add_argument('--nonzero_weight_grid', type=str, default="1.0,5.0,10.0,20.0")
+    parser.add_argument('--nonzero_weight_grid', type=str, default="1.0")
     parser.add_argument('--eval_metric', type=str, default='val_loss',
                         choices=['val_loss', 'pearson', 'spearman'])
     parser.add_argument('--epochs_inner', type=int, default=60)
