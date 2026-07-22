@@ -142,11 +142,11 @@ fi
 echo "Bubble reset done, proceeding with $method..."
 
 if [ "$method" = "VAE" ]; then
-    METHOD_ARGS="--beta_grid 0 --hidden_grid1 512 --hidden_grid2 128 --batch_size_grid 16"
+    METHOD_ARGS="--beta_grid 0 --hidden_grid1 2048 --hidden_grid2 512 --batch_size_grid 16"
 elif [ "$method" = "DCA_mse" ]; then
     METHOD_ARGS="--dropout_grid 0.0 --hidden_grid1 512 --hidden_grid2 128 --batch_size_grid 16"
 elif [ "$method" = "scVI_mse" ]; then
-    METHOD_ARGS="--hidden_grid 256 --batch_size_grid 16"
+    METHOD_ARGS="--hidden_grid 512 --batch_size_grid 16"
 elif [ "$method" = "Transformer_denoise" ]; then
     METHOD_ARGS="--n_tokens_grid 16 --d_model_grid 32 --nhead_grid 2 --num_layers_grid 1 --dim_feedforward_grid 64 --dropout_grid 0.1 --batch_size_grid 16"
 fi
@@ -163,21 +163,21 @@ for this_trans_factor in "${trans_factor[@]}"; do
     SUMMARY_FILE="${OUT_DIR}/hyper_par_report.tsv"
 
 
-    # source ~/.bashrc
-    # conda activate vae_env2
-    # python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
+    source ~/.bashrc
+    conda activate vae_env2
+    python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
-    # python -u ../One_Shifting/myproject/Step2_3_train_${method}_norm.py \
-    # --data_path "$DATA_PATH1" \
-    # --out_summary "$SUMMARY_FILE" \
-    # --early_stop \
-    # --patience 10 \
-    # --n_splits 5 \
-    # --trans_grid "$this_trans_factor" \
-    # $METHOD_ARGS
+    python -u ../One_Shifting/myproject/Step2_3_train_${method}_norm.py \
+    --data_path "$DATA_PATH1" \
+    --out_summary "$SUMMARY_FILE" \
+    --early_stop \
+    --patience 10 \
+    --n_splits 5 \
+    --trans_grid "$this_trans_factor" \
+    $METHOD_ARGS
     
-    # python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
-    # conda deactivate 
+    python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
+    conda deactivate 
 
     # reconstruct
     SAVED_DIR="${OUT_DIR}/saved_models"

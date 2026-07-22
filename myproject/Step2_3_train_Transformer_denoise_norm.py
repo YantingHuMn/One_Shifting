@@ -291,7 +291,7 @@ def make_file_tag(norm, trans):
 
 def _apply_norm(df, norm_factor):
     """
-    Apply column-wise normalization to count columns only.
+    Apply row-wise library-size normalization to count columns only.
     The first column, usually pos/barcode, is kept unchanged.
     """
     data = df.iloc[:, 1:].astype(np.float64)
@@ -308,12 +308,12 @@ def _apply_norm(df, norm_factor):
 
     else:
         factor = float(norm_factor)
-        libsize = data.sum(axis=0)
+        libsize = data.sum(axis=1)
         libsize_safe = libsize.replace(0, np.nan)
-        normalized = data.div(libsize_safe, axis=1) * factor
+        normalized = data.div(libsize_safe, axis=0) * factor
         normalized = normalized.fillna(0)
         df.iloc[:, 1:] = normalized
-
+        
 
 def _apply_trans(df, trans):
     df.iloc[:, 1:] = df.iloc[:, 1:].astype(np.float64)

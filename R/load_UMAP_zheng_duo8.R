@@ -1,4 +1,3 @@
-
 load_UMAP_zheng_duo8 <- function(save_dir) {
     # Load Libraries
     suppressPackageStartupMessages({
@@ -9,6 +8,9 @@ load_UMAP_zheng_duo8 <- function(save_dir) {
     })
 
     dir.create(save_dir, recursive = TRUE, showWarnings = FALSE)
+
+    orig_data_dir <- file.path(save_dir, "orig_data")
+    dir.create(orig_data_dir, recursive = TRUE, showWarnings = FALSE)
 
     # load data
     sce <- sce_full_Zhengmix8eq()
@@ -26,11 +28,20 @@ load_UMAP_zheng_duo8 <- function(save_dir) {
 
     zheng_clean <- zheng
 
-    rna_counts <- as.matrix(GetAssayData(zheng_clean, assay = "originalexp", layer = "counts"))
+    rna_counts <- as.matrix(
+        GetAssayData(
+            zheng_clean,
+            assay = "originalexp",
+            layer = "counts"
+        )
+    )
+
     dim(rna_counts)
     rna_counts[1:5, 1:5]
+
     rna_df <- as.data.frame(rna_counts)
     rna_df <- rownames_to_column(rna_df, var = "pos")
+
     rna_df[1:5, 1:5]
     dim(rna_df)
 
@@ -41,8 +52,16 @@ load_UMAP_zheng_duo8 <- function(save_dir) {
 
     cat("All-zero genes:", sum(!nonzero_rows), "\n")
     cat("All-zero cells:", sum(!nonzero_cols), "\n")
+
     rna_df <- rna_df[nonzero_rows, c(TRUE, nonzero_cols)]
-    cat("After filtering:", dim(rna_df)[1], "genes x", dim(rna_df)[2] - 1, "cells\n")
+
+    cat(
+        "After filtering:",
+        dim(rna_df)[1],
+        "genes x",
+        dim(rna_df)[2] - 1,
+        "cells\n"
+    )
 
     # FACS sorting labels
     cell_types <- colData(sce)$phenoid
@@ -53,28 +72,64 @@ load_UMAP_zheng_duo8 <- function(save_dir) {
         cell_type = cell_types
     )
 
-    write_feather(rna_df, file.path(save_dir, "orig_data/zheng_pbmc_rna_counts.feather"))
-    write.csv(rna_df, file.path(save_dir, "orig_data/zheng_pbmc_rna_counts.csv"), row.names = FALSE)
-    write.csv(celltype_df, file.path(save_dir, "orig_data/zheng_pbmc_celltype_facs.csv"), row.names = FALSE)
+    write_feather(
+        rna_df,
+        file.path(orig_data_dir, "zheng_pbmc_rna_counts.feather")
+    )
+
+    write.csv(
+        rna_df,
+        file.path(orig_data_dir, "zheng_pbmc_rna_counts.csv"),
+        row.names = FALSE
+    )
+
+    write.csv(
+        celltype_df,
+        file.path(orig_data_dir, "zheng_pbmc_celltype_facs.csv"),
+        row.names = FALSE
+    )
 
     # Seurat normalize
     norm_mat <- as.matrix(rna_df[, -1])
     rownames(norm_mat) <- rna_df$pos
 
     seurat_tmp <- CreateSeuratObject(counts = norm_mat)
-    seurat_tmp <- NormalizeData(seurat_tmp, normalization.method = "LogNormalize", scale.factor = 10000, verbose = FALSE)
 
-    norm_data <- as.matrix(GetAssayData(seurat_tmp, assay = "RNA", layer = "data"))
+    seurat_tmp <- NormalizeData(
+        seurat_tmp,
+        normalization.method = "LogNormalize",
+        scale.factor = 10000,
+        verbose = FALSE
+    )
+
+    norm_data <- as.matrix(
+        GetAssayData(
+            seurat_tmp,
+            assay = "RNA",
+            layer = "data"
+        )
+    )
 
     # genes x cells
     norm_df <- as.data.frame(norm_data)
     norm_df <- rownames_to_column(norm_df, var = "pos")
-    write_feather(norm_df, file.path(save_dir, "orig_data/zheng_pbmc_rna_seurat_norm.feather"))
+
+    write_feather(
+        norm_df,
+        file.path(orig_data_dir, "zheng_pbmc_rna_seurat_norm.feather")
+    )
 
     # cells x genes (transposed)
     norm_df_t <- as.data.frame(t(norm_data))
     norm_df_t <- rownames_to_column(norm_df_t, var = "pos")
-    write_feather(norm_df_t, file.path(save_dir, "orig_data/zheng_pbmc_rna_seurat_norm_transposed.feather"))
+
+    write_feather(
+        norm_df_t,
+        file.path(
+            orig_data_dir,
+            "zheng_pbmc_rna_seurat_norm_transposed.feather"
+        )
+    )
 
     cat("Saved all files to:", save_dir, "\n")
 }
