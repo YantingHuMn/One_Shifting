@@ -25,7 +25,7 @@ CONDITION="given_${V2}_${V2_norm_factor}_${V2_trans_factor}"
 OUTPUT_DIR="${READ_DIR}/${method}/${CONDITION}"
 mkdir -p $OUTPUT_DIR
 
-trans_factor=("no_trans" "sqrt" "sqrt+1" "log2" "count+1" "log2(count+2)")
+trans_factor=("no_trans" "count+1" "sqrt" "sqrt+1" "log2" "log2(count+2)")
 # trans_factor=("log2" "count+1" "log2(count+2)")
 # norm_factor=("no_norm" 1000000 100000 10000 1000 "standardize")
 norm_factor=("no_norm")
@@ -155,21 +155,21 @@ for this_trans_factor in "${trans_factor[@]}"; do
     DATA_PATH2="$READ_DIR/$V2/Count_Matrix_norm_by_no_norm.feather"
     SUMMARY_FILE="${OUT_DIR}/hyper_par_report.tsv"
 
-    # source ~/.bashrc
-    # conda activate vae_env2
-    # python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
+    source ~/.bashrc
+    conda activate vae_env2
+    python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
-    # python -u ../One_Shifting/myproject/Step2_3_train_${method}_norm.py \
-    # --data_path "$DATA_PATH1" \
-    # --out_summary "$SUMMARY_FILE" \
-    # --early_stop \
-    # --patience 10 \
-    # --n_splits 5 \
-    # --trans_grid "$this_trans_factor" \
-    # $METHOD_ARGS
+    python -u ../One_Shifting/myproject/Step2_3_train_${method}_norm.py \
+    --data_path "$DATA_PATH1" \
+    --out_summary "$SUMMARY_FILE" \
+    --early_stop \
+    --patience 10 \
+    --n_splits 5 \
+    --trans_grid "$this_trans_factor" \
+    $METHOD_ARGS
     
-    # python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
-    # conda deactivate 
+    python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
+    conda deactivate 
 
     # reconstruct
     SAVED_DIR="${OUT_DIR}/saved_models"

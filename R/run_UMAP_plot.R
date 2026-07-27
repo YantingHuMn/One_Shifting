@@ -1,4 +1,5 @@
 source("../One_Shifting/R/plot_multiple_umap.R")
+source("../One_Shifting/R/plot_multiple_umap_arrange.R")
 source("../One_Shifting/R/plot_ari_bubble.R")
 source("../One_Shifting/R/plot_ari_bubble_trans.R")
 
@@ -36,11 +37,7 @@ seurat_standard_norm <- seurat_file[1]
 
 other_paths <- c(
     paste0(read_dir, "/normed_data/Count_Matrix_norm_by_no_norm.feather"),
-    paste0(read_dir, "/normed_data/Count_Matrix_norm_by_1000.feather"),
-    paste0(read_dir, "/normed_data/Count_Matrix_norm_by_10000.feather"),
-    paste0(read_dir, "/normed_data/Count_Matrix_norm_by_100000.feather"),
     paste0(read_dir, "/normed_data/Count_Matrix_norm_by_1000000.feather"),
-    paste0(read_dir, "/normed_data/Count_Matrix_norm_by_standardize.feather"),
     seurat_standard_norm,
     paste0(read_dir, "/scVI/reconstruct_scVI_trans_by_no_trans_norm_by_no_norm.feather"),
     paste0(read_dir, "/DCA/reconstruct_DCA_trans_by_no_trans_norm_by_no_norm.feather"),
@@ -49,11 +46,7 @@ other_paths <- c(
 
 other_names <- c(
     "Original",
-    "Original (Norm 1K)",
-    "Original (Norm 10K)",
-    "Original (Norm 100K)",
     "Original (Norm 1M)",
-    "Original (Standardize)",
     "Original (seurat standard normalize)",
     "scVI",
     "DCA",
@@ -67,24 +60,24 @@ data_names <- c(data_names, other_names)
 output_dir <- paste0(read_dir, "/plots")
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
-if ("kmeans" %in% clustering_methods) {
-    result <- plot_multiple_umap(
-        data_paths = data_paths,
-        data_names = data_names,
-        celltype_df = celltype_df,
-        output_dir = output_dir,
-        n_clusters = length(unique(na.omit(celltype_df$cell_type))),
-        clustering_method = "kmeans",
-        ncol = 5,
-        width = 30,
-        hvg_gene_path = hvg_gene_path
-    )
-    rm(result)
-    gc()
-}
+# if ("kmeans" %in% clustering_methods) {
+#     result <- plot_multiple_umap_arrange(
+#         data_paths = data_paths,
+#         data_names = data_names,
+#         celltype_df = celltype_df,
+#         output_dir = output_dir,
+#         n_clusters = length(unique(na.omit(celltype_df$cell_type))),
+#         clustering_method = "kmeans",
+#         ncol = 5,
+#         width = 30,
+#         hvg_gene_path = hvg_gene_path
+#     )
+#     rm(result)
+#     gc()
+# }
 
 if ("louvain" %in% clustering_methods) {
-    result <- plot_multiple_umap(
+    result <- plot_multiple_umap_arrange(
         data_paths = data_paths,
         data_names = data_names,
         celltype_df = celltype_df,
@@ -100,7 +93,7 @@ if ("louvain" %in% clustering_methods) {
 }
 
 if ("leiden" %in% clustering_methods) {
-    result <- plot_multiple_umap(
+    result <- plot_multiple_umap_arrange(
         data_paths = data_paths,
         data_names = data_names,
         celltype_df = celltype_df,

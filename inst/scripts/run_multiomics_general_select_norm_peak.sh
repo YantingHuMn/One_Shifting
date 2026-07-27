@@ -96,7 +96,7 @@ echo "===Finish build count matrix==="
 echo "=== Starting ${method} pipeline ==="
 
 # for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
-for data_mode in default v1_trans_v2_trans v1_trans_v2_trans_norm_100000 v1_trans_v2_trans_norm_factor; do
+for data_mode in default v1_trans_v2_trans; do
     if [ "$data_mode" = "default" ]; then
         mode_suffix="v1_trans_v2_no_trans"
     elif [ "$data_mode" = "v1_trans_v2_trans" ]; then
@@ -174,6 +174,7 @@ for this_trans_factor in "${trans_factor[@]}"; do
     --patience 10 \
     --n_splits 5 \
     --trans_grid "$this_trans_factor" \
+    --norm_grid "no_norm" \
     $METHOD_ARGS
     
     python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
@@ -209,7 +210,8 @@ for this_trans_factor in "${trans_factor[@]}"; do
     module load conda_R
 
     # for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
-    for data_mode in default v1_trans_v2_trans v1_trans_v2_trans_norm_100000 v1_trans_v2_trans_norm_factor; do
+    # for data_mode in default v1_trans_v2_trans v1_trans_v2_trans_norm_100000 v1_trans_v2_trans_norm_factor; do
+    for data_mode in default v1_trans_v2_trans; do
         if [ "$data_mode" = "default" ]; then
             mode_suffix="v1_trans_v2_no_trans"
         elif [ "$data_mode" = "v1_trans_v2_trans" ]; then

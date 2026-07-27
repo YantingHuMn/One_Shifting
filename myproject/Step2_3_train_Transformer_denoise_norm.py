@@ -963,7 +963,6 @@ if __name__ == "__main__":
     parser.add_argument('--threshold_grid', type=str, default="1")
     parser.add_argument('--norm_grid', type=str, default="no_norm,1000000,100000,10000,1000,standardize", help='Normalization factors')
     parser.add_argument('--trans_grid', type=str, default="no_trans,count+1,sqrt,sqrt+1,log2,log2(count+2)", help='Transformation types')
-
     # Transformer architecture hyperparameters
     parser.add_argument('--n_tokens_grid', type=str, default="64", help="Number of pseudo-tokens (e.g., 32,64,128)")
     parser.add_argument('--d_model_grid', type=str, default="128", help="Transformer hidden dimension (e.g., 64,128,256)")
@@ -971,7 +970,7 @@ if __name__ == "__main__":
     parser.add_argument('--num_layers_grid', type=str, default="1", help="Number of Transformer encoder layers (e.g., 1,2,3)")
     parser.add_argument('--dim_feedforward_grid', type=str, default="256", help="Feedforward dimension (e.g., 128,256,512)")
     parser.add_argument('--dropout_grid', type=str, default="0.0,0.1", help="Dropout rate (e.g., 0.0,0.1,0.2)")
-
+    
     parser.add_argument('--lr_grid', type=str, default="0.0001")
     parser.add_argument('--batch_size_grid', type=str, default="64")
     parser.add_argument('--weight_strategy', type=str, default='fixed', choices=['fixed', 'sparsity_aware', 'magnitude', 'focal'])

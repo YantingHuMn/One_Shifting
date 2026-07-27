@@ -1,4 +1,4 @@
-select_tf_hvg <- function(expr_df_path, output_dir = NULL, tf_list_path = "../One_Shifting/data/DatabaseExtract_v_1.01.csv", n_hvg = 100) {
+select_tf_hvg <- function(expr_df_path, output_dir = NULL, tf_list_path = "../One_Shifting/data/DatabaseExtract_v_1.01.csv", n_hvg = 1000) {
     # Load Libraries
     suppressPackageStartupMessages({
         library(Seurat)

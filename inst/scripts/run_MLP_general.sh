@@ -18,7 +18,7 @@ echo "INPUT_CATEGORY: $V1"
 echo "OUTPUT_CATEGORY: $V1"
 echo "METHOD: $method"
 
-N_HVG=100
+N_HVG=1000
 TEST_FRAC=0.2
 VAL_FRAC=0.1
 SEED=42
@@ -166,4 +166,4 @@ Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
     "trans" \
     "norm_factor" \
     "pearson_corr" \
-    "spearman_col"
+    "spearman_corr"
