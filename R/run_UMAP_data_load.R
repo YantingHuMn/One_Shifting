@@ -7,7 +7,7 @@ dir.create(out_dir, recursive = FALSE, showWarnings = FALSE)
 
 # Cite-seq
 save_dir <- paste0(out_dir, "/Cite_seq")
-load_UMAP_cbmc(save_dir, use_hvg = TRUE)
+load_UMAP_cbmc(save_dir)
 
 # FACS-sorting
 save_dir <- paste0(out_dir, "/Zheng_pbmcs")

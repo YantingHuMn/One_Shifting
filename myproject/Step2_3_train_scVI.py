@@ -15,9 +15,11 @@ args = parser.parse_args()
 
 # SCVI require gene by cell
 df = pd.read_feather(args.input)
-df = df.iloc[:, 1:]
+cell_ids = df["pos"].astype(str)
+df = df.drop(columns=["pos"])
 
-adata = sc.AnnData(df) 
+adata = sc.AnnData(df)
+adata.obs_names = cell_ids.to_numpy()
 adata.layers["counts"] = adata.X.copy()
 
 scvi.model.SCVI.setup_anndata(adata, layer="counts")
@@ -35,7 +37,13 @@ model.train(
 
 denoised = model.get_normalized_expression()
 
-denoised_df = pd.DataFrame(denoised, index=adata.obs_names, columns=adata.var_names)
+denoised_df = pd.DataFrame(
+    denoised,
+    index=adata.obs_names,
+    columns=adata.var_names
+)
+
+denoised_df.insert(0, "pos", denoised_df.index)
 denoised_df.reset_index(drop=True).to_feather(args.output)
 
 print(f"Done! Output saved to: {args.output}")

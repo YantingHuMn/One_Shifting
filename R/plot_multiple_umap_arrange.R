@@ -1,4 +1,4 @@
-plot_multiple_umap_arrange <- function(data_paths, data_names, celltype_df, output_dir, n_clusters = NULL, clustering_method = "kmeans", ncol = 5, width = 30, height = NULL, dpi = 300, hvg_gene_path = NULL) {
+plot_multiple_umap_arrange <- function(data_paths, data_names, celltype_df, output_dir, n_clusters = NULL, clustering_method = "kmeans", ncol = 5, width = 30, height = NULL, dpi = 300, hvg_gene_path = NULL, use_hvg = TRUE, n_hvg = 2000) {
     # Load Libraries
     suppressPackageStartupMessages({
         library(arrow)
@@ -8,6 +8,8 @@ plot_multiple_umap_arrange <- function(data_paths, data_names, celltype_df, outp
         library(patchwork)
         library(mclust)
     })
+
+    set.seed(42)
 
     if (length(data_paths) != length(data_names)) {
         stop("data_paths and data_names must have the same length")
@@ -39,8 +41,9 @@ plot_multiple_umap_arrange <- function(data_paths, data_names, celltype_df, outp
     }
     
     run_find_clusters_safe <- function(obj, resolution, algorithm, verbose = FALSE) {
+        set.seed(42)
         tryCatch(
-            FindClusters(obj, resolution = resolution, algorithm = algorithm, verbose = verbose),
+            FindClusters(obj, resolution = resolution, algorithm = algorithm, random.seed = 42, verbose = verbose),
             error = function(e) {
                 msg <- conditionMessage(e)
                 if (algorithm == 4 && grepl("numpy|leidenalg|igraph|reticulate|python|ModuleNotFoundError|No module named", msg, ignore.case = TRUE)) {
@@ -97,10 +100,55 @@ plot_multiple_umap_arrange <- function(data_paths, data_names, celltype_df, outp
         
         seurat_obj <- SetAssayData(seurat_obj, slot = "data", new.data = mat)
         
-        seurat_obj <- FindVariableFeatures(seurat_obj, selection.method = "vst", nfeatures = 2000, verbose = FALSE)
-        seurat_obj <- ScaleData(seurat_obj, verbose = FALSE)
-        seurat_obj <- RunPCA(seurat_obj, npcs = 30, verbose = FALSE)
-        seurat_obj <- RunUMAP(seurat_obj, dims = 1:30, verbose = FALSE)
+        if (use_hvg) {
+
+            if (!is.null(hvg_genes)) {
+
+                features_for_pca <- intersect(hvg_genes, rownames(seurat_obj))
+
+                if (length(features_for_pca) == 0) {
+                    stop("[HVG] No provided HVG genes found in dataframe: ", feather_path)
+                }
+
+                cat(paste0(
+                    "[HVG] Using provided HVG list: ",
+                    length(features_for_pca),
+                    " genes\n"
+                ))
+
+            } else {
+
+                seurat_obj <- FindVariableFeatures(
+                    seurat_obj,
+                    selection.method = "vst",
+                    nfeatures = n_hvg,
+                    verbose = FALSE
+                )
+
+                features_for_pca <- VariableFeatures(seurat_obj)
+
+                cat(paste0(
+                    "[HVG] Using Seurat-selected HVGs: ",
+                    length(features_for_pca),
+                    " genes\n"
+                ))
+            }
+
+        } else {
+
+            features_for_pca <- rownames(seurat_obj)
+
+            cat(paste0(
+                "[HVG] Using all genes: ",
+                length(features_for_pca),
+                " genes\n"
+            ))
+        }
+        
+        seurat_obj <- ScaleData(seurat_obj, features = features_for_pca, verbose = FALSE)
+        seurat_obj <- RunPCA(seurat_obj, features = features_for_pca, npcs = 30, seed.use = 42, verbose = FALSE)
+        set.seed(42)
+        seurat_obj <- RunUMAP(seurat_obj, dims = 1:30, seed.use = 42, verbose = FALSE)
         seurat_obj <- FindNeighbors(seurat_obj, dims = 1:30, verbose = FALSE)
         
         return(seurat_obj)
@@ -317,7 +365,7 @@ plot_multiple_umap_arrange <- function(data_paths, data_names, celltype_df, outp
         ari_title <- ifelse(is.na(ari_value), "ARI = NA", paste0("ARI = ", sprintf("%.3f", ari_value)))
 
         p <- DimPlot(seurat_list[[i]], reduction = "umap", group.by = "cell_type", 
-                    label = TRUE, repel = TRUE) + 
+                    label = TRUE, repel = TRUE, seed = 42) + 
         ggtitle(paste0(data_names[i], "\n", ari_title)) + 
         NoLegend() +
         theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"))
@@ -344,7 +392,7 @@ plot_multiple_umap_arrange <- function(data_paths, data_names, celltype_df, outp
         ari_title <- ifelse(is.na(ari_value), "ARI = NA", paste0("ARI = ", sprintf("%.3f", ari_value)))
 
         p <- DimPlot(seurat_list[[i]], reduction = "umap", group.by = "cell_type", 
-                    label = TRUE, repel = TRUE) + 
+                    label = TRUE, repel = TRUE, seed = 42) + 
         ggtitle(paste0(data_names[i], "\n", ari_title)) + 
         NoLegend() +
         theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"))

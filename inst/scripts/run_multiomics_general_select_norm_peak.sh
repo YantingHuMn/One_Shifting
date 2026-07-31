@@ -258,7 +258,7 @@ module load conda_R
 
 
 # for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
-for data_mode in default v1_trans_v2_trans v1_trans_v2_trans_norm_100000 v1_trans_v2_trans_norm_factor; do
+for data_mode in default v1_trans_v2_trans; do
     if [ "$data_mode" = "default" ]; then
         mode_suffix="v1_trans_v2_no_trans"
     elif [ "$data_mode" = "v1_trans_v2_trans" ]; then

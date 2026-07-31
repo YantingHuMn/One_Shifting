@@ -123,6 +123,29 @@ load_UMAP_cbmc <- function(save_dir, use_hvg = FALSE, n_hvg = 2000) {
 
     rna_norm <- as.matrix(GetAssayData(cbmc_clean, assay = "RNA", layer = "data"))
 
+    existing_hvg <- VariableFeatures(cbmc_clean[["RNA"]])
+
+    cat("RNA count genes:", nrow(rna_counts), "\n")
+    cat("Existing VariableFeatures:", length(existing_hvg), "\n")
+    cat("Non-HVG genes in counts:", length(setdiff(rownames(rna_counts), existing_hvg)), "\n")
+
+    cbmc_hvg_2000 <- FindVariableFeatures(
+        cbmc_clean,
+        selection.method = "vst",
+        nfeatures = 2000,
+        verbose = FALSE
+    )
+
+    hvg_2000_genes <- VariableFeatures(cbmc_hvg_2000[["RNA"]])
+    hvg_2000_genes <- intersect(hvg_2000_genes, rownames(rna_counts))
+
+    writeLines(
+        hvg_2000_genes,
+        file.path(save_dir, "orig_data/hvg_2000.txt")
+    )
+
+    cat("Saved HVG 2000 list:", length(hvg_2000_genes), "\n")
+    
     # apply same gene/cell filter
     keep_genes <- rownames(rna_norm) %in% rna_df$pos
     keep_cells <- colnames(rna_norm) %in% colnames(rna_df)[-1]

@@ -1,4 +1,4 @@
-load_UMAP_zheng_duo8 <- function(save_dir) {
+load_UMAP_zheng_duo8 <- function(save_dir, use_hvg = FALSE, n_hvg = 2000) {
     # Load Libraries
     suppressPackageStartupMessages({
         library(DuoClustering2018)
@@ -63,6 +63,61 @@ load_UMAP_zheng_duo8 <- function(save_dir) {
         "cells\n"
     )
 
+    # Optional HVG filtering
+    if (use_hvg) {
+        cat("Selecting HVGs with n_hvg =", n_hvg, "\n")
+
+        retained_cells <- colnames(rna_df)[-1]
+
+        zheng_hvg <- subset(
+            zheng_clean,
+            cells = retained_cells
+        )
+
+        DefaultAssay(zheng_hvg) <- "originalexp"
+
+        zheng_hvg <- NormalizeData(
+            zheng_hvg,
+            assay = "originalexp",
+            normalization.method = "LogNormalize",
+            scale.factor = 10000,
+            verbose = FALSE
+        )
+
+        zheng_hvg <- FindVariableFeatures(
+            zheng_hvg,
+            assay = "originalexp",
+            selection.method = "vst",
+            nfeatures = n_hvg,
+            verbose = FALSE
+        )
+
+        hvg_genes <- VariableFeatures(
+            zheng_hvg[["originalexp"]]
+        )
+
+        hvg_genes <- intersect(
+            hvg_genes,
+            rna_df$pos
+        )
+
+        cat("Selected HVGs:", length(hvg_genes), "\n")
+
+        rna_df <- rna_df[
+            rna_df$pos %in% hvg_genes,
+            ,
+            drop = FALSE
+        ]
+
+        cat(
+            "After HVG filtering:",
+            dim(rna_df)[1],
+            "genes x",
+            dim(rna_df)[2] - 1,
+            "cells\n"
+        )
+    }
+
     # FACS sorting labels
     cell_types <- colData(sce)$phenoid
     table(cell_types)
@@ -71,6 +126,13 @@ load_UMAP_zheng_duo8 <- function(save_dir) {
         barcode = colnames(zheng_clean),
         cell_type = cell_types
     )
+
+    # Keep only cells retained after all-zero-cell filtering
+    celltype_df <- celltype_df[
+        celltype_df$barcode %in% colnames(rna_df)[-1],
+        ,
+        drop = FALSE
+    ]
 
     write_feather(
         rna_df,
@@ -110,6 +172,26 @@ load_UMAP_zheng_duo8 <- function(save_dir) {
         )
     )
 
+    seurat_hvg_2000 <- FindVariableFeatures(
+        seurat_tmp,
+        selection.method = "vst",
+        nfeatures = 2000,
+        verbose = FALSE
+    )
+
+    hvg_2000_genes <- VariableFeatures(seurat_hvg_2000[["RNA"]])
+    hvg_2000_genes <- intersect(
+        hvg_2000_genes,
+        rownames(norm_data)
+    )
+
+    writeLines(
+        hvg_2000_genes,
+        file.path(orig_data_dir, "hvg_2000.txt")
+    )
+
+    cat("Saved HVG 2000 list:", length(hvg_2000_genes), "\n")
+    
     # genes x cells
     norm_df <- as.data.frame(norm_data)
     norm_df <- rownames_to_column(norm_df, var = "pos")

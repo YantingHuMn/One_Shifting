@@ -89,7 +89,7 @@ Rscript ../One_Shifting/R/run_UMAP_plot.R \
     "$DATA_PATH" \
     "${READ_DIR}/recon_registry.csv" \
     "" \
-    ""
+    "${READ_DIR}/orig_data/hvg_2000.txt"
 
 plot_status=$?
 

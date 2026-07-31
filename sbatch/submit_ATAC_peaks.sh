@@ -20,5 +20,5 @@ bash ../One_Shifting/inst/scripts/run_multiomics_general_select_norm_peak.sh \
     ../One_Shifting/inst/config/config_run_multiomics_general_select_norm_peak.sh \
     "$method"
 
-# bash ../One_Shifting/inst/scripts/run_bubble_method_plot.sh \
-#     ../One_Shifting/inst/config/config_run_multiomics_general_select_norm_peak.sh
+bash ../One_Shifting/inst/scripts/run_bubble_method_plot.sh \
+    ../One_Shifting/inst/config/config_run_multiomics_general_select_norm_peak.sh
