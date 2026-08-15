@@ -11,7 +11,7 @@ plot_summary_bubble_table <- function(csv_path, filter_method = NULL) {
     base_path <- sub("\\.csv$", "", csv_path)
     df <- read.csv(csv_path)
 
-    if (!is.null(filter_method)) {
+    if (!is.null(filter_method) && filter_method != "") {
         df <- df %>% filter(tolower(method) != tolower(filter_method))
         if (nrow(df) == 0) {
             cat("No data left after excluding method:", filter_method, "\n")

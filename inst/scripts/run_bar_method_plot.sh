@@ -37,7 +37,7 @@ for csv_file in "${READ_DIR}"/bubble_plot_summary_*.csv; do
 
     echo "[INFO] Plotting: $csv_file"
 
-    Rscript ../One_Shifting/R/run_plot_summary_bubble_table.R \
+    Rscript ../One_Shifting/R/run_plot_summary_bar_table.R \
         "$csv_file" \
         "$filter_method" 
 done

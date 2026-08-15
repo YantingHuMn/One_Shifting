@@ -14,7 +14,7 @@ mkdir -p "$log_dir"
 # selected_rows="8,9"
 # selected_rows="10,11,12,13"
 # selected_rows="14,15,16,17,18,19"
-selected_rows="1"
+selected_rows="12"
 
 
 tail -n +2 "$tsv" | awk -v rows="$selected_rows" '
