@@ -84,12 +84,21 @@ if [[ ! -f "${READ_DIR}/recon_registry.csv" ]]; then
     exit 1
 fi
 
+# use own hvgs
 Rscript ../One_Shifting/R/run_UMAP_plot.R \
     "$READ_DIR" \
     "$DATA_PATH" \
     "${READ_DIR}/recon_registry.csv" \
     "" \
-    "${READ_DIR}/orig_data/hvg_2000.txt"
+    ""
+    
+# use common hvg lits
+# Rscript ../One_Shifting/R/run_UMAP_plot.R \
+#     "$READ_DIR" \
+#     "$DATA_PATH" \
+#     "${READ_DIR}/recon_registry.csv" \
+#     "" \
+#     "${READ_DIR}/orig_data/hvg_2000.txt"
 
 plot_status=$?
 

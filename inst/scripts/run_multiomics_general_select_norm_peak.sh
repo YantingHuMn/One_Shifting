@@ -167,7 +167,7 @@ for this_trans_factor in "${trans_factor[@]}"; do
     conda activate vae_env2
     python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
-    python -u ../One_Shifting/myproject/Step2_3_train_${method}_norm.py \
+    python -u ../One_Shifting/myproject/Step2_3_train_${method}_norm_peak_BCE.py \
     --data_path "$DATA_PATH1" \
     --out_summary "$SUMMARY_FILE" \
     --early_stop \

@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=ENCODE
-#SBATCH --partition=shared
-# #SBATCH --gres=gpu:1
-#SBATCH --time=7-00:00:00
-#SBATCH --mem=128G
-#SBATCH --array=0-7
+#SBATCH --partition=gpu
+#SBATCH --gres=gpu:1
+#SBATCH --time=3-00:00:00
+#SBATCH --mem=70G
+#SBATCH --array=0-3
 #SBATCH --output=/dcs07/hongkai/data/yhu1/One_Shifting_Results/ENCODE/AAA_logs/submit_ENCODE_pip_%A_%a.out
 #SBATCH --error=/dcs07/hongkai/data/yhu1/One_Shifting_Results/ENCODE/AAA_logs/submit_ENCODE_pip_%A_%a.err
 #SBATCH --mail-user=yhu157@jh.edu
@@ -23,8 +23,8 @@ export sample_name
 export folder_name="ENCODE"
 export dropout_keep_par
 
-methods=("VAE" "DCA_mse" "scVI_mse" "Transformer_denoise")
-# methods=("VAE" "DCA_mse" "scVI_mse")
+# methods=("VAE" "DCA_mse" "scVI_mse" "Transformer_denoise")
+methods=("VAE" "DCA_mse")
 
 configs=(
     "../One_Shifting/inst/config/config_run_multi_RNA_HCA_10x_ENCODE.sh"

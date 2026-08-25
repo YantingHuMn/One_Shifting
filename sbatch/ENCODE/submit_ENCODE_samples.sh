@@ -10,8 +10,10 @@ log_dir="/dcs07/hongkai/data/yhu1/One_Shifting_Results/ENCODE/AAA_logs"
 mkdir -p "$log_dir"
 
 # tail -n +2 "$tsv" | awk -v n="$run_first_n_sample" 'NR <= n {print $2}' | while read -r sample_name; do
-selected_rows="1,2,3,4,5,6,7,8"
+# selected_rows="1,2,3,4,5,6,7,8"
 # selected_rows="9,10,11"
+selected_rows="3,4,5,6,7,8"
+# selected_rows="2"
 
 tail -n +2 "$tsv" | awk -v rows="$selected_rows" '
 BEGIN {

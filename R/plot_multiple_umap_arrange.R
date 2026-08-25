@@ -301,19 +301,27 @@ plot_multiple_umap_arrange <- function(data_paths, data_names, celltype_df, outp
         "SAVER"
     )
 
-    get_method_trans <- function(data_name) {
+    get_method_trans_norm <- function(data_name) {
         for (pfx in target_prefixes_plot) {
             if (startsWith(data_name, paste0(pfx, "_"))) {
                 suffix <- sub(paste0("^", pfx, "_"), "", data_name)
                 norm_patterns <- c("_no_norm$", "_standardize$", "_1000000$", "_100000$", "_10000$", "_1000$")
                 trans <- suffix
+                norm <- NA_character_
+
                 for (np in norm_patterns) {
                     if (grepl(np, suffix)) {
+                        norm <- sub("^_", "", sub("\\$$", "", np))
                         trans <- sub(np, "", suffix)
                         break
                     }
                 }
-                return(list(method = pfx, trans = trans))
+
+                return(list(
+                    method = pfx,
+                    trans = trans,
+                    norm = norm
+                ))
             }
         }
         return(NULL)
@@ -330,7 +338,7 @@ plot_multiple_umap_arrange <- function(data_paths, data_names, celltype_df, outp
         matched_idx <- which(vapply(
             data_names,
             function(x) {
-                parsed <- get_method_trans(x)
+                parsed <- get_method_trans_norm(x)
                 !is.null(parsed) &&
                     parsed$method == main_layout$method[j] &&
                     parsed$trans == main_layout$trans[j]
@@ -348,38 +356,151 @@ plot_multiple_umap_arrange <- function(data_paths, data_names, celltype_df, outp
     other_idx <- match(other_method_names, data_names)
 
     height_umap <- min(length(trans_order) * 5, 48)
-    other_width <- width / 4
+    other_width <- length(other_method_names) * 6
+
+    make_column_label <- function(label) {
+        ggplot() +
+            annotate(
+                "text",
+                x = 0.5,
+                y = 0.5,
+                label = label,
+                size = 7,
+                fontface = "bold"
+            ) +
+            xlim(0, 1) +
+            ylim(0, 1) +
+            theme_void()
+    }
+
+    make_row_label <- function(label) {
+        ggplot() +
+            annotate(
+                "text",
+                x = 0.5,
+                y = 0.5,
+                label = label,
+                size = 6,
+                fontface = "bold"
+            ) +
+            xlim(0, 1) +
+            ylim(0, 1) +
+            theme_void()
+    }
 
     # Plot UMAP colored by reference cell type - 6 transformations x 4 methods
     plot_list <- list()
+
     for (j in seq_along(main_idx)) {
         i <- main_idx[j]
-        plot_name <- paste0(main_layout$method[j], "_", main_layout$trans[j])
 
         if (is.na(i) || is.null(seurat_list[[i]])) {
-            plot_list[[length(plot_list) + 1]] <- make_failed_plot(plot_name)
+            plot_list[[length(plot_list) + 1]] <- ggplot() + theme_void()
             next
         }
 
-        ari_value <- all_ari$ARI[i]
-        ari_title <- ifelse(is.na(ari_value), "ARI = NA", paste0("ARI = ", sprintf("%.3f", ari_value)))
+        parsed <- get_method_trans_norm(data_names[i])
 
-        p <- DimPlot(seurat_list[[i]], reduction = "umap", group.by = "cell_type", 
-                    label = TRUE, repel = TRUE, seed = 42) + 
-        ggtitle(paste0(data_names[i], "\n", ari_title)) + 
-        NoLegend() +
-        theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"))
+        norm_label <- ifelse(
+            is.na(parsed$norm),
+            "Norm = NA",
+            paste0("Norm = ", parsed$norm)
+        )
+
+        ari_value <- all_ari$ARI[i]
+
+        ari_title <- ifelse(
+            is.na(ari_value),
+            "ARI = NA",
+            paste0("ARI = ", sprintf("%.3f", ari_value))
+        )
+
+        p <- DimPlot(
+            seurat_list[[i]],
+            reduction = "umap",
+            group.by = "cell_type",
+            label = TRUE,
+            repel = TRUE,
+            label.size = 5,
+            seed = 42
+        ) +
+            ggtitle(
+                paste0(
+                    ari_title,
+                    "\n",
+                    norm_label
+                )
+            ) +
+            NoLegend() +
+            theme(
+                plot.title = element_text(
+                    hjust = 0.5,
+                    size = 18,
+                    face = "bold"
+                ),
+                axis.title = element_text(
+                    size = 15
+                ),
+                axis.text = element_text(
+                    size = 12
+                )
+            )
+
         plot_list[[length(plot_list) + 1]] <- p
     }
 
-    combined_plot <- wrap_plots(plot_list, ncol = 4)
+    header_plot <- wrap_plots(
+        c(
+            list(plot_spacer()),
+            lapply(target_prefixes_plot, make_column_label)
+        ),
+        ncol = length(target_prefixes_plot) + 1,
+        widths = c(2.5, rep(5, length(target_prefixes_plot)))
+    )
+
+    row_plots <- list()
+
+    for (r in seq_along(trans_order)) {
+
+        start_idx <- (r - 1) * length(target_prefixes_plot) + 1
+        end_idx <- r * length(target_prefixes_plot)
+
+        row_plots[[r]] <- wrap_plots(
+            c(
+                list(make_row_label(trans_order[r])),
+                plot_list[start_idx:end_idx]
+            ),
+            ncol = length(target_prefixes_plot) + 1,
+            widths = c(2.5, rep(5, length(target_prefixes_plot)))
+        )
+    }
+
+    combined_plot <- wrap_plots(
+        c(
+            list(header_plot),
+            row_plots
+        ),
+        ncol = 1,
+        heights = c(0.8, rep(5, length(trans_order)))
+    )
+
     umap_path <- file.path(output_dir, "UMAP_color_by_reference_6x4.png")
     dir.create(dirname(umap_path), showWarnings = FALSE, recursive = TRUE)
-    ggsave(umap_path, combined_plot, width = width, height = height_umap, dpi = dpi, limitsize = FALSE)
+
+    ggsave(
+        umap_path,
+        combined_plot,
+        width = width,
+        height = height_umap,
+        dpi = dpi,
+        limitsize = FALSE
+    )
+
     cat(paste0("\n[SAVE] UMAP plot: ", umap_path, "\n"))
 
     # Plot UMAP colored by reference cell type - other methods 6 x 1
     plot_list_other <- list()
+
     for (j in seq_along(other_idx)) {
         i <- other_idx[j]
 
@@ -389,20 +510,55 @@ plot_multiple_umap_arrange <- function(data_paths, data_names, celltype_df, outp
         }
 
         ari_value <- all_ari$ARI[i]
-        ari_title <- ifelse(is.na(ari_value), "ARI = NA", paste0("ARI = ", sprintf("%.3f", ari_value)))
+        ari_title <- ifelse(
+            is.na(ari_value),
+            "ARI = NA",
+            paste0("ARI = ", sprintf("%.3f", ari_value))
+        )
 
-        p <- DimPlot(seurat_list[[i]], reduction = "umap", group.by = "cell_type", 
-                    label = TRUE, repel = TRUE, seed = 42) + 
-        ggtitle(paste0(data_names[i], "\n", ari_title)) + 
-        NoLegend() +
-        theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"))
+        p <- DimPlot(
+            seurat_list[[i]],
+            reduction = "umap",
+            group.by = "cell_type",
+            label = TRUE,
+            repel = TRUE,
+            seed = 42
+        ) + 
+            ggtitle(paste0(data_names[i], "\n", ari_title)) + 
+            NoLegend() +
+            theme(
+                plot.title = element_text(
+                    hjust = 0.5,
+                    size = 16,
+                    face = "bold"
+                )
+            )
+
         plot_list_other[[length(plot_list_other) + 1]] <- p
     }
 
-    combined_plot_other <- wrap_plots(plot_list_other, ncol = 1)
-    umap_other_path <- file.path(output_dir, "UMAP_color_by_reference_other_6x1.png")
-    dir.create(dirname(umap_other_path), showWarnings = FALSE, recursive = TRUE)
-    ggsave(umap_other_path, combined_plot_other, width = other_width, height = height_umap, dpi = dpi, limitsize = FALSE)
+    combined_plot_other <- wrap_plots(plot_list_other, nrow = 1)
+
+    umap_other_path <- file.path(
+        output_dir,
+        "UMAP_color_by_reference_other_1x6.png"
+    )
+
+    dir.create(
+        dirname(umap_other_path),
+        showWarnings = FALSE,
+        recursive = TRUE
+    )
+
+    ggsave(
+        umap_other_path,
+        combined_plot_other,
+        width = other_width,
+        height = 6,
+        dpi = dpi,
+        limitsize = FALSE
+    )
+
     cat(paste0("[SAVE] UMAP plot: ", umap_other_path, "\n"))
 
     # Save ARI CSV
@@ -415,58 +571,106 @@ plot_multiple_umap_arrange <- function(data_paths, data_names, celltype_df, outp
     target_prefixes <- c("VAE", "DCA_mse", "scVI_mse", "Transformer_denoise")
     best_norm_rows <- list()
     other_rows <- list()
+
     for (j in seq_len(nrow(all_ari))) {
         m <- all_ari$method[j]
         matched <- FALSE
+
         for (pfx in target_prefixes) {
             if (startsWith(m, paste0(pfx, "_"))) {
                 suffix <- sub(paste0("^", pfx, "_"), "", m)
                 norm_patterns <- c("_no_norm$", "_standardize$", "_1000000$", "_100000$", "_10000$", "_1000$")
                 trans <- suffix
+
                 for (np in norm_patterns) {
                     if (grepl(np, suffix)) {
                         trans <- sub(np, "", suffix)
                         break
                     }
                 }
+
                 key <- paste0(pfx, "|||", trans)
+
                 if (is.null(best_norm_rows[[key]])) {
                     best_norm_rows[[key]] <- j
                 } else {
                     prev_ari <- all_ari$ARI[best_norm_rows[[key]]]
                     cur_ari <- all_ari$ARI[j]
+
                     if (!is.na(cur_ari) && (is.na(prev_ari) || cur_ari > prev_ari)) {
                         best_norm_rows[[key]] <- j
                     }
                 }
+
                 matched <- TRUE
                 break
             }
         }
+
         if (!matched) {
             other_rows[[length(other_rows) + 1]] <- j
         }
     }
+
     keep_idx <- sort(c(unlist(best_norm_rows), unlist(other_rows)))
     all_ari_best_norm <- all_ari[keep_idx, ]
-    csv_best_path <- file.path(output_dir, paste0("ARI_", clustering_method, "_best_norm.csv"))
+
+    csv_best_path <- file.path(
+        output_dir,
+        paste0("ARI_", clustering_method, "_best_norm.csv")
+    )
+
     dir.create(dirname(csv_best_path), showWarnings = FALSE, recursive = TRUE)
     write.csv(all_ari_best_norm, csv_best_path, row.names = FALSE)
     cat(paste0("[SAVE] ARI best norm table: ", csv_best_path, "\n"))
 
     # Plot ARI bar chart - top 40
     ari_top40 <- head(ari_valid, 40)
-    p_ari <- ggplot(ari_top40, aes(x = reorder(method, ARI), y = ARI, fill = method)) +
+
+    p_ari <- ggplot(
+        ari_top40,
+        aes(
+            x = reorder(method, ARI),
+            y = ARI,
+            fill = method
+        )
+    ) +
         geom_col() +
         coord_flip() +
         scale_y_continuous(breaks = seq(0, 1, by = 0.1)) +
-        labs(x = "Method", y = "ARI", title = paste0("ARI with ", clustering_method, " (target k=", n_clusters, ") - Top 40")) +
+        labs(
+            x = "Method",
+            y = "ARI",
+            title = paste0(
+                "ARI with ",
+                clustering_method,
+                " (target k=",
+                n_clusters,
+                ") - Top 40"
+            )
+        ) +
         theme_bw() +
         theme(legend.position = "none")
 
-    ari_plot_path <- file.path(output_dir, paste0("ARI_", clustering_method, ".png"))
-    dir.create(dirname(ari_plot_path), showWarnings = FALSE, recursive = TRUE)
-    ggsave(ari_plot_path, p_ari, width = 12, height = 10, dpi = 300)
+    ari_plot_path <- file.path(
+        output_dir,
+        paste0("ARI_", clustering_method, ".png")
+    )
+
+    dir.create(
+        dirname(ari_plot_path),
+        showWarnings = FALSE,
+        recursive = TRUE
+    )
+
+    ggsave(
+        ari_plot_path,
+        p_ari,
+        width = 12,
+        height = 10,
+        dpi = 300
+    )
+
     cat(paste0("[SAVE] ARI plot: ", ari_plot_path, "\n"))
     
     return(list(
