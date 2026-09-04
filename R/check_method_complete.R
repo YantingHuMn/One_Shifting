@@ -27,6 +27,7 @@ check_modality <- function(sample_name, modality, read_dir) {
       file = NA_character_,
       nrow = NA_integer_,
       n_unique_method = NA_integer_,
+      note = NA_character_,
       stringsAsFactors = FALSE
     ))
   }
@@ -57,6 +58,7 @@ check_modality <- function(sample_name, modality, read_dir) {
       file = paste(basename(missing_files), collapse = ";"),
       nrow = NA_integer_,
       n_unique_method = NA_integer_,
+      note = NA_character_,
       stringsAsFactors = FALSE
     ))
   }
@@ -78,6 +80,7 @@ check_modality <- function(sample_name, modality, read_dir) {
         file = basename(csv_file),
         nrow = NA_integer_,
         n_unique_method = NA_integer_,
+        note = NA_character_,
         stringsAsFactors = FALSE
       )
 
@@ -94,6 +97,7 @@ check_modality <- function(sample_name, modality, read_dir) {
         file = basename(csv_file),
         nrow = n_row,
         n_unique_method = NA_integer_,
+        note = NA_character_,
         stringsAsFactors = FALSE
       )
 
@@ -102,7 +106,68 @@ check_modality <- function(sample_name, modality, read_dir) {
 
     n_method <- length(unique(df$method))
 
-    if (n_row != 46 || n_method != 4) {
+    note_text <- character(0)
+
+    expected_metrics <- c("pearson", "spearman")
+    expected_trans <- c(
+      "no_trans",
+      "sqrt",
+      "sqrt+1",
+      "log2",
+      "count+1",
+      "log2(count+2)"
+    )
+
+    if (all(c("metric", "trans") %in% colnames(df))) {
+
+      for (method_name in unique(df$method)) {
+
+        for (metric_name in expected_metrics) {
+
+          tmp <- df[
+            df$method == method_name &
+              df$metric == metric_name,
+            ,
+            drop = FALSE
+          ]
+
+          if (nrow(tmp) == 0) {
+
+            note_text <- c(
+              note_text,
+              paste0(
+                method_name,
+                ": missing ",
+                metric_name
+              )
+            )
+
+          } else {
+
+            missing_trans <- setdiff(
+              expected_trans,
+              unique(tmp$trans)
+            )
+
+            if (length(missing_trans) > 0) {
+
+              note_text <- c(
+                note_text,
+                paste0(
+                  method_name,
+                  ": ",
+                  metric_name,
+                  " missing ",
+                  paste(missing_trans, collapse = ",")
+                )
+              )
+            }
+          }
+        }
+      }
+    }
+
+    if (n_row != 46 || n_method != 4 || length(note_text) > 0) {
 
       problem_text <- paste(
         c(
@@ -119,6 +184,11 @@ check_modality <- function(sample_name, modality, read_dir) {
         file = basename(csv_file),
         nrow = n_row,
         n_unique_method = n_method,
+        note = if (length(note_text) > 0) {
+          paste(note_text, collapse = "; ")
+        } else {
+          NA_character_
+        },
         stringsAsFactors = FALSE
       )
     }

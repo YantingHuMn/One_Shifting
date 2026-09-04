@@ -72,15 +72,17 @@ class EncoderSCVI(nn.Module):
         self.mean_encoder = nn.Linear(n_hidden, n_output)
         self.var_encoder = nn.Linear(n_hidden, n_output)
 
-    def forward(self, x, *cat_list):
+    def forward(self, x: torch.Tensor, *cat_list):
         q = self.encoder(x, *cat_list)
         q_m = self.mean_encoder(q)
-        q_v = torch.exp(self.var_encoder(q)) + self.var_eps
+
+        log_q_v = torch.clamp(self.var_encoder(q), min=-20.0, max=20.0)
+        q_v = torch.exp(log_q_v) + self.var_eps
+
         dist = torch.distributions.Normal(q_m, q_v.sqrt())
         z = dist.rsample()
         return q_m, q_v, z
-
-
+    
 class DecoderSCVI(nn.Module):
     def __init__(self, n_input, n_output, n_cat_list=None, n_layers=1, n_hidden=128,
                  inject_covariates=True, use_batch_norm=True, use_layer_norm=False):
@@ -204,6 +206,15 @@ def find_best_fold(saved_models_dir, criterion="inner_val_loss"):
 
 @torch.no_grad()
 def main(args):
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
+
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
 
     # 1) Find best model
@@ -309,5 +320,6 @@ if __name__ == "__main__":
                     choices=["inner_val_loss", "outer_test_loss"])
     ap.add_argument("--out_path", required=True, help="Output reconstruction feather path")
     ap.add_argument("--cpu", action="store_true")
+    ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
     main(args)

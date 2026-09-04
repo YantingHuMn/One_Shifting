@@ -1,5 +1,5 @@
 #!/bin/bash
-folder_name="HCA"
+folder_name="ENCODE"
 
 dropout_keep_par=""
 tsv="/dcs07/hongkai/data/yhu1/One_Shifting_Results/${folder_name}_input_sample_pairs.tsv"

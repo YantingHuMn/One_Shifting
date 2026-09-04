@@ -26,4 +26,5 @@ bash ../One_Shifting/inst/scripts/run_bubble_method_plot.sh \
 
 bash ../One_Shifting/inst/scripts/run_bar_method_plot.sh \
     ../One_Shifting/inst/config/config_run_multiomics_general_select_norm_peak.sh \
-    ""
+    "" \
+    "count+1"

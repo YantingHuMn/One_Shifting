@@ -1,6 +1,7 @@
 #!/bin/bash
 CONFIG_FILE="$1"
 filter_method="$2"
+filter_trans="$3"
 
 if [ -z "$CONFIG_FILE" ]; then
     echo "Usage: bash run_pipeline.sh <config_file> [method]"
@@ -39,5 +40,6 @@ for csv_file in "${READ_DIR}"/bubble_plot_summary_*.csv; do
 
     Rscript ../One_Shifting/R/run_plot_summary_bar_table.R \
         "$csv_file" \
-        "$filter_method" 
+        "$filter_method" \
+        "$filter_trans"
 done

@@ -28,6 +28,18 @@ if (length(args) >= 4 && !is.na(args[4]) && args[4] != "") {
     extra_subdirs <- c("no_extra_subdir")
 }
 
+if (length(args) >= 5 && !is.na(args[5]) && args[5] != "") {
+    corr_dirs <- str_split(args[5], ",")[[1]]
+    corr_dirs <- str_trim(corr_dirs)
+    corr_dirs <- corr_dirs[corr_dirs %in% c("col", "row")]
+
+    if (length(corr_dirs) == 0) {
+        stop("args5 must contain 'col', 'row', or 'col,row'.")
+    }
+} else {
+    corr_dirs <- c("col", "row")
+}
+
 # Convert label to real folder path
 # no_extra_subdir / none / default means no extra folder
 extra_subdir_path_map <- extra_subdirs
@@ -44,7 +56,6 @@ OUT_DIR <- file.path(
 dir.create(OUT_DIR, recursive = TRUE, showWarnings = FALSE)
 
 input_types <- c("RNA", "ATAC")
-corr_dirs <- c("col", "row")
 
 corr_object_map <- c(
     col = "gene",
@@ -71,14 +82,18 @@ mode_suffix_map <- c(
 
 sample_table <- read_tsv(TSV_FILE, show_col_types = FALSE)
 
-sample_indices <- str_split(sample_index_arg, ",")[[1]]
-sample_indices <- as.integer(sample_indices)
+if (tolower(sample_index_arg) == "all") {
+    sample_indices <- seq_len(nrow(sample_table))
+} else {
+    sample_indices <- str_split(sample_index_arg, ",")[[1]]
+    sample_indices <- as.integer(sample_indices)
 
-sample_indices <- sample_indices[
-    !is.na(sample_indices) &
-        sample_indices >= 1 &
-        sample_indices <= nrow(sample_table)
-]
+    sample_indices <- sample_indices[
+        !is.na(sample_indices) &
+            sample_indices >= 1 &
+            sample_indices <= nrow(sample_table)
+    ]
+}
 
 sample_names <- sample_table[[2]][sample_indices]
 sample_names <- sample_names[!is.na(sample_names) & sample_names != ""]
@@ -312,7 +327,10 @@ plot_performance_bubble <- function(avg_df, title_text, out_png, subtitle_text =
     )
 
     # wider plot because x-axis can have 24 columns
-    ggsave(out_png, p, width = 22, height = 10, dpi = 300)
+    n_x_group <- n_distinct(plot_df$x_group)
+    plot_width <- max(12, 5 + 0.7 * n_x_group)
+
+    ggsave(out_png, p, width = plot_width, height = 10, dpi = 300)
 }
 
 
@@ -409,7 +427,10 @@ plot_residual_bubble <- function(avg_df, title_text, out_png, subtitle_text = NU
     )
 
     # wider plot because x-axis can have 24 columns
-    ggsave(out_png, p, width = 22, height = 10, dpi = 300)
+    n_x_group <- n_distinct(plot_df$x_group)
+    plot_width <- max(12, 5 + 0.7 * n_x_group)
+
+    ggsave(out_png, p, width = plot_width, height = 10, dpi = 300)
 }
 
 

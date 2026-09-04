@@ -47,8 +47,8 @@ class DCA(nn.Module):
         h = self.dropout(h)
         h = F.relu(self.bn_dec2(self.dec2(h)))
         h = self.dropout(h)
-        # return F.relu(self.output(h))
-        return torch.clamp(torch.exp(self.output(h)), 1e-5, 1e6)
+        return F.relu(self.output(h))
+        # return torch.clamp(torch.exp(self.output(h)), 1e-5, 1e6)
 
 
     def forward(self, x):

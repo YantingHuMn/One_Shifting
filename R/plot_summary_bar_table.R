@@ -1,4 +1,4 @@
-plot_summary_bar_table <- function(csv_path, filter_method = NULL) {
+plot_summary_bar_table <- function(csv_path, filter_method = NULL, filter_trans = NULL) {
 
     # Load Libraries
     suppressPackageStartupMessages({
@@ -19,6 +19,15 @@ plot_summary_bar_table <- function(csv_path, filter_method = NULL) {
             filter(tolower(method) != tolower(filter_method))
 
         base_path <- paste0(base_path, "_no_", filter_method)
+    }
+
+
+    if (!is.null(filter_trans) && filter_trans != "") {
+
+        df <- df %>%
+            filter(tolower(trans) != tolower(filter_trans))
+
+        base_path <- paste0(base_path, "_no_", filter_trans)
     }
 
 
@@ -108,7 +117,6 @@ plot_summary_bar_table <- function(csv_path, filter_method = NULL) {
         height = 3,
         dpi = 300
     )
-
 
 
     # ============================
