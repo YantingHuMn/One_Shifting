@@ -14,7 +14,7 @@ mkdir -p "$log_dir"
 # selected_rows="8,9"
 # selected_rows="10,11,12,13"
 # selected_rows="14,15,16,17,18,19"
-selected_rows="9"
+selected_rows=""
 
 
 tail -n +2 "$tsv" | awk -v rows="$selected_rows" '
@@ -39,25 +39,25 @@ all || keep[NR] {print $2}
         --job-name="HCA_${dropout_keep_par}_${sample_name}" \
         --exclude=compute-170 \
         --export=ALL,sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}" \
-        --output="${log_dir}/submit_HCA_gpu_${dropout_keep_par}_${sample_name}_%a.out" \
-        --error="${log_dir}/submit_HCA_gpu_${dropout_keep_par}_${sample_name}_%a.err" \
+        --output="${log_dir}/submit_HCA_dca_${dropout_keep_par}_${sample_name}_%a.out" \
+        --error="${log_dir}/submit_HCA_dca_${dropout_keep_par}_${sample_name}_%a.err" \
         "$worker_script" | awk '{print $4}')
 
     echo "Submitted training array job: ${train_job_id}"
 
-    echo "Submitting dependent plot job for sample_name=${sample_name}"
+    # echo "Submitting dependent plot job for sample_name=${sample_name}"
 
-    plot_job_id=$(sbatch \
-        --job-name="HCA_plot_${dropout_keep_par}_${sample_name}" \
-        --dependency=afterok:${train_job_id} \
-        --exclude=compute-170 \
-        --export=ALL,sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}" \
-        --output="${log_dir}/plot_HCA_${dropout_keep_par}_${sample_name}_%A.out" \
-        --error="${log_dir}/plot_HCA_${dropout_keep_par}_${sample_name}_%A.err" \
-        "$plot_script" | awk '{print $4}')
+    # plot_job_id=$(sbatch \
+    #     --job-name="HCA_plot_${dropout_keep_par}_${sample_name}" \
+    #     --dependency=afterok:${train_job_id} \
+    #     --exclude=compute-170 \
+    #     --export=ALL,sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}" \
+    #     --output="${log_dir}/plot_HCA_${dropout_keep_par}_${sample_name}_%A.out" \
+    #     --error="${log_dir}/plot_HCA_${dropout_keep_par}_${sample_name}_%A.err" \
+    #     "$plot_script" | awk '{print $4}')
 
-    echo "Submitted plot job: ${plot_job_id}, dependency=afterok:${train_job_id}"
-    echo "--------------------------------------"
+    # echo "Submitted plot job: ${plot_job_id}, dependency=afterok:${train_job_id}"
+    # echo "--------------------------------------"
 done
 
 # # submit one sample

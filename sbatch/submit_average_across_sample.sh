@@ -31,8 +31,8 @@
 #     echo
 # done
 
-BASE_DIR="/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA"
-TSV_FILE="/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA_input_sample_pairs.tsv"
+BASE_DIR="/dcs07/hongkai/data/yhu1/One_Shifting_Results/ENCODE"
+TSV_FILE="/dcs07/hongkai/data/yhu1/One_Shifting_Results/ENCODE_input_sample_pairs.tsv"
 
 
 cd /dcs10/hongkai/data/yhu1/One_Shifting

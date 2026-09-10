@@ -10,7 +10,7 @@ log_dir="/dcs07/hongkai/data/yhu1/One_Shifting_Results/10x/AAA_logs"
 mkdir -p "$log_dir"
 
 # tail -n +2 "$tsv" | awk -v n="$run_first_n_sample" 'NR <= n {print $2}' | while read -r sample_name; do
-selected_rows="1,2"
+selected_rows=""
 
 tail -n +2 "$tsv" | awk -v rows="$selected_rows" '
 BEGIN {
@@ -34,8 +34,8 @@ all || keep[NR] {print $2}
         --job-name="10x_${dropout_keep_par}_${sample_name}" \
         --exclude=compute-170 \
         --export=ALL,sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}" \
-        --output="${log_dir}/submit_10x_gpu_${dropout_keep_par}_${sample_name}_%a.out" \
-        --error="${log_dir}/submit_10x_gpu_${dropout_keep_par}_${sample_name}_%a.err" \
+        --output="${log_dir}/submit_10x_gpu_scvi_${dropout_keep_par}_${sample_name}_%a.out" \
+        --error="${log_dir}/submit_10x_gpu_scvi_${dropout_keep_par}_${sample_name}_%a.err" \
         "$worker_script" | awk '{print $4}')
 
     echo "Submitted training array job: ${train_job_id}"
