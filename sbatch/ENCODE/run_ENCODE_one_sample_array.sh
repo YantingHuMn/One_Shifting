@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=ENCODE
-#SBATCH --partition=gpu
-#SBATCH --gres=gpu:1
+#SBATCH --partition=shared
+# #SBATCH --gres=gpu:1
 #SBATCH --time=3-00:00:00
-#SBATCH --mem=150G
-#SBATCH --array=0
+#SBATCH --mem=80G
+#SBATCH --array=0-1
 #SBATCH --output=/dcs07/hongkai/data/yhu1/One_Shifting_Results/ENCODE/AAA_logs/submit_ENCODE_pip_%A_%a.out
 #SBATCH --error=/dcs07/hongkai/data/yhu1/One_Shifting_Results/ENCODE/AAA_logs/submit_ENCODE_pip_%A_%a.err
 #SBATCH --mail-user=yhu157@jh.edu
@@ -24,15 +24,13 @@ export folder_name="ENCODE"
 export dropout_keep_par
 
 # methods=("VAE" "DCA_mse" "scVI_mse" "Transformer_denoise")
-methods=("DCA_mse")
+methods=("scVI_mse")
 
-# configs=(
-#     "../One_Shifting/inst/config/config_run_multi_RNA_HCA_10x_ENCODE.sh"
-#     "../One_Shifting/inst/config/config_run_multi_ATAC_HCA_10x_ENCODE.sh"
-# )
 configs=(
     "../One_Shifting/inst/config/config_run_multi_RNA_HCA_10x_ENCODE.sh"
+    "../One_Shifting/inst/config/config_run_multi_ATAC_HCA_10x_ENCODE.sh"
 )
+
 
 n_methods=${#methods[@]}
 n_configs=${#configs[@]}

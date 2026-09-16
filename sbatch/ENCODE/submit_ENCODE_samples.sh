@@ -12,7 +12,7 @@ mkdir -p "$log_dir"
 # tail -n +2 "$tsv" | awk -v n="$run_first_n_sample" 'NR <= n {print $2}' | while read -r sample_name; do
 # selected_rows="1,2,3,4,5,6,7,8"
 # selected_rows="9,10,11"
-selected_rows="11"
+selected_rows=""
 # selected_rows="2"
 
 tail -n +2 "$tsv" | awk -v rows="$selected_rows" '
@@ -37,8 +37,8 @@ all || keep[NR] {print $2}
         --job-name="ENCODE_${dropout_keep_par}_${sample_name}" \
         --exclude=compute-170 \
         --export=ALL,sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}" \
-        --output="${log_dir}/submit_ENCODE_gpu_${dropout_keep_par}_${sample_name}_%a.out" \
-        --error="${log_dir}/submit_ENCODE_gpu_${dropout_keep_par}_${sample_name}_%a.err" \
+        --output="${log_dir}/submit_ENCODE_scvi_${dropout_keep_par}_${sample_name}_%a.out" \
+        --error="${log_dir}/submit_ENCODE_scvi_${dropout_keep_par}_${sample_name}_%a.err" \
         "$worker_script" | awk '{print $4}')
 
     echo "Submitted training array job: ${train_job_id}"

@@ -1,4 +1,3 @@
-
 source("../One_Shifting/R/count_matrix_function_with_qc.R")
 source("../One_Shifting/R/qc.R")
 
@@ -119,6 +118,33 @@ run_build_norm_filter_pipeline <- function(path1, path2 = NULL, out_dir, norm_fa
         )
     }
 
+    if (is_file1) {
+        # Determine cell filtering from V1 only, using the final retained genes, avoid NA in normalization
+        v1_cell_check <- v1_count_data
+        if (!is.null(keep_cut)) {
+            v1_cell_check <- v1_cell_check[keep_cut, , drop = FALSE]
+        }
+
+        if (nrow(v1_cell_check) == 0) {
+            stop("No genes remain before cell filtering.")
+        }
+
+        bad_cells <- vapply(v1_cell_check[-1], function(x) {
+            x <- x + 0
+            all(is.na(x)) || (all(is.finite(x)) && all(x == 0))
+        }, logical(1))
+
+        keep_cell_ids <- colnames(v1_cell_check)[-1][!bad_cells]
+
+        cat(sprintf("  Removed %d / %d V1 cells with all-zero/all-NA counts\n", sum(bad_cells), length(bad_cells)))
+
+        if (length(keep_cell_ids) == 0) {
+            stop("No V1 cells remain after all-zero/all-NA filtering.")
+        }
+
+        v1_count_data <- v1_count_data[, c(colnames(v1_count_data)[1], keep_cell_ids), drop = FALSE]
+    }
+
     cat("\n=== Processing V1 (final) ===\n")
     if (is_file1) {
         # file input: keep_cut filters rows (genes), then norm by col (cell), then transpose
@@ -147,6 +173,15 @@ run_build_norm_filter_pipeline <- function(path1, path2 = NULL, out_dir, norm_fa
                     keep_par = dropout_keep_par,
                     cell_axis = "col"
                 )
+            }
+
+            if (is_file1) {
+                # Apply V1-selected cells to V2 without using V2 counts for QC.
+                missing_cells <- setdiff(keep_cell_ids, colnames(v2_count_data)[-1])
+                if (length(missing_cells) > 0) {
+                    stop("V1-selected cells are missing from V2: ", paste(missing_cells, collapse = ", "))
+                }
+                v2_count_data <- v2_count_data[, c(colnames(v2_count_data)[1], keep_cell_ids), drop = FALSE]
             }
 
             v2_result <- normalize_and_save(v2_count_data, out_dir, basename(dirname(path2)), norm_factor2,

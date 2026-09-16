@@ -79,7 +79,9 @@ class EncoderSCVI(nn.Module):
         log_q_v = torch.clamp(self.var_encoder(q), min=-20.0, max=20.0)
         q_v = torch.exp(log_q_v) + self.var_eps
 
-        dist = torch.distributions.Normal(q_m, q_v.sqrt())
+        # Match the other reconstruction models: allow non-finite rows to
+        # propagate to non-finite outputs instead of aborting the whole run.
+        dist = torch.distributions.Normal(q_m, q_v.sqrt(), validate_args=False)
         z = dist.rsample()
         return q_m, q_v, z
     
@@ -294,6 +296,16 @@ def main(args):
 
     # 7) Reconstruct
     print("[RECONSTRUCT] Running ScVIModel...")
+    invalid_rows = ~torch.isfinite(X).all(dim=1)
+    n_invalid = int(invalid_rows.sum().item())
+    print(f"[CHECK] Invalid input rows: {n_invalid}/{X.shape[0]}")
+
+    if n_invalid > 0 and pos_col is not None:
+        invalid_indices = torch.where(invalid_rows)[0].cpu().numpy()
+        print(f"[CHECK] Invalid cell IDs: {pos_col.iloc[invalid_indices].tolist()}")
+
+    # Non-finite input rows propagate to non-finite reconstruction rows, as in
+    # the DCA, VAE, and Transformer reconstruction scripts.
     px_rate, q_m, logvar = model(X)
 
     # 8) Save reconstruction
