@@ -139,7 +139,8 @@ if [ "$method" = "VAE" ]; then
 elif [ "$method" = "DCA_mse" ]; then
     METHOD_ARGS="--dropout_grid 0.0 --hidden_grid1 4096 --hidden_grid2 1024"
 elif [ "$method" = "scVI_mse" ]; then
-    METHOD_ARGS="--hidden_grid 512,256,128,64"
+    # METHOD_ARGS="--hidden_grid 512,256,128,64"
+    METHOD_ARGS="--hidden_grid 4096,2048 --latent_grid 32"
 elif [ "$method" = "Transformer_denoise" ]; then
     METHOD_ARGS="--n_tokens_grid 32 --d_model_grid 64 --nhead_grid 4 --num_layers_grid 1 --dim_feedforward_grid 128 --dropout_grid 0.1"
 fi
@@ -199,7 +200,8 @@ for this_trans_factor in "${trans_factor[@]}"; do
         echo "=== Step 7: Correlation analysis ==="
         module load conda_R
 
-        for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
+        for data_mode in v1_reverse; do
+        # for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
             if [ "$data_mode" = "default" ]; then
                 mode_suffix="v1_trans_v2_no_trans"
             elif [ "$data_mode" = "v1_trans_v2_trans" ]; then
@@ -243,8 +245,9 @@ done
 echo "=== Post-processing: combine figures and summary ==="
 module load conda_R
 
+for data_mode in v1_reverse; do
 
-for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
+# for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
     if [ "$data_mode" = "default" ]; then
         mode_suffix="v1_trans_v2_no_trans"
     elif [ "$data_mode" = "v1_trans_v2_trans" ]; then

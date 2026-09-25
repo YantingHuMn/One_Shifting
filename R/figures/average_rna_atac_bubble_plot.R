@@ -12,48 +12,23 @@ TSV_FILES <- str_trim(TSV_FILES)
 TSV_FILES <- TSV_FILES[TSV_FILES != ""]
 sample_index_arg <- args[3]
 
-# ============================================================
-# args4:
-#   missing:
-#       use no_extra_subdir only
-#   dropout_0p1:
-#       use dropout_0p1 only
-#   no_extra_subdir,dropout_0p1,dropout_0p5:
-#       combine all these groups into one plot
-# ============================================================
-
 if (length(args) >= 4 && !is.na(args[4]) && args[4] != "") {
-    extra_subdirs <- str_split(args[4], ",")[[1]]
-    extra_subdirs <- str_trim(extra_subdirs)
-    extra_subdirs <- extra_subdirs[extra_subdirs != ""]
-} else {
-    extra_subdirs <- c("no_extra_subdir")
-}
-
-if (length(args) >= 5 && !is.na(args[5]) && args[5] != "") {
-    corr_dirs <- str_split(args[5], ",")[[1]]
+    corr_dirs <- str_split(args[4], ",")[[1]]
     corr_dirs <- str_trim(corr_dirs)
     corr_dirs <- corr_dirs[corr_dirs %in% c("col", "row")]
 
     if (length(corr_dirs) == 0) {
-        stop("args5 must contain 'col', 'row', or 'col,row'.")
+        stop("args4 must contain 'col', 'row', or 'col,row'.")
     }
 } else {
     corr_dirs <- c("col", "row")
 }
 
-# Convert label to real folder path
-# no_extra_subdir / none / default means no extra folder
-extra_subdir_path_map <- extra_subdirs
-extra_subdir_path_map[extra_subdir_path_map %in% c("no_extra_subdir", "none", "default")] <- ""
-
-out_dir_suffix <- paste(extra_subdirs, collapse = "__")
-
-OUT_DIR <- file.path(
-    BASE_DIR,
-    "Across_sample_bubble_plots",
-    out_dir_suffix
-)
+if (length(args) >= 5 && !is.na(args[5]) && args[5] != "") {
+    OUT_DIR <- args[5]
+} else {
+    stop("args5 must be the output directory.")
+}
 
 dir.create(OUT_DIR, recursive = TRUE, showWarnings = FALSE)
 
@@ -64,18 +39,10 @@ corr_object_map <- c(
     row = "cell"
 )
 
-data_modes <- c(
-    "default",
-    "v1_trans_v2_trans",
-    "v1_reverse",
-    "v1_trans_v2_trans_norm_100000"
-)
+data_modes <- c("v1_reverse")
 
 mode_suffix_map <- c(
-    default = "v1_trans_v2_no_trans",
-    v1_trans_v2_trans = "v1_trans_v2_trans",
-    v1_reverse = "v1_reverse_v2_no_trans",
-    v1_trans_v2_trans_norm_100000 = "v1_trans_v2_trans_norm_100000"
+    v1_reverse = "v1_reverse_v2_no_trans"
 )
 
 # ============================================================
@@ -116,11 +83,10 @@ sample_info <- sample_info %>%
 sample_names <- sample_info$sample_name
 
 print(sample_names)
-print(extra_subdirs)
 
 
 # Function: read one table_df file
-read_one_bubble_table <- function(sample_name, sample_base_dir, input_type, corr_dir, mode_suffix, extra_subdir = "", extra_subdir_label = "no_extra_subdir") {
+read_one_bubble_table <- function(sample_name, sample_base_dir, input_type, corr_dir, mode_suffix) {
     corr_object <- corr_object_map[[corr_dir]]
 
     sample_dir <- file.path(
@@ -128,9 +94,8 @@ read_one_bubble_table <- function(sample_name, sample_base_dir, input_type, corr
         paste0(sample_name, "_INPUT_", input_type)
     )
 
-    path_parts <- c(
+    file_path <- file.path(
         sample_dir,
-        extra_subdir,
         paste0(
             "bubble_plot_summary_",
             corr_dir,
@@ -141,10 +106,6 @@ read_one_bubble_table <- function(sample_name, sample_base_dir, input_type, corr
             "_table_df.csv"
         )
     )
-
-    path_parts <- path_parts[!is.na(path_parts) & path_parts != ""]
-
-    file_path <- do.call(file.path, as.list(path_parts))
 
     if (!file.exists(file_path)) {
         message("[Missing] ", file_path)
@@ -159,8 +120,6 @@ read_one_bubble_table <- function(sample_name, sample_base_dir, input_type, corr
             input_type = input_type,
             corr_dir = corr_dir,
             mode_suffix = mode_suffix,
-            extra_subdir = extra_subdir,
-            extra_subdir_label = extra_subdir_label,
             source_file = file_path
         )
 
@@ -175,7 +134,6 @@ aggregate_across_samples <- function(all_df) {
             input_type,
             corr_dir,
             mode_suffix,
-            extra_subdir_label,
             method,
             metric,
             trans
@@ -199,12 +157,7 @@ aggregate_across_samples <- function(all_df) {
         mutate(
             method_combination = paste(method, metric, sep = " | "),
 
-            # This is the new x-axis column.
-            # Example:
-            # no_extra_subdir | col | DCA_mse | pearson
-            # dropout_0p1 | row | scVI_mse | spearman
             x_group = paste(
-                extra_subdir_label,
                 corr_dir,
                 method_combination,
                 sep = " | "
@@ -224,25 +177,30 @@ make_x_order <- function(avg_df) {
 
     x_order <- avg_df %>%
         distinct(
-            extra_subdir_label,
             corr_dir,
+            method,
+            metric,
             method_combination,
             x_group
         ) %>%
         mutate(
-            extra_subdir_label = factor(
-                extra_subdir_label,
-                levels = extra_subdirs
-            ),
             corr_dir = factor(
                 corr_dir,
                 levels = corr_dirs
+            ),
+            metric_order = factor(
+                tolower(metric),
+                levels = c("pearson", "spearman")
+            ),
+            method_order = factor(
+                method,
+                levels = c("VAE", "DCA_mse", "scVI_mse", "Transformer_denoise")
             )
         ) %>%
         arrange(
-            extra_subdir_label,
             corr_dir,
-            method_combination
+            metric_order,
+            method_order
         ) %>%
         pull(x_group) %>%
         as.character()
@@ -251,7 +209,7 @@ make_x_order <- function(avg_df) {
 }
 
 # Function: plot performance bubble plot
-plot_performance_bubble <- function(avg_df, title_text, out_png, subtitle_text = NULL) {
+plot_performance_bubble <- function(avg_df, title_text, out_png) {
 
     # Average rank across all x groups for each transformation
     # smaller avg_rank = better
@@ -277,10 +235,15 @@ plot_performance_bubble <- function(avg_df, title_text, out_png, subtitle_text =
 
     x_order <- make_x_order(avg_df)
 
+    x_labels <- avg_df %>%
+        distinct(x_group, method) %>%
+        { setNames(.$method, .$x_group) }
+
     plot_df <- avg_df %>%
         mutate(
             trans = factor(trans, levels = rev(perf_order)),
-            x_group = factor(x_group, levels = x_order)
+            x_group = factor(x_group, levels = x_order),
+            metric = factor(tolower(metric), levels = c("pearson", "spearman"), labels = c("Pearson", "Spearman"))
         )
 
     p_main <- ggplot(
@@ -295,29 +258,81 @@ plot_performance_bubble <- function(avg_df, title_text, out_png, subtitle_text =
                 color = avg_mean_performance
             ),
             alpha = 0.9
-        ) + scale_size_continuous(
-                name = "Average rank\n(smaller = better)",
-                range = c(12, 1.5)
+        ) + scale_color_gradient(
+                low = "#FAD7B1",
+                high = "#E76F51"
+            ) + scale_size_continuous(
+                name = "Average rank",
+                range = c(12, 1.5),
+                breaks = function(x) seq(min(x), max(x), length.out = 5),
+                labels = function(x) rep("", length(x))
+            ) + scale_x_discrete(
+                labels = x_labels,
+                expand = expansion(add = 0.5)
+            ) + facet_grid(
+                . ~ metric,
+                scales = "free_x",
+                space = "free_x"
+            ) + guides(
+                color = guide_colorbar(
+                    order = 1,
+                    barheight = unit(0.7, "in"),
+                    barwidth = unit(0.18, "in"),
+                    title.position = "top"
+                ),
+                size = guide_legend(
+                    order = 2,
+                    keyheight = unit(0.18, "in"),
+                    keywidth = unit(0.18, "in"),
+                    override.aes = list(size = c(5, 4, 3, 2, 1))
+                )
             ) + labs(
                 title = title_text,
-                subtitle = subtitle_text,
-                x = "Dropout group | corr_dir | Method Combination",
-                y = "Transformation",
-                color = "Average mean performance\n(larger = better)"
+                x = NULL,
+                y = NULL,
+                color = "Average mean\nperformance"
             ) + theme_minimal(base_size = 12) +
                 theme(
                     axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
                     axis.text.y = element_text(size = 10),
-                    panel.grid.major = element_line(color = "grey90"),
-                    panel.grid.minor = element_blank(),
+                    panel.grid = element_blank(),
+                    panel.spacing.x = unit(0, "lines"),
+                    strip.background = element_rect(fill = "grey20", color = "black"),
+                    strip.text = element_text(color = "white", face = "bold", size = 10),
                     legend.position = "right",
-                    plot.title = element_text(hjust = 0.5, face = "bold"),
-                    plot.subtitle = element_text(hjust = 0.5, size = 9)
+                    legend.box = "vertical",
+                    legend.title = element_text(size = 8),
+                    legend.text = element_text(size = 7),
+                    legend.spacing.y = unit(0.05, "lines"),
+                    legend.box.spacing = unit(0.1, "lines"),
+                    plot.title = element_text(hjust = 0.5, face = "bold")
                 )
 
-    p_bar <- ggplot(avg_rank_perf, aes(x = bar_len, y = trans)) +
-        geom_bar(stat = "identity", fill = "steelblue", width = 0.7) +
+    p_bar <- ggplot(
+        avg_rank_perf %>% mutate(
+            section = "Transformation",
+            shift_group = if_else(
+                as.character(trans) %in% c("log2(count+2)", "sqrt+1", "count+1"),
+                "One-shifting",
+                "Original"
+            )
+        ),
+        aes(x = bar_len, y = trans, fill = shift_group)
+    ) +
+        geom_bar(stat = "identity", width = 0.7) +
+        scale_fill_manual(
+            values = c("One-shifting" = "#F6B3B3", "Original" = "#A7D7A1"),
+            breaks = c("One-shifting", "Original"),
+            labels = c("One-shifting", "Original"),
+            name = NULL,
+            guide = guide_legend(
+                ncol = 1,
+                keywidth = unit(0.18, "in"),
+                keyheight = unit(0.18, "in")
+            )
+        ) +
         scale_x_reverse() +
+        facet_grid(. ~ section) +
         theme_minimal() +
         theme(
             axis.text.y = element_blank(),
@@ -326,7 +341,14 @@ plot_performance_bubble <- function(avg_df, title_text, out_png, subtitle_text =
             axis.text.x = element_blank(),
             axis.title.x = element_blank(),
             axis.ticks.x = element_blank(),
-            panel.grid = element_blank()
+            panel.grid = element_blank(),
+            strip.background = element_rect(fill = "grey20", color = "black"),
+            strip.text = element_text(color = "white", face = "bold", size = 10),
+            legend.position = "bottom",
+            legend.direction = "vertical",
+            legend.justification = "left",
+            legend.text = element_text(size = 7),
+            legend.margin = margin(0, 0, 0, 0)
         )
 
     p <- plot_grid(
@@ -340,14 +362,17 @@ plot_performance_bubble <- function(avg_df, title_text, out_png, subtitle_text =
 
     # wider plot because x-axis can have 24 columns
     n_x_group <- n_distinct(plot_df$x_group)
-    plot_width <- max(12, 5 + 0.7 * n_x_group)
+    plot_width <- max(10, 4 + 0.5 * n_x_group)
 
-    ggsave(out_png, p, width = plot_width, height = 10, dpi = 300)
+    n_x_group <- n_distinct(plot_df$x_group)
+    plot_width <- max(8, 3 + 0.4 * n_x_group)
+
+    ggsave(out_png, p, width = plot_width, height = 4, dpi = 300)
 }
 
 
 # Function: plot residual bubble plot
-plot_residual_bubble <- function(avg_df, title_text, out_png, subtitle_text = NULL) {
+plot_residual_bubble <- function(avg_df, title_text, out_png) {
 
     # Average rank across all x groups for each transformation
     # smaller avg_rank = better
@@ -373,10 +398,15 @@ plot_residual_bubble <- function(avg_df, title_text, out_png, subtitle_text = NU
 
     x_order <- make_x_order(avg_df)
 
+    x_labels <- avg_df %>%
+        distinct(x_group, method) %>%
+        { setNames(.$method, .$x_group) }
+
     plot_df <- avg_df %>%
         mutate(
             trans = factor(trans, levels = rev(resid_order)),
-            x_group = factor(x_group, levels = x_order)
+            x_group = factor(x_group, levels = x_order),
+            metric = factor(tolower(metric), levels = c("pearson", "spearman"), labels = c("Pearson", "Spearman"))
         )
 
     p_main <- ggplot(
@@ -392,32 +422,86 @@ plot_residual_bubble <- function(avg_df, title_text, out_png, subtitle_text = NU
                 color = avg_mean_residual
             ),
             alpha = 0.9
+        ) + scale_color_gradient(
+            low = "#4E79B7",
+            high = "#E6F0FF"
+        ) + scale_size_continuous(
+            name = "Average rank",
+            range = c(12, 1.5),
+            breaks = function(x) seq(min(x), max(x), length.out = 5),
+            labels = function(x) rep("", length(x))
         ) +
-        scale_size_continuous(
-            name = "Average rank\n(smaller = better)",
-            range = c(12, 1.5)
+        scale_x_discrete(
+            labels = x_labels,
+            expand = expansion(add = 0.5)
+        ) +
+        facet_grid(
+            . ~ metric,
+            scales = "free_x",
+            space = "free_x"
+        ) +
+        guides(
+            color = guide_colorbar(
+                order = 1,
+                barheight = unit(0.7, "in"),
+                barwidth = unit(0.18, "in"),
+                title.position = "top"
+            ),
+            size = guide_legend(
+                order = 2,
+                keyheight = unit(0.18, "in"),
+                keywidth = unit(0.18, "in"),
+                override.aes = list(size = c(5, 4, 3, 2, 1))
+            )
         ) +
         labs(
             title = title_text,
-            subtitle = subtitle_text,
-            x = "Dropout group | corr_dir | Method Combination",
-            y = "Transformation",
-            color = "Average mean residual\n(smaller = better)"
+            x = NULL,
+            y = NULL,
+            color = "Average mean\nresidual"
         ) +
         theme_minimal(base_size = 12) +
         theme(
             axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
             axis.text.y = element_text(size = 10),
-            panel.grid.major = element_line(color = "grey90"),
-            panel.grid.minor = element_blank(),
+            panel.grid = element_blank(),
+            panel.spacing.x = unit(0, "lines"),
+            strip.background = element_rect(fill = "grey20", color = "black"),
+            strip.text = element_text(color = "white", face = "bold", size = 10),
             legend.position = "right",
-            plot.title = element_text(hjust = 0.5, face = "bold"),
-            plot.subtitle = element_text(hjust = 0.5, size = 9)
+            legend.box = "vertical",
+            legend.title = element_text(size = 8),
+            legend.text = element_text(size = 7),
+            legend.spacing.y = unit(0.05, "lines"),
+            legend.box.spacing = unit(0.1, "lines"),
+            plot.title = element_text(hjust = 0.5, face = "bold")
         )
 
-    p_bar <- ggplot(avg_rank_resid, aes(x = bar_len, y = trans)) +
-        geom_bar(stat = "identity", fill = "coral", width = 0.7) +
+    p_bar <- ggplot(
+        avg_rank_resid %>% mutate(
+            section = "Transformation",
+            shift_group = if_else(
+                as.character(trans) %in% c("log2(count+2)", "sqrt+1", "count+1"),
+                "One-shifting",
+                "Original"
+            )
+        ),
+        aes(x = bar_len, y = trans, fill = shift_group)
+    ) +
+        geom_bar(stat = "identity", width = 0.7) +
+        scale_fill_manual(
+            values = c("One-shifting" = "#F6B3B3", "Original" = "#A7D7A1"),
+            breaks = c("One-shifting", "Original"),
+            labels = c("One-shifting", "Original"),
+            name = NULL,
+            guide = guide_legend(
+                ncol = 1,
+                keywidth = unit(0.18, "in"),
+                keyheight = unit(0.18, "in")
+            )
+        ) +
         scale_x_reverse() +
+        facet_grid(. ~ section) +
         theme_minimal() +
         theme(
             axis.text.y = element_blank(),
@@ -426,7 +510,14 @@ plot_residual_bubble <- function(avg_df, title_text, out_png, subtitle_text = NU
             axis.text.x = element_blank(),
             axis.title.x = element_blank(),
             axis.ticks.x = element_blank(),
-            panel.grid = element_blank()
+            panel.grid = element_blank(),
+            strip.background = element_rect(fill = "grey20", color = "black"),
+            strip.text = element_text(color = "white", face = "bold", size = 10),
+            legend.position = "bottom",
+            legend.direction = "vertical",
+            legend.justification = "left",
+            legend.text = element_text(size = 7),
+            legend.margin = margin(0, 0, 0, 0)
         )
 
     p <- plot_grid(
@@ -440,9 +531,12 @@ plot_residual_bubble <- function(avg_df, title_text, out_png, subtitle_text = NU
 
     # wider plot because x-axis can have 24 columns
     n_x_group <- n_distinct(plot_df$x_group)
-    plot_width <- max(12, 5 + 0.7 * n_x_group)
+    plot_width <- max(10, 4 + 0.5 * n_x_group)
 
-    ggsave(out_png, p, width = plot_width, height = 10, dpi = 300)
+    n_x_group <- n_distinct(plot_df$x_group)
+    plot_width <- max(8, 3 + 0.4 * n_x_group)
+
+    ggsave(out_png, p, width = plot_width, height = 4, dpi = 300)
 }
 
 
@@ -456,33 +550,24 @@ for (input_type in input_types) {
 
         message("========================================")
         message("Processing combined plot: ", input_type, " | ", mode_suffix)
-        message("Extra subdir groups: ", paste(extra_subdirs, collapse = ", "))
         message("corr_dir groups: ", paste(corr_dirs, collapse = ", "))
         message("========================================")
 
         df_list_all <- list()
 
-        for (extra_i in seq_along(extra_subdirs)) {
+        for (corr_dir in corr_dirs) {
 
-            extra_subdir_label <- extra_subdirs[extra_i]
-            extra_subdir_path <- extra_subdir_path_map[extra_i]
+            df_list <- lapply(seq_len(nrow(sample_info)), function(i) {
+                read_one_bubble_table(
+                    sample_name = sample_info$sample_name[i],
+                    sample_base_dir = sample_info$sample_base_dir[i],
+                    input_type = input_type,
+                    corr_dir = corr_dir,
+                    mode_suffix = mode_suffix
+                )
+            })
 
-            for (corr_dir in corr_dirs) {
-
-                df_list <- lapply(seq_len(nrow(sample_info)), function(i) {
-                    read_one_bubble_table(
-                        sample_name = sample_info$sample_name[i],
-                        sample_base_dir = sample_info$sample_base_dir[i],
-                        input_type = input_type,
-                        corr_dir = corr_dir,
-                        mode_suffix = mode_suffix,
-                        extra_subdir = extra_subdir_path,
-                        extra_subdir_label = extra_subdir_label
-                    )
-                })
-
-                df_list_all <- c(df_list_all, df_list)
-            }
+            df_list_all <- c(df_list_all, df_list)
         }
 
         all_df <- bind_rows(df_list_all)
@@ -492,62 +577,41 @@ for (input_type in input_types) {
             next
         }
 
-        samples_used <- paste(sort(unique(all_df$sample_name)), collapse = ", ")
-        dropout_used <- paste(unique(all_df$extra_subdir_label), collapse = ", ")
-        corr_used <- paste(sort(unique(all_df$corr_dir)), collapse = ", ")
-
-        subtitle_text <- str_wrap(
-            paste0(
-                "Samples included: ", samples_used,
-                " | Dropout groups: ", dropout_used,
-                " | corr_dir: ", corr_used
-            ),
-            width = 150
-        )
-
         avg_df <- aggregate_across_samples(all_df)
 
-        sub_out_dir <- file.path(
-            OUT_DIR,
-            input_type,
-            mode_suffix
-        )
-
-        dir.create(sub_out_dir, recursive = TRUE, showWarnings = FALSE)
-
         raw_out_csv <- file.path(
-            sub_out_dir,
+            OUT_DIR,
             paste0(
-                "bubble_plot_summary_col_row_",
+                "bubble_plot_summary_", input_type, "_col_row_",
                 mode_suffix,
-                "_all_dropout_groups_across_samples_raw_table_df.csv"
+                "_across_samples_raw_table_df.csv"
             )
         )
 
         avg_out_csv <- file.path(
-            sub_out_dir,
+            OUT_DIR,
             paste0(
-                "bubble_plot_summary_col_row_",
+                "bubble_plot_summary_", input_type, "_col_row_",
                 mode_suffix,
-                "_all_dropout_groups_across_samples_avg_rank_table_df.csv"
+                "_across_samples_avg_rank_table_df.csv"
             )
         )
 
         perf_out_png <- file.path(
-            sub_out_dir,
+            OUT_DIR,
             paste0(
-                "bubble_plot_summary_col_row_",
+                "bubble_plot_summary_", input_type, "_col_row_",
                 mode_suffix,
-                "_all_dropout_groups_across_samples_avg_rank_performance.png"
+                "_across_samples_avg_rank_performance.png"
             )
         )
 
         resid_out_png <- file.path(
-            sub_out_dir,
+            OUT_DIR,
             paste0(
-                "bubble_plot_summary_col_row_",
+                "bubble_plot_summary_", input_type, "_col_row_",
                 mode_suffix,
-                "_all_dropout_groups_across_samples_avg_rank_residual.png"
+                "_across_samples_avg_rank_residual.png"
             )
         )
 
@@ -557,27 +621,17 @@ for (input_type in input_types) {
         plot_performance_bubble(
             avg_df,
             title_text = paste0(
-                "Average Performance across Samples: ",
-                input_type,
-                " | col + row | ",
-                mode_suffix,
-                " | all dropout groups"
+                "Average Performance across Samples: ", input_type
             ),
-            out_png = perf_out_png,
-            subtitle_text = subtitle_text
+            out_png = perf_out_png
         )
 
         plot_residual_bubble(
             avg_df,
             title_text = paste0(
-                "Average Residual across Samples: ",
-                input_type,
-                " | col + row | ",
-                mode_suffix,
-                " | all dropout groups"
+                "Average Residual across Samples: ", input_type
             ),
-            out_png = resid_out_png,
-            subtitle_text = subtitle_text
+            out_png = resid_out_png
         )
 
         all_aggregated[[paste(input_type, mode_suffix, sep = "__")]] <- avg_df
@@ -595,7 +649,7 @@ combined_avg_df <- bind_rows(all_aggregated)
 
 combined_out_csv <- file.path(
     OUT_DIR,
-    "bubble_plot_summary_all_input_types_all_modes_all_dropout_groups_across_samples_avg_rank_table_df.csv"
+    "bubble_plot_summary_all_input_types_v1_reverse_v2_no_trans_across_samples_avg_rank_table_df.csv"
 )
 
 write_csv(combined_avg_df, combined_out_csv)

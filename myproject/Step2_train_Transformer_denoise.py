@@ -16,6 +16,21 @@ import json
 from pathlib import Path
 
 
+def _check_count_matrix(df, name, check_zero=True):
+    values = df.iloc[:, 1:].to_numpy(dtype=np.float64)
+    if values.shape[0] == 0 or values.shape[1] == 0:
+        raise ValueError(f"{name}: count matrix is empty")
+    n_nan = int(np.isnan(values).sum())
+    n_inf = int(np.isinf(values).sum())
+    n_zero_rows = int(np.all(values == 0, axis=1).sum()) if check_zero else 0
+    n_zero_cols = int(np.all(values == 0, axis=0).sum()) if check_zero else 0
+    if n_nan or n_inf or n_zero_rows or n_zero_cols:
+        raise ValueError(
+            f"{name}: NaN={n_nan}, Inf={n_inf}, "
+            f"all_zero_rows={n_zero_rows}, all_zero_cols={n_zero_cols}"
+        )
+
+
 class TransformerAutoencoder(nn.Module):
     """
     Transformer-based autoencoder: V1 -> V1 denoising.
@@ -177,14 +192,14 @@ def train_one_epoch(model, loader, optimizer, device, weight_strategy='fixed',
 
         if not torch.isfinite(x).all():
             print(f"  [ERROR] NaN/Inf in input batch {batch_idx}, trans={trans}")
-            return float("inf")
+            raise ValueError(f"NaN/Inf in input batch {batch_idx}, trans={trans}")
 
         optimizer.zero_grad()
         recon = model(x)
 
         if not torch.isfinite(recon).all():
             print(f"  [ERROR] NaN/Inf in reconstruction at batch {batch_idx}, trans={trans}")
-            return float("inf")
+            raise ValueError(f"NaN/Inf in reconstruction at batch {batch_idx}, trans={trans}")
 
         loss = weighted_mse_loss(recon, x, weight_strategy, zero_weight, nonzero_weight, trans)
 
@@ -193,7 +208,7 @@ def train_one_epoch(model, loader, optimizer, device, weight_strategy='fixed',
                 f"  [ERROR] NaN/Inf training loss: {loss.item()}, "
                 f"trans={trans}, zero_w={zero_weight}, nonzero_w={nonzero_weight}"
             )
-            return float("inf")
+            raise ValueError("NaN/Inf training loss")
 
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -217,13 +232,13 @@ def eval_loss(model, loader, device, weight_strategy='fixed',
 
         if not torch.isfinite(x).all():
             print(f"  [ERROR] NaN/Inf in eval input batch {batch_idx}, trans={trans}")
-            return float("inf")
+            raise ValueError(f"NaN/Inf in eval input batch {batch_idx}, trans={trans}")
 
         recon = model(x)
 
         if not torch.isfinite(recon).all():
             print(f"  [ERROR] NaN/Inf in eval reconstruction at batch {batch_idx}, trans={trans}")
-            return float("inf")
+            raise ValueError(f"NaN/Inf in eval reconstruction at batch {batch_idx}, trans={trans}")
 
         loss = weighted_mse_loss(recon, x, weight_strategy, zero_weight, nonzero_weight, trans)
 
@@ -232,7 +247,7 @@ def eval_loss(model, loader, device, weight_strategy='fixed',
                 f"  [ERROR] NaN/Inf eval loss: {loss.item()}, "
                 f"trans={trans}, zero_w={zero_weight}, nonzero_w={nonzero_weight}"
             )
-            return float("inf")
+            raise ValueError("NaN/Inf eval loss")
 
         total_loss += loss.item() * x.size(0)
         n += x.size(0)
@@ -255,6 +270,8 @@ def eval_correlation_residual(model, loader, v2_data, indices, device, corr_type
     v1_array = np.vstack(all_v1)
     recon_array = np.vstack(all_recon)
     v2_subset = v2_data[indices]
+    if not all(np.isfinite(a).all() for a in (v1_array, recon_array, v2_subset)):
+        raise ValueError("NaN/Inf in correlation evaluation data")
 
     n_cols = v1_array.shape[1]
     residuals = []
@@ -351,6 +368,8 @@ def _apply_trans(df, trans):
 
 def filter_and_transform(df1, df2, threshold_value, trans1, trans2, data_path1=None, data_path2=None, save=False):
     data_cols = df1.columns[1:]
+    _check_count_matrix(df1, "V1 before filtering")
+    _check_count_matrix(df2, "V2 before filtering", check_zero=False)
     zero_percentage = (df1[data_cols] == 0).mean()
     keep_cols = zero_percentage < threshold_value
 
@@ -360,8 +379,13 @@ def filter_and_transform(df1, df2, threshold_value, trans1, trans2, data_path1=N
     filtered_df1 = df1[cols_to_keep].copy()
     filtered_df2 = df2[cols_to_keep].copy()
 
+    _check_count_matrix(filtered_df1, "V1 before transformation")
+    _check_count_matrix(filtered_df2, "V2 before transformation", check_zero=False)
+
     _apply_trans(filtered_df1, trans1)
     _apply_trans(filtered_df2, trans2)
+    _check_count_matrix(filtered_df1, "V1 after transformation", check_zero=False)
+    _check_count_matrix(filtered_df2, "V2 after transformation", check_zero=False)
 
     if save:
         if data_path1 is not None:
@@ -397,12 +421,15 @@ def _prepare_tensors(filtered_df1, filtered_df2):
             if df[col].dtype == 'object':
                 print(f"[WARNING] Converting object column {col} in {name}")
                 df[col] = pd.to_numeric(df[col], errors='coerce')
-        df.fillna(0, inplace=True)
+        if not np.isfinite(df.to_numpy(dtype=np.float64)).all():
+            raise ValueError(f"{name}: NaN/Inf present before tensor conversion")
 
         if not all(df.dtypes.apply(lambda x: np.issubdtype(x, np.number))):
             raise ValueError(f"Cannot convert to tensor: non-numeric data present in {name}")
 
     X = torch.tensor(df1.to_numpy(), dtype=torch.float32)
+    if not torch.isfinite(X).all():
+        raise ValueError("V1: NaN/Inf present after float32 conversion")
     X2 = df2.to_numpy()
     return X, X2
 

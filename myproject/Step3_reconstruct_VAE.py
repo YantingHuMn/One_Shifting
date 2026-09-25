@@ -74,7 +74,7 @@ def apply_transformation(df, trans):
 
 def filter_and_transform(df1, df2, threshold_value, trans1, trans2, transformed_out_dir, data_path1=None, data_path2=None, save=False):
     _check_count_matrix(df1, "V1 before filtering")
-    _check_count_matrix(df2, "V2 before filtering")
+    _check_count_matrix(df2, "V2 before filtering", check_zero=False)
     data_cols = df1.columns[1:]
     zero_percentage = (df1[data_cols] == 0).mean()
     keep_cols = zero_percentage < threshold_value
@@ -85,7 +85,7 @@ def filter_and_transform(df1, df2, threshold_value, trans1, trans2, transformed_
     filtered_df1 = df1[cols_to_keep].copy()
     filtered_df2 = df2[cols_to_keep].copy()
     _check_count_matrix(filtered_df1, "V1 before transformation")
-    _check_count_matrix(filtered_df2, "V2 before transformation")
+    _check_count_matrix(filtered_df2, "V2 before transformation", check_zero=False)
     
     filtered_df1 = apply_transformation(filtered_df1, trans1)
     filtered_df2 = apply_transformation(filtered_df2, trans2)

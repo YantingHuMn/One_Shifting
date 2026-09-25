@@ -14,18 +14,18 @@ source("../One_Shifting/R/dropout_multinomial.R")
 # Build-Normalize-Filter Pipeline
 # Post: End-to-end pipeline that reads two datasets (V1 and V2), applies QC filtering, builds count matrices, cuts low-quality features, normalizes, and saves final outputs. Supports both file input (gene x cell Feather) and directory input (BAM files producing cell x gene).
 # Parameter:
-#   path1               : Path to V1 data. Either a Feather file (gene x cell) or a directory of BAM files.
-#   path2               : Path to V2 (ground truth) data. Either a Feather file or a directory of BAM files.
-#   out_dir             : Base output directory for all results.
-#   norm_factor1        : Character vector of normalization methods for V1.
-#   norm_factor2        : Character vector of normalization methods for V2.
+#   path1 : Path to V1 data. Either a Feather file (gene x cell) or a directory of BAM files.
+#   path2 : Path to V2 (ground truth) data. Either a Feather file or a directory of BAM files.
+#   out_dir : Base output directory for all results.
+#   norm_factor1 : Character vector of normalization methods for V1.
+#   norm_factor2 : Character vector of normalization methods for V2.
 #   filtered_percentile : Numeric in (0, 1); QC percentile threshold for BAM filtering. Default 0.25.
-#   zero_pct_max        : Maximum zero percentage for column cutting. Numeric, percentile string, or NULL. Default NULL.
-#   pearson_min         : Minimum Pearson correlation for column cutting. Numeric, percentile string, or NULL. Default NULL.
-#   spearman_min        : Minimum Spearman correlation for column cutting. Numeric, percentile string, or NULL. Default NULL.
-#   lib_size_min        : Minimum library size for column cutting. Numeric, percentile string, or NULL. Default NULL.
-#   histone_only        : Logical. If TRUE, keep only histone-marked CRF pairs. Default FALSE.
-#   transpose           : Logical. If TRUE, transpose final output. Default FALSE.
+#   zero_pct_max : Maximum zero percentage for column cutting. Numeric, percentile string, or NULL. Default NULL.
+#   pearson_min : Minimum Pearson correlation for column cutting. Numeric, percentile string, or NULL. Default NULL.
+#   spearman_min : Minimum Spearman correlation for column cutting. Numeric, percentile string, or NULL. Default NULL.
+#   lib_size_min : Minimum library size for column cutting. Numeric, percentile string, or NULL. Default NULL.
+#   histone_only : Logical. If TRUE, keep only histone-marked CRF pairs. Default FALSE.
+#   transpose : Logical. If TRUE, transpose final output. Default FALSE.
 # Output: A list with v1 and v2, each containing the final count data frame.
 run_build_norm_filter_pipeline <- function(path1, path2 = NULL, out_dir, norm_factor1, norm_factor2 = NULL, filtered_percentile = 0.25,
                         zero_pct_max = NULL, pearson_min = NULL, spearman_min = NULL, lib_size_min = NULL,
@@ -47,8 +47,37 @@ run_build_norm_filter_pipeline <- function(path1, path2 = NULL, out_dir, norm_fa
         # filter rows = filter genes (remove genes with < 2 nonzero cells)
         cat("\n=== Reading V1 from file (gene x cell) ===\n")
         v1_count_data <- read_feather(path1)
+        v1_gene_ids <- as.character(v1_count_data[[1]])
+        v1_cell_ids <- colnames(v1_count_data)[-1]
+        if (anyNA(v1_gene_ids) || anyDuplicated(v1_gene_ids) ||
+            anyNA(v1_cell_ids) || anyDuplicated(v1_cell_ids)) {
+            stop("V1 gene/cell IDs contain missing or duplicate values.")
+        }
+
+        if (is_file2) {
+            cat("\n=== Reading and aligning V2 to V1 gene/cell IDs ===\n")
+            v2_count_data <- read_feather(path2)
+            v2_gene_ids <- as.character(v2_count_data[[1]])
+            v2_cell_ids <- colnames(v2_count_data)[-1]
+            if (anyNA(v2_gene_ids) || anyDuplicated(v2_gene_ids) ||
+                anyNA(v2_cell_ids) || anyDuplicated(v2_cell_ids)) {
+                stop("V2 gene/cell IDs contain missing or duplicate values.")
+            }
+            gene_index <- match(v1_gene_ids, v2_gene_ids)
+            if (anyNA(gene_index)) {
+                stop("V1 genes are missing from V2.")
+            }
+            if (length(setdiff(v1_cell_ids, v2_cell_ids)) > 0) {
+                stop("V1 cells are missing from V2.")
+            }
+            v2_count_data <- v2_count_data[gene_index, c(colnames(v2_count_data)[1], v1_cell_ids), drop = FALSE]
+        }
+
         keep_rows <- rowSums(v1_count_data[, -1] > 0, na.rm = TRUE) >= 2
         v1_count_data <- v1_count_data[keep_rows, ]
+        if (is_file2) {
+            v2_count_data <- v2_count_data[keep_rows, , drop = FALSE]
+        }
         v1_bam_files <- NULL
         cat(sprintf("  Kept %d / %d genes after row filter\n", sum(keep_rows), length(keep_rows)))
     } else {
@@ -80,8 +109,10 @@ run_build_norm_filter_pipeline <- function(path1, path2 = NULL, out_dir, norm_fa
     if (has_path2 && (!is.null(zero_pct_max) || !is.null(pearson_min) || !is.null(spearman_min) || !is.null(lib_size_min))) {
         if (is_file2) {
             cat("\n=== Reading V2 from file (for cut reference) ===\n")
-            v2_count_data <- read_feather(path2)
-            v2_count_data <- v2_count_data[keep_rows, ]
+            if (!is_file1) {
+                v2_count_data <- read_feather(path2)
+                v2_count_data <- v2_count_data[keep_rows, ]
+            }
         } else {
             cat("\n=== Processing V2 (for cut reference) ===\n")
             if (!exists("filtered_crf")) {

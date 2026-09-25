@@ -12,6 +12,21 @@ import torch.nn.functional as F
 from pathlib import Path
 
 
+def _check_count_matrix(df, name, check_zero=True):
+    values = df.iloc[:, 1:].to_numpy(dtype=np.float64)
+    if values.shape[0] == 0 or values.shape[1] == 0:
+        raise ValueError(f"{name}: count matrix is empty")
+    n_nan = int(np.isnan(values).sum())
+    n_inf = int(np.isinf(values).sum())
+    n_zero_rows = int(np.all(values == 0, axis=1).sum()) if check_zero else 0
+    n_zero_cols = int(np.all(values == 0, axis=0).sum()) if check_zero else 0
+    if n_nan or n_inf or n_zero_rows or n_zero_cols:
+        raise ValueError(
+            f"{name}: NaN={n_nan}, Inf={n_inf}, "
+            f"all_zero_rows={n_zero_rows}, all_zero_cols={n_zero_cols}"
+        )
+
+
 class TransformerAutoencoder(nn.Module):
     def __init__(self, input_dim, n_tokens=64, d_model=128,
                  nhead=4, num_layers=2, dim_feedforward=256, dropout=0.1):
@@ -82,6 +97,8 @@ def apply_transformation(df, trans):
         df_copy.iloc[:, 1:] = np.sqrt(df_copy.iloc[:, 1:] + 1) - 1
     elif trans == "count+1":
         df_copy.iloc[:, 1:] = df_copy.iloc[:, 1:] + 1
+    elif trans == "log(count+2)":
+        df_copy.iloc[:, 1:] = np.log(df_copy.iloc[:, 1:] + 2)
     elif trans == "log2(count+2)":
         df_copy.iloc[:, 1:] = np.log2(df_copy.iloc[:, 1:] + 2)
     elif trans == "log2(count+1)+1":
@@ -96,6 +113,8 @@ def apply_transformation(df, trans):
 def filter_and_transform(df1, df2, threshold_value, trans1, trans2,
                          transformed_out_dir=None, data_path1=None, data_path2=None, save=False):
     data_cols = df1.columns[1:]
+    _check_count_matrix(df1, "V1 before filtering")
+    _check_count_matrix(df2, "V2 before filtering", check_zero=False)
     zero_percentage = (df1[data_cols] == 0).mean()
     keep_cols = zero_percentage < threshold_value
 
@@ -105,8 +124,13 @@ def filter_and_transform(df1, df2, threshold_value, trans1, trans2,
     filtered_df1 = df1[cols_to_keep].copy()
     filtered_df2 = df2[cols_to_keep].copy()
 
+    _check_count_matrix(filtered_df1, "V1 before transformation")
+    _check_count_matrix(filtered_df2, "V2 before transformation", check_zero=False)
+
     filtered_df1 = apply_transformation(filtered_df1, trans1)
     filtered_df2 = apply_transformation(filtered_df2, trans2)
+    _check_count_matrix(filtered_df1, "V1 after transformation", check_zero=False)
+    _check_count_matrix(filtered_df2, "V2 after transformation", check_zero=False)
 
     first_col_name = filtered_df1.columns[0]
     filtered_df1 = filtered_df1.rename(columns={first_col_name: 'pos'})
@@ -270,6 +294,8 @@ def main(args):
         raise ValueError(f"Dimension mismatch! Expected {input_dim}, got {df1_transformed.shape[1]}")
 
     X = torch.tensor(df1_transformed.to_numpy(), dtype=torch.float32, device=device)
+    if not torch.isfinite(X).all():
+        raise ValueError("V1: NaN/Inf present after float32 conversion")
     print(f"  Input tensor shape: {X.shape}")
     print(f"  Input range: [{X.min().item():.4f}, {X.max().item():.4f}]")
 
@@ -296,6 +322,8 @@ def main(args):
     for i in range(0, X.size(0), batch_size):
         x_batch = X[i:i + batch_size]
         recon_batch = model(x_batch)
+        if not torch.isfinite(recon_batch).all():
+            raise ValueError(f"Transformer reconstruction contains NaN/Inf at batch {i // batch_size}")
         all_recon.append(recon_batch.cpu().numpy())
 
         if (i // batch_size) % 10 == 0:

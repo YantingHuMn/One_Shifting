@@ -8,6 +8,21 @@ import torch.nn.functional as F
 from pathlib import Path
 
 
+def _check_count_matrix(df, name, check_zero=True):
+    values = df.iloc[:, 1:].to_numpy(dtype=np.float64)
+    if values.shape[0] == 0 or values.shape[1] == 0:
+        raise ValueError(f"{name}: count matrix is empty")
+    n_nan = int(np.isnan(values).sum())
+    n_inf = int(np.isinf(values).sum())
+    n_zero_rows = int(np.all(values == 0, axis=1).sum()) if check_zero else 0
+    n_zero_cols = int(np.all(values == 0, axis=0).sum()) if check_zero else 0
+    if n_nan or n_inf or n_zero_rows or n_zero_cols:
+        raise ValueError(
+            f"{name}: NaN={n_nan}, Inf={n_inf}, "
+            f"all_zero_rows={n_zero_rows}, all_zero_cols={n_zero_cols}"
+        )
+
+
 class FCLayers(nn.Module):
     def __init__(self, n_in, n_out, n_cat_list=None, n_layers=1, n_hidden=128,
                  dropout_rate=0.1, use_batch_norm=True, use_layer_norm=False,
@@ -79,9 +94,7 @@ class EncoderSCVI(nn.Module):
         log_q_v = torch.clamp(self.var_encoder(q), min=-20.0, max=20.0)
         q_v = torch.exp(log_q_v) + self.var_eps
 
-        # Match the other reconstruction models: allow non-finite rows to
-        # propagate to non-finite outputs instead of aborting the whole run.
-        dist = torch.distributions.Normal(q_m, q_v.sqrt(), validate_args=False)
+        dist = torch.distributions.Normal(q_m, q_v.sqrt())
         z = dist.rsample()
         return q_m, q_v, z
     
@@ -156,6 +169,8 @@ def _apply_trans(df, trans):
 
 
 def filter_and_transform(df1, df2, threshold_value, trans1, trans2):
+    _check_count_matrix(df1, "V1 before filtering")
+    _check_count_matrix(df2, "V2 before filtering", check_zero=False)
     data_cols = df1.columns[1:]
     zero_percentage = (df1[data_cols] == 0).mean()
     keep_cols = zero_percentage < threshold_value
@@ -166,8 +181,13 @@ def filter_and_transform(df1, df2, threshold_value, trans1, trans2):
     filtered_df1 = df1[cols_to_keep].copy()
     filtered_df2 = df2[cols_to_keep].copy()
 
+    _check_count_matrix(filtered_df1, "V1 before transformation")
+    _check_count_matrix(filtered_df2, "V2 before transformation", check_zero=False)
+
     filtered_df1 = _apply_trans(filtered_df1, trans1)
     filtered_df2 = _apply_trans(filtered_df2, trans2)
+    _check_count_matrix(filtered_df1, "V1 after transformation", check_zero=False)
+    _check_count_matrix(filtered_df2, "V2 after transformation", check_zero=False)
     return filtered_df1, filtered_df2
 
 
@@ -276,6 +296,8 @@ def main(args):
         pos_col = None
 
     X = torch.tensor(df1_transformed.to_numpy(), dtype=torch.float32, device=device)
+    if not torch.isfinite(X).all():
+        raise ValueError("V1: NaN/Inf present after float32 conversion")
 
     input_dim = int(cfg["input_dim"])
     if X.shape[1] != input_dim:
@@ -296,17 +318,9 @@ def main(args):
 
     # 7) Reconstruct
     print("[RECONSTRUCT] Running ScVIModel...")
-    invalid_rows = ~torch.isfinite(X).all(dim=1)
-    n_invalid = int(invalid_rows.sum().item())
-    print(f"[CHECK] Invalid input rows: {n_invalid}/{X.shape[0]}")
-
-    if n_invalid > 0 and pos_col is not None:
-        invalid_indices = torch.where(invalid_rows)[0].cpu().numpy()
-        print(f"[CHECK] Invalid cell IDs: {pos_col.iloc[invalid_indices].tolist()}")
-
-    # Non-finite input rows propagate to non-finite reconstruction rows, as in
-    # the DCA, VAE, and Transformer reconstruction scripts.
     px_rate, q_m, logvar = model(X)
+    if not torch.isfinite(px_rate).all():
+        raise ValueError("scVI reconstruction contains NaN/Inf")
 
     # 8) Save reconstruction
     recon_df = pd.DataFrame(px_rate.cpu().numpy(), columns=df1_transformed.columns.tolist())

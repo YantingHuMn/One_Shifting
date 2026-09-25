@@ -84,44 +84,44 @@ done
 
 
 
-echo "======Run Comparison======"
-module load conda_R
+# echo "======Run Comparison======"
+# module load conda_R
 
-mse_methods=("VAE" "scVI_mse" "DCA_mse")
-methods=("scVI" "DCA" "SAVER")
+# mse_methods=("VAE" "scVI_mse" "DCA_mse" "Transformer_denoise")
+# methods=("scVI" "DCA" "SAVER")
 
-# mse vs non-mse
-for method in "${methods[@]}"; do
-    for mse_method in "${mse_methods[@]}"; do
-        for corr_dir in col row; do
-            x_dir="${READ_DIR}/${mse_method}/given_${V2}_no_norm_no_trans"
-            y_dir="${READ_DIR}/${method}"
+# # mse vs non-mse
+# for method in "${methods[@]}"; do
+#     for mse_method in "${mse_methods[@]}"; do
+#         for corr_dir in col row; do
+#             x_dir="${READ_DIR}/${mse_method}/given_${V2}_no_norm_no_trans/Figures_col_v1_reverse_v2_no_trans"
+#             y_dir="${READ_DIR}/${method}"
             
-            echo $x_dir
-            echo $y_dir
-            Rscript ../One_Shifting/R/run_x_mag_compare_scatter.R \
-                "${x_dir}" \
-                "${y_dir}" \
-                $V1 \
-                $V2 \
-                $corr_dir
-        done
-    done
-done
+#             echo $x_dir
+#             echo $y_dir
+#             Rscript ../One_Shifting/R/run_x_mag_compare_scatter.R \
+#                 "${x_dir}" \
+#                 "${y_dir}" \
+#                 $V1 \
+#                 $V2 \
+#                 $corr_dir
+#         done
+#     done
+# done
 
-# mse vs mse (pairwise)
-for ((i=0; i<${#mse_methods[@]}; i++)); do
-    for ((j=i+1; j<${#mse_methods[@]}; j++)); do
-        for corr_dir in col row; do
-            x_dir="${READ_DIR}/${mse_methods[$i]}/given_${V2}_no_norm_no_trans"
-            y_dir="${READ_DIR}/${mse_methods[$j]}/given_${V2}_no_norm_no_trans"
+# # mse vs mse (pairwise)
+# for ((i=0; i<${#mse_methods[@]}; i++)); do
+#     for ((j=i+1; j<${#mse_methods[@]}; j++)); do
+#         for corr_dir in col row; do
+#             x_dir="${READ_DIR}/${mse_methods[$i]}/given_${V2}_no_norm_no_trans"
+#             y_dir="${READ_DIR}/${mse_methods[$j]}/given_${V2}_no_norm_no_trans"
             
-            Rscript ../One_Shifting/R/run_x_mag_compare_scatter.R \
-                "${x_dir}" \
-                "${y_dir}" \
-                $V1 \
-                $V2 \
-                $corr_dir
-        done
-    done
-done
+#             Rscript ../One_Shifting/R/run_x_mag_compare_scatter.R \
+#                 "${x_dir}" \
+#                 "${y_dir}" \
+#                 $V1 \
+#                 $V2 \
+#                 $corr_dir
+#         done
+#     done
+# done

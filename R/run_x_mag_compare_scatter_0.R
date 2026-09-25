@@ -12,17 +12,12 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir, v2_trans_f
         library(viridis)
     })
 
-    x_is_figure_dir <- grepl(paste0("^Figures_", corr_dir), basename(x_dir))
-    y_is_figure_dir <- grepl(paste0("^Figures_", corr_dir), basename(y_dir))
-    x_base_dir <- if (x_is_figure_dir) dirname(x_dir) else x_dir
-    y_base_dir <- if (y_is_figure_dir) dirname(y_dir) else y_dir
+    x_label <- basename(x_dir)
+    if (grepl("^given_", x_label)) x_label <- basename(dirname(x_dir))
+    y_label <- basename(y_dir)
+    if (grepl("^given_", y_label)) y_label <- basename(dirname(y_dir))
 
-    x_label <- basename(x_base_dir)
-    if (grepl("^given_", x_label)) x_label <- basename(dirname(x_base_dir))
-    y_label <- basename(y_base_dir)
-    if (grepl("^given_", y_label)) y_label <- basename(dirname(y_base_dir))
-
-    out_dir <- file.path(y_base_dir, paste0("x_mag_compare_", x_label, "_VS_", y_label))
+    out_dir <- file.path(y_dir, paste0("x_mag_compare_", x_label, "_VS_", y_label))
     dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
     if (corr_dir == "col") {
@@ -30,13 +25,6 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir, v2_trans_f
     } else {
         object = "cell"
     }
-
-    x_reverse <- if (x_is_figure_dir) grepl("_v1_reverse_v2_no_trans$", basename(x_dir)) else dir.exists(file.path(x_dir, paste0("Figures_", corr_dir, "_v1_reverse_v2_no_trans")))
-    y_reverse <- if (y_is_figure_dir) grepl("_v1_reverse_v2_no_trans$", basename(y_dir)) else dir.exists(file.path(y_dir, paste0("Figures_", corr_dir, "_v1_reverse_v2_no_trans")))
-    x_figure_dir <- if (x_is_figure_dir) x_dir else file.path(x_dir, if (x_reverse) paste0("Figures_", corr_dir, "_v1_reverse_v2_no_trans") else paste0("Figures_", corr_dir))
-    y_figure_dir <- if (y_is_figure_dir) y_dir else file.path(y_dir, if (y_reverse) paste0("Figures_", corr_dir, "_v1_reverse_v2_no_trans") else paste0("Figures_", corr_dir))
-    x_reverse_tag <- if (x_reverse) "v1_reverse_" else ""
-    y_reverse_tag <- if (y_reverse) "v1_reverse_" else ""
 
     cat("========== DEBUG INFO ==========\n")
     cat("x_dir:", x_dir, "\n")
@@ -49,8 +37,8 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir, v2_trans_f
 
     # ==================== Pearson plots ====================
     corr = "pearson"
-    x_norm_info_path <- paste0(x_base_dir, "/plots_summary_", corr, "_", corr_dir, "_", object, "_best_norm.csv")
-    y_norm_info_path <- paste0(y_base_dir, "/plots_summary_", corr, "_", corr_dir, "_", object, "_best_norm.csv")
+    x_norm_info_path <- paste0(x_dir, "/plots_summary_", corr, "_", corr_dir, "_", object, "_best_norm.csv")
+    y_norm_info_path <- paste0(y_dir, "/plots_summary_", corr, "_", corr_dir, "_", object, "_best_norm.csv")
 
     cat("[Pearson] x_norm_info_path:", x_norm_info_path, " exists:", file.exists(x_norm_info_path), "\n")
     cat("[Pearson] y_norm_info_path:", y_norm_info_path, " exists:", file.exists(y_norm_info_path), "\n")
@@ -84,10 +72,10 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir, v2_trans_f
                 warning(paste("No norm found in x for trans=", trans_val))
                 next
             }
-            path1 <- file.path(x_figure_dir, paste0("d_pearson_", x_reverse_tag, corr_dir, "_scatter_v1_trans_", trans_val, "_norm_", v1_norm_factor_x, "_v2_trans_", v2_trans_factor, "_norm_", v2_norm_factor, ".csv"))
+            path1 <- file.path(x_dir, paste0("Figures_", corr_dir, "/d_pearson_", corr_dir, "_scatter_v1_trans_", trans_val, "_norm_", v1_norm_factor_x, "_v2_trans_", v2_trans_factor, "_norm_", v2_norm_factor, ".csv"))
             v1_norm_factor <- v1_norm_factor_x
         } else {
-            path1 <- file.path(x_figure_dir, paste0("d_pearson_", x_reverse_tag, corr_dir, "_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv"))
+            path1 <- file.path(x_dir, paste0("Figures_", corr_dir, "/d_pearson_", corr_dir, "_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv"))
             v1_norm_factor <- "no_norm"
         }
 
@@ -98,9 +86,9 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir, v2_trans_f
                 warning(paste("No norm found in y for trans=", trans_val))
                 next
             }
-            path2 <- file.path(y_figure_dir, paste0("d_pearson_", y_reverse_tag, corr_dir, "_scatter_v1_trans_", trans_val, "_norm_", v1_norm_factor_y, "_v2_trans_", v2_trans_factor, "_norm_", v2_norm_factor, ".csv"))
+            path2 <- file.path(y_dir, paste0("Figures_", corr_dir, "/d_pearson_", corr_dir, "_scatter_v1_trans_", trans_val, "_norm_", v1_norm_factor_y, "_v2_trans_", v2_trans_factor, "_norm_", v2_norm_factor, ".csv"))
         } else {
-            path2 <- file.path(y_figure_dir, paste0("d_pearson_", y_reverse_tag, corr_dir, "_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv"))
+            path2 <- file.path(y_dir, paste0("Figures_", corr_dir, "/d_pearson_", corr_dir, "_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv"))
         }
 
         cat("[Pearson]   with norm: ", v1_norm_factor, "\n")
@@ -167,8 +155,8 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir, v2_trans_f
 
     # ==================== Spearman plots ====================
     corr = "spearman"
-    x_norm_info_path <- paste0(x_base_dir, "/plots_summary_", corr, "_", corr_dir, "_", object, "_best_norm.csv")
-    y_norm_info_path <- paste0(y_base_dir, "/plots_summary_", corr, "_", corr_dir, "_", object, "_best_norm.csv")
+    x_norm_info_path <- paste0(x_dir, "/plots_summary_", corr, "_", corr_dir, "_", object, "_best_norm.csv")
+    y_norm_info_path <- paste0(y_dir, "/plots_summary_", corr, "_", corr_dir, "_", object, "_best_norm.csv")
 
     cat("\n[Spearman] x_norm_info_path:", x_norm_info_path, " exists:", file.exists(x_norm_info_path), "\n")
     cat("[Spearman] y_norm_info_path:", y_norm_info_path, " exists:", file.exists(y_norm_info_path), "\n")
@@ -202,10 +190,10 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir, v2_trans_f
                 warning(paste("No norm found in x for trans=", trans_val))
                 next
             }
-            path1 <- file.path(x_figure_dir, paste0("g_spearman_", x_reverse_tag, corr_dir, "_scatter_v1_trans_", trans_val, "_norm_", v1_norm_factor_x, "_v2_trans_", v2_trans_factor, "_norm_", v2_norm_factor, ".csv"))
+            path1 <- file.path(x_dir, paste0("Figures_", corr_dir, "/g_spearman_", corr_dir, "_scatter_v1_trans_", trans_val, "_norm_", v1_norm_factor_x, "_v2_trans_", v2_trans_factor, "_norm_", v2_norm_factor, ".csv"))
             v1_norm_factor <- v1_norm_factor_x
         } else {
-            path1 <- file.path(x_figure_dir, paste0("g_spearman_", x_reverse_tag, corr_dir, "_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv"))
+            path1 <- file.path(x_dir, paste0("Figures_", corr_dir, "/g_spearman_", corr_dir, "_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv"))
             v1_norm_factor <- "no_norm"
         }
 
@@ -216,9 +204,9 @@ run_x_mag_compare_scatter <- function(x_dir, y_dir, V1, V2, corr_dir, v2_trans_f
                 warning(paste("No norm found in y for trans=", trans_val))
                 next
             }
-            path2 <- file.path(y_figure_dir, paste0("g_spearman_", y_reverse_tag, corr_dir, "_scatter_v1_trans_", trans_val, "_norm_", v1_norm_factor_y, "_v2_trans_", v2_trans_factor, "_norm_", v2_norm_factor, ".csv"))
+            path2 <- file.path(y_dir, paste0("Figures_", corr_dir, "/g_spearman_", corr_dir, "_scatter_v1_trans_", trans_val, "_norm_", v1_norm_factor_y, "_v2_trans_", v2_trans_factor, "_norm_", v2_norm_factor, ".csv"))
         } else {
-            path2 <- file.path(y_figure_dir, paste0("g_spearman_", y_reverse_tag, corr_dir, "_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv"))
+            path2 <- file.path(y_dir, paste0("Figures_", corr_dir, "/g_spearman_", corr_dir, "_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv"))
         }
 
         cat("[Spearman]   with norm: ", v1_norm_factor, "\n")

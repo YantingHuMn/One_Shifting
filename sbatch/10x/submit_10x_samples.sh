@@ -6,11 +6,11 @@ tsv="/dcs07/hongkai/data/yhu1/One_Shifting_Results/10x_input_sample_pairs.tsv"
 worker_script="/dcs10/hongkai/data/yhu1/One_Shifting/sbatch/10x/run_10x_one_sample_array.sh"
 plot_script="/dcs10/hongkai/data/yhu1/One_Shifting/sbatch/10x/run_10x_one_sample_plot.sh"
 
-log_dir="/dcs07/hongkai/data/yhu1/One_Shifting_Results/10x/AAA_logs"
+log_dir="/dcs10/hongkai/data/yhu1/One_Shifting_Results/10x/AAA_logs"
 mkdir -p "$log_dir"
 
 # tail -n +2 "$tsv" | awk -v n="$run_first_n_sample" 'NR <= n {print $2}' | while read -r sample_name; do
-selected_rows=""
+selected_rows="1"
 
 tail -n +2 "$tsv" | awk -v rows="$selected_rows" '
 BEGIN {

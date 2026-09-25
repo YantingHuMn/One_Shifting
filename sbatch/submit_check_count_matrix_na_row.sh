@@ -1,30 +1,33 @@
 #!/bin/bash
 #SBATCH --job-name=check_count_matrix
 #SBATCH --partition=shared
-#SBATCH --time=1-00:00:00
-#SBATCH --array=0-2
+#SBATCH --time=12:00:00
+#SBATCH --array=0
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=30G
-#SBATCH --output=/dcs07/hongkai/data/yhu1/One_Shifting_Results/slurm_check_count_matrix_%A_%a.out
-#SBATCH --error=/dcs07/hongkai/data/yhu1/One_Shifting_Results/slurm_check_count_matrix_%A_%a.err
+#SBATCH --mem=32G
+#SBATCH --output=/dcs07/hongkai/data/yhu1/One_Shifting_Results/logs/slurm_check_count_matrix_%A_%a.out
+#SBATCH --error=/dcs07/hongkai/data/yhu1/One_Shifting_Results/logs/slurm_check_count_matrix_%A_%a.err
 #SBATCH --mail-user=yhu157@jh.edu
 #SBATCH --mail-type=END,FAIL
 
+cd /dcs10/hongkai/data/yhu1/One_Shifting
+
 folder_names=(
-    "HCA"
+    # "HCA"
     "ENCODE"
-    "10x"
+    # "10x"
 )
 
 folder_name="${folder_names[$SLURM_ARRAY_TASK_ID]}"
 
 selected_rows=""
-
+dropout_keep_par=""
 base_dir="/dcs07/hongkai/data/yhu1/One_Shifting_Results"
 
 tsv="${base_dir}/${folder_name}_input_sample_pairs.tsv"
 read_dir="${base_dir}/${folder_name}"
-output_csv="${read_dir}/${folder_name}_check_count_matrix_na_row.csv"
+output_clear_csv="${read_dir}/${folder_name}_check_count_matrix_clear_row.csv"
+output_na_csv="${read_dir}/${folder_name}_check_count_matrix_na_row.csv"
 
 log_dir="${read_dir}/AAA_logs"
 mkdir -p "$log_dir"
@@ -57,7 +60,10 @@ if [[ ! -d "$read_dir" ]]; then
 fi
 
 # Each array task has a different output CSV, so there is no cross-task conflict.
-rm -f "$output_csv"
+rm -f "$output_clear_csv"
+rm -f "$output_na_csv"
+rm -f ${read_dir}/${folder_name}_check_method_complete.csv
+rm -f ${read_dir}/${folder_name}_data_description.csv
 
 tail -n +2 "$tsv" |
 awk -v rows="$selected_rows" '
@@ -89,11 +95,38 @@ while read -r sample_name; do
     echo "Start sample: $(date)"
     echo "======================================"
 
-    Rscript \
-        /dcs10/hongkai/data/yhu1/One_Shifting/R/check_count_matrix_na_row.R \
+    Rscript /dcs10/hongkai/data/yhu1/One_Shifting/R/check_clear_method_summary.R \
         "$sample_name" \
         "$read_dir" \
-        "$output_csv"
+        "$output_clear_csv"
+
+    Rscript /dcs10/hongkai/data/yhu1/One_Shifting/R/check_count_matrix_na_row.R \
+        "$sample_name" \
+        "$read_dir" \
+        "$output_na_csv"
+
+    Rscript /dcs10/hongkai/data/yhu1/One_Shifting/R/check_method_complete.R \
+        "$sample_name" \
+        "$read_dir" \
+        "${read_dir}/${folder_name}_check_method_complete.csv"
+
+    Rscript /dcs10/hongkai/data/yhu1/One_Shifting/R/record_data_description.R \
+        "$sample_name" \
+        "$read_dir" \
+        "${read_dir}/${folder_name}_data_description.csv"
+
+    export sample_name
+    export folder_name="${folder_name}"
+    export dropout_keep_par
+
+    bash ../One_Shifting/inst/scripts/run_bubble_method_plot.sh \
+        "../One_Shifting/inst/config/config_run_multi_RNA_HCA_10x_ENCODE.sh"
+
+    bash ../One_Shifting/inst/scripts/run_bubble_method_plot.sh \
+        "../One_Shifting/inst/config/config_run_multi_ATAC_HCA_10x_ENCODE.sh"
+
+    echo "Finished sample_name=${sample_name}"
+    echo "End sample: $(date)"
 
     exit_status=$?
 

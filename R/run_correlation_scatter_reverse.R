@@ -472,7 +472,7 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
                             if (filter_zero_gt) " [GT-zero filtered]" else "",
                             if (data_mode != "default") paste0(" [", data_mode, "]") else ""),
              subtitle = subtitle_text_with_stats,
-             x = label3, y = label4) +
+             x = label4, y = label3) +
         scale_x_continuous(limits = c(-0.05, 1)) +
         scale_y_continuous(limits = c(-0.05, 1)) +
         theme_bw() +
