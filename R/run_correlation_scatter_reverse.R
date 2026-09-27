@@ -47,8 +47,12 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
     if (!corr_method %in% c("pearson", "spearman")) {
         stop("Error: corr_method must be either 'pearson' or 'spearman'")
     }
-    if (!data_mode %in% c("default", "v1_trans_v2_trans", "v1_reverse", "v1_trans_v2_trans_norm_100000", "v1_trans_v2_trans_norm_factor")) {
-        stop("Error: data_mode must be 'default', 'v1_trans_v2_trans', 'v1_reverse', 'v1_trans_v2_trans_norm_100000', or 'v1_trans_v2_trans_norm_factor'")
+    valid_data_modes <- c("default", "v1_trans_v2_trans", "v1_reverse",
+                          "v1_trans_v2_trans_norm_100000", "v1_trans_v2_trans_norm_factor",
+                          "v1_reverse_trans_norm_recon_reverse_trans",
+                          "v1_recon_reverse_trans_norm")
+    if (!data_mode %in% valid_data_modes) {
+        stop("Error: data_mode must be one of: ", paste(valid_data_modes, collapse = ", "))
     }
 
     # Helper: apply transformation
@@ -87,6 +91,29 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
         } else {
             stop(paste("Unknown trans:", trans))
         }
+    }
+
+    # Helper: reverse the per-cell library-size normalization applied in Step1.
+    #   forward:  x_norm[i, j] = count[i, j] / lib_size[i] * S
+    #   reverse:  count[i, j] = x_norm[i, j] / S * lib_size[i]
+    reverse_norm <- function(mat, norm_factor, lib_sizes) {
+        if (norm_factor == "no_norm") {
+            return(mat)
+        }
+        if (norm_factor == "standardize") {
+            stop("Cannot reverse 'standardize': per-gene centers/scales are not saved. ",
+                 "Skip this norm x data_mode combination.")
+        }
+        S <- suppressWarnings(as.numeric(norm_factor))
+        if (is.na(S)) {
+            stop("Cannot reverse normalization: factor must be no_norm, standardize, ",
+                 "or numeric. Got: ", norm_factor)
+        }
+        if (length(lib_sizes) != nrow(mat)) {
+            stop("lib_sizes length (", length(lib_sizes),
+                 ") does not match nrow(mat) (", nrow(mat), ")")
+        }
+        return(mat / S * lib_sizes)
     }
 
     filter_tag <- if (filter_zero_gt) "filtered" else "unfiltered"
@@ -176,10 +203,37 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
     df2 <- read_feather(path2)  # rep1 (control)
     df3 <- read_feather(path3)  # reconstruction (treatment)
 
+    # Capture V1 cell ids before dropping pos, so library sizes can be matched by name
+    v1_pos <- if ("pos" %in% names(df2)) as.character(df2$pos) else NULL
+
     # Drop pos column if present
     if ("pos" %in% names(df1)) df1 <- df1[, !(names(df1) %in% "pos")]
     if ("pos" %in% names(df2)) df2 <- df2[, !(names(df2) %in% "pos")]
     if ("pos" %in% names(df3)) df3 <- df3 %>% dplyr::select(-pos)
+
+    # Per-cell library sizes, used only by data_modes that undo the normalization.
+    # Prefer lib_sizes.csv written by normalize_and_save.R; fall back to row sums of
+    # the raw V1 matrix. Taken here, BEFORE the column-intersection step below, so
+    # the fallback is computed on the full gene set.
+    lib_sizes_v1 <- NULL
+    lib_path <- file.path(dirname(path2), "lib_sizes.csv")
+    if (file.exists(lib_path)) {
+        lib_df <- read.csv(lib_path, stringsAsFactors = FALSE)
+        if (!is.null(v1_pos) && all(v1_pos %in% lib_df$cell)) {
+            lib_sizes_v1 <- lib_df$lib_size[match(v1_pos, lib_df$cell)]
+            cat(paste("lib_sizes: matched", length(lib_sizes_v1), "cells by name from", lib_path, "\n"))
+        } else if (nrow(lib_df) == nrow(df2)) {
+            lib_sizes_v1 <- lib_df$lib_size
+            cat(paste("lib_sizes: read", nrow(lib_df), "rows positionally from", lib_path, "\n"))
+        } else {
+            cat(paste("lib_sizes:", lib_path, "does not match df2; falling back to rowSums\n"))
+        }
+    }
+    if (is.null(lib_sizes_v1)) {
+        lib_sizes_v1 <- rowSums(as.matrix(df2), na.rm = TRUE)
+        cat("lib_sizes: computed from rowSums(df2)\n")
+    }
+    lib_sizes_v1[lib_sizes_v1 == 0] <- 1  # avoid division by zero
 
     # Check dimensions / column names across three dataframes
     same_dim <- identical(dim(df1), dim(df2)) && identical(dim(df1), dim(df3))
@@ -287,6 +341,26 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
         df1 <- as.data.frame(mat1)
 
         cat(paste("data_mode: v1_trans_v2_trans_norm_factor | ground truth norm:", factor, "+ trans:", this_trans_factor, "\n"))
+    } else if (data_mode == "v1_reverse_trans_norm_recon_reverse_trans") {
+        # df1 (ground truth V2) and df2 (V1) are raw no_norm counts here, so neither
+        # needs undoing. Only the reconstruction lives in transformed space.
+        mat3 <- as.matrix(df3)
+        mat3 <- reverse_trans(mat3, this_trans_factor)
+        df3 <- as.data.frame(mat3)
+
+        cat(paste("data_mode: v1_reverse_trans_norm_recon_reverse_trans |",
+                  "reversed reconstruction trans only:", this_trans_factor, "\n"))
+    } else if (data_mode == "v1_recon_reverse_trans_norm") {
+        # As above, and additionally undo the library-size normalization on the
+        # reconstruction. The forward pipeline is raw -> norm -> trans, so the inverse
+        # must reverse the transform FIRST, then the normalization.
+        mat3 <- as.matrix(df3)
+        mat3 <- reverse_trans(mat3, this_trans_factor)
+        mat3 <- reverse_norm(mat3, factor, lib_sizes_v1)
+        df3 <- as.data.frame(mat3)
+
+        cat(paste("data_mode: v1_recon_reverse_trans_norm | reversed reconstruction trans:",
+                  this_trans_factor, "+ norm:", factor, "\n"))
     }
 
     # Filter out all-zero columns/rows in ground truth (df1), sync df2 & df3

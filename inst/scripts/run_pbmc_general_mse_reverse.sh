@@ -92,7 +92,7 @@ echo "===Finish build count matrix==="
   
 echo "=== Starting ${method} pipeline ==="
 
-for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
+for data_mode in v1_reverse v1_reverse_trans_norm_recon_reverse_trans v1_recon_reverse_trans_norm; do
     if [ "$data_mode" = "default" ]; then
         mode_suffix="v1_trans_v2_no_trans"
     elif [ "$data_mode" = "v1_trans_v2_trans" ]; then
@@ -101,6 +101,10 @@ for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100
         mode_suffix="v1_reverse_v2_no_trans"
     elif [ "$data_mode" = "v1_trans_v2_trans_norm_100000" ]; then
         mode_suffix="v1_trans_v2_trans_norm_100000"
+    elif [ "$data_mode" = "v1_reverse_trans_norm_recon_reverse_trans" ]; then
+        mode_suffix="v1_reverse_trans_norm_recon_reverse_trans"
+    elif [ "$data_mode" = "v1_recon_reverse_trans_norm" ]; then
+        mode_suffix="v1_recon_reverse_trans_norm"
     fi
 
     for corr_dir in col row; do

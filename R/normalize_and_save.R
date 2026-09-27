@@ -22,6 +22,18 @@ normalize_and_save <- function(count_data, out_dir, sub_dir_name, norm_factors, 
     if (!is.null(keep_rows)) {
         count_data <- count_data[keep_rows, , drop = FALSE]
     }
+
+    # Per-cell library sizes on the POST-filter gene set -- exactly the totals the
+    # normalization below divides by. Written out so downstream scripts can undo the
+    # normalization without recomputing (and having to re-derive) them.
+    lib_sizes_out <- colSums(as.matrix(count_data[, -1]))
+    write.csv(
+        data.frame(cell = names(lib_sizes_out),
+                   lib_size = as.numeric(lib_sizes_out),
+                   stringsAsFactors = FALSE),
+        file.path(save_dir, "lib_sizes.csv"),
+        row.names = FALSE
+    )
     
     for (norm_val in norm_factors) {
         out_path <- file.path(save_dir, paste0("Count_Matrix_norm_by_", norm_val, ".feather"))
