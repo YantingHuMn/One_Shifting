@@ -200,7 +200,10 @@ for this_trans_factor in "${trans_factor[@]}"; do
         echo "=== Step 7: Correlation analysis ==="
         module load conda_R
 
-        for data_mode in v1_reverse; do
+        # v1_reverse means v1 and recon reverse trans only
+        # v1_reverse_trans_norm_recon_reverse_trans means v1 reverse trans and norm and recon reverse trans only
+        # v1_recon_reverse_trans_norm means v1 and recon reverse trans and norm
+        for data_mode in v1_reverse v1_reverse_trans_norm_recon_reverse_trans v1_recon_reverse_trans_norm; do
         # for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
             if [ "$data_mode" = "default" ]; then
                 mode_suffix="v1_trans_v2_no_trans"
@@ -210,28 +213,55 @@ for this_trans_factor in "${trans_factor[@]}"; do
                 mode_suffix="v1_reverse_v2_no_trans"
             elif [ "$data_mode" = "v1_trans_v2_trans_norm_100000" ]; then
                 mode_suffix="v1_trans_v2_trans_norm_100000"
+            elif [ "$data_mode" = "v1_reverse_trans_norm_recon_reverse_trans" ]; then
+                mode_suffix="v1_reverse_trans_norm_recon_reverse_trans"
+            elif [ "$data_mode" = "v1_recon_reverse_trans_norm" ]; then
+                mode_suffix="v1_recon_reverse_trans_norm"
             fi
 
-            for corr_dir in col row; do
-                Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
-                mkdir -p "$Figure_DIR"
+            if [ "$data_mode" = "v1_reverse_trans_norm_recon_reverse_trans" ] || [ "$data_mode" = "v1_recon_reverse_trans_norm" ]; then
+                for corr_dir in col row; do
+                    Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
+                    mkdir -p "$Figure_DIR"
 
-                Rscript ../One_Shifting/R/run_correlation_scatter_reverse.R \
-                    "$OUT_DIR/Count_matrix_transformed_rep2.feather" \
-                    "$OUT_DIR/Count_matrix_transformed_rep1.feather" \
-                    "$OUT_DIR/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather" \
-                    "$Figure_DIR"  \
-                    "$OUT_DIR/saved_models" \
-                    "$factor" \
-                    "$V2_norm_factor" \
-                    "$this_trans_factor" \
-                    "$V2_trans_factor" \
-                    "${Figure_DIR}" \
-                    "$corr_dir" \
-                    "${V1}" \
-                    "${method}" \
-                    "$data_mode"
-            done
+                    Rscript ../One_Shifting/R/run_correlation_scatter_reverse.R \
+                        "$READ_DIR/${V2}/Count_Matrix_norm_by_no_norm.feather" \
+                        "$READ_DIR/${V1}/Count_Matrix_norm_by_no_norm.feather" \
+                        "$OUT_DIR/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather" \
+                        "$Figure_DIR"  \
+                        "$OUT_DIR/saved_models" \
+                        "$factor" \
+                        "$V2_norm_factor" \
+                        "$this_trans_factor" \
+                        "$V2_trans_factor" \
+                        "${Figure_DIR}" \
+                        "$corr_dir" \
+                        "${V1}" \
+                        "${method}" \
+                        "$data_mode"
+                done
+            else
+                for corr_dir in col row; do
+                    Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
+                    mkdir -p "$Figure_DIR"
+
+                    Rscript ../One_Shifting/R/run_correlation_scatter_reverse.R \
+                        "$OUT_DIR/Count_matrix_transformed_rep2.feather" \
+                        "$OUT_DIR/Count_matrix_transformed_rep1.feather" \
+                        "$OUT_DIR/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather" \
+                        "$Figure_DIR"  \
+                        "$OUT_DIR/saved_models" \
+                        "$factor" \
+                        "$V2_norm_factor" \
+                        "$this_trans_factor" \
+                        "$V2_trans_factor" \
+                        "${Figure_DIR}" \
+                        "$corr_dir" \
+                        "${V1}" \
+                        "${method}" \
+                        "$data_mode"
+                done
+            fi
 
             sleep 2
 
@@ -245,8 +275,7 @@ done
 echo "=== Post-processing: combine figures and summary ==="
 module load conda_R
 
-for data_mode in v1_reverse; do
-
+for data_mode in v1_reverse v1_reverse_trans_norm_recon_reverse_trans v1_recon_reverse_trans_norm; do
 # for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
     if [ "$data_mode" = "default" ]; then
         mode_suffix="v1_trans_v2_no_trans"
@@ -256,6 +285,10 @@ for data_mode in v1_reverse; do
         mode_suffix="v1_reverse_v2_no_trans"
     elif [ "$data_mode" = "v1_trans_v2_trans_norm_100000" ]; then
         mode_suffix="v1_trans_v2_trans_norm_100000"
+    elif [ "$data_mode" = "v1_reverse_trans_norm_recon_reverse_trans" ]; then
+        mode_suffix="v1_reverse_trans_norm_recon_reverse_trans"
+    elif [ "$data_mode" = "v1_recon_reverse_trans_norm" ]; then
+        mode_suffix="v1_recon_reverse_trans_norm"
     fi
 
     COL_Figure_DIR="$OUTPUT_DIR/Figures_col_${mode_suffix}"

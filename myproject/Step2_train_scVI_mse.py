@@ -454,7 +454,7 @@ def eval_loss(model, loader, device, beta, weight_strategy='fixed', zero_weight=
     for (x,) in loader:
         x = x.to(device)
         recon, mu, logvar = model(x)
-        loss = vae_loss(recon, x, mu, logvar, beta, weight_strategy, zero_weight, nonzero_weight, trans)
+        loss = vae_loss(recon, x, mu, logvar, beta, model.log_var_gene, weight_strategy, zero_weight, nonzero_weight, trans)        
         total += loss.item() * x.size(0)
         n += x.size(0)
     return total / max(n, 1)
