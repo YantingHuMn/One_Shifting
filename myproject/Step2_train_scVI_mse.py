@@ -207,7 +207,7 @@ class DecoderSCVI(nn.Module):
         )
         self.px_scale_decoder = nn.Sequential(
             nn.Linear(n_hidden, n_output),
-            nn.ReLU(),
+            nn.Softplus(),
         )
 
     def forward(self, z: torch.Tensor, *cat_list):
@@ -289,6 +289,7 @@ class ScVIModel(nn.Module):
             use_batch_norm=use_batch_norm_decoder,
             use_layer_norm=use_layer_norm_decoder,
         )
+        self.log_var_gene = nn.Parameter(torch.zeros(n_input))
 
     def forward(self, x: torch.Tensor):
         """
@@ -351,7 +352,7 @@ def _get_zero_nonzero_masks(x, trans):
     return zero_mask, nonzero_mask
 
 
-def weighted_reconstruction_loss(recon_x, x, weight_strategy='fixed', zero_weight=1.0, nonzero_weight=5.0, trans=None,):
+def weighted_reconstruction_loss(recon_x, x, weight_strategy='fixed', zero_weight=1.0, nonzero_weight=5.0, trans=None, return_weights=False):
     if weight_strategy == 'fixed':
         zero_mask, nonzero_mask = _get_zero_nonzero_masks(x, trans)
         weights = zero_mask * zero_weight + nonzero_mask * nonzero_weight
@@ -374,23 +375,32 @@ def weighted_reconstruction_loss(recon_x, x, weight_strategy='fixed', zero_weigh
         raise ValueError(f"Unknown weight_strategy: {weight_strategy}")
 
     weighted_mse = weights * (recon_x - x) ** 2
+
+    if return_weights:
+        return weights
     return torch.mean(weighted_mse)
 
 
-def vae_loss(recon_x, x, mu, logvar, beta,
+def vae_loss(recon_x, x, mu, logvar, beta, log_var_gene,
              weight_strategy='fixed', zero_weight=1.0, nonzero_weight=5.0, trans=None):
-    recon_loss = weighted_reconstruction_loss(
-        recon_x, x, weight_strategy, zero_weight, nonzero_weight, trans
+    # Gaussian NLL with a free per-gene variance (the MSE analogue of scVI's px_r).
+    # Per-cell SUM over genes, then mean over cells -- same units as the KL,
+    # matching scvi-tools' torch.mean(reconst_loss + weighted_kl_local).
+    weights = weighted_reconstruction_loss(
+        recon_x, x, weight_strategy, zero_weight, nonzero_weight, trans,
+        return_weights=True
     )
+    lvg = torch.clamp(log_var_gene, min=-20.0, max=20.0)
+    se = weights * (recon_x - x) ** 2
+    recon_loss = (0.5 * (se / lvg.exp() + lvg)).sum(dim=1).mean()
 
     if beta == 0:
         return recon_loss
 
     logvar_safe = torch.clamp(logvar, min=-20.0, max=20.0)
-
-    KLD = -0.5 * torch.mean(
-        torch.sum(1 + logvar_safe - mu.pow(2) - logvar_safe.exp(), dim=1)
-    )
+    KLD = -0.5 * torch.sum(
+        1 + logvar_safe - mu.pow(2) - logvar_safe.exp(), dim=1
+    ).mean()
 
     return recon_loss + beta * KLD
 
@@ -422,7 +432,7 @@ def train_one_epoch(model, loader, optimizer, device, beta, weight_strategy='fix
             print(f"  [ERROR] NaN/Inf in reconstruction at batch {batch_idx}")
             return float('inf')
 
-        loss = vae_loss(recon, x, mu, logvar, beta, weight_strategy, zero_weight, nonzero_weight, trans)
+        loss = vae_loss(recon, x, mu, logvar, beta, model.log_var_gene, weight_strategy, zero_weight, nonzero_weight, trans)
 
         if torch.isnan(loss) or torch.isinf(loss):
             print(f"  [ERROR] NaN/Inf loss at batch {batch_idx}: {loss.item()}")

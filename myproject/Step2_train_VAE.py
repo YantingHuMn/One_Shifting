@@ -831,7 +831,7 @@ if __name__ == "__main__":
     parser.add_argument('--latent_grid', type=str, default="32")
     parser.add_argument('--lr_grid', type=str, default="0.0001")
     parser.add_argument('--batch_size_grid', type=str, default="64")
-    parser.add_argument('--beta_grid', type=str, default="0,0.5,1.0")
+    parser.add_argument('--beta_grid', type=str, default="0")
     parser.add_argument('--weight_strategy', type=str, default='fixed', 
                        choices=['fixed', 'sparsity_aware', 'magnitude', 'focal'])
     parser.add_argument('--zero_weight_grid', type=str, default="1.0")

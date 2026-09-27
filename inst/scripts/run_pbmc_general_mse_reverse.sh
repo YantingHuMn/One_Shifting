@@ -140,7 +140,7 @@ elif [ "$method" = "DCA_mse" ]; then
     METHOD_ARGS="--dropout_grid 0.0 --hidden_grid1 4096 --hidden_grid2 1024"
 elif [ "$method" = "scVI_mse" ]; then
     # METHOD_ARGS="--hidden_grid 512,256,128,64"
-    METHOD_ARGS="--hidden_grid 4096,2048 --latent_grid 32"
+    METHOD_ARGS="--hidden_grid 512 --latent_grid 10 --epochs_inner 400 --epochs_outer 400"
 elif [ "$method" = "Transformer_denoise" ]; then
     METHOD_ARGS="--n_tokens_grid 32 --d_model_grid 64 --nhead_grid 4 --num_layers_grid 1 --dim_feedforward_grid 128 --dropout_grid 0.1"
 fi

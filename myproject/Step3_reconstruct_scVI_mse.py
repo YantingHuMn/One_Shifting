@@ -106,7 +106,7 @@ class DecoderSCVI(nn.Module):
                                    n_layers=n_layers, n_hidden=n_hidden, dropout_rate=0,
                                    inject_covariates=inject_covariates,
                                    use_batch_norm=use_batch_norm, use_layer_norm=use_layer_norm)
-        self.px_scale_decoder = nn.Sequential(nn.Linear(n_hidden, n_output), nn.ReLU())
+        self.px_scale_decoder = nn.Sequential(nn.Linear(n_hidden, n_output), nn.Softplus())
 
     def forward(self, z, *cat_list):
         px = self.px_decoder(z, *cat_list)
@@ -130,6 +130,7 @@ class ScVIModel(nn.Module):
                                    n_hidden=n_hidden, inject_covariates=True,
                                    use_batch_norm=use_batch_norm_decoder,
                                    use_layer_norm=use_layer_norm_decoder)
+        self.log_var_gene = nn.Parameter(torch.zeros(n_input))
 
     def forward(self, x):
         # library = torch.log(x.sum(dim=1, keepdim=True) + 1e-6)
@@ -318,7 +319,8 @@ def main(args):
 
     # 7) Reconstruct
     print("[RECONSTRUCT] Running ScVIModel...")
-    px_rate, q_m, logvar = model(X)
+    q_m, q_v, z = model.z_encoder(X)      
+    px_rate = model.decoder(q_m)
     if not torch.isfinite(px_rate).all():
         raise ValueError("scVI reconstruction contains NaN/Inf")
 
