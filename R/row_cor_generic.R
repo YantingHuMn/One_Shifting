@@ -2,9 +2,10 @@
 row_cor_generic <- function(X, Y, method = "pearson") {
     stopifnot(all(dim(X) == dim(Y)))
     n <- nrow(X)
-    r_values <- numeric(n)
+    requested_cores <- suppressWarnings(as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", "1")))
+    if (is.na(requested_cores) || requested_cores < 1) requested_cores <- 1L
 
-    for (i in 1:n) {
+    cor_one_row <- function(i) {
         x_row <- X[i, ]
         y_row <- Y[i, ]
 
@@ -14,14 +15,21 @@ row_cor_generic <- function(X, Y, method = "pearson") {
 
         if (length(x_valid) > 1) {
             if (sd(x_valid) > 0 && sd(y_valid) > 0) {
-                r_values[i] <- cor(x_valid, y_valid, method = method)
+                return(cor(x_valid, y_valid, method = method))
             } else {
-                r_values[i] <- NA_real_
+                return(NA_real_)
             }
         } else {
-            r_values[i] <- NA_real_
+            return(NA_real_)
         }
     }
+
+    r_values <- unlist(
+        parallel::mclapply(seq_len(n), cor_one_row,
+                           mc.cores = min(requested_cores, max(1L, n)),
+                           mc.preschedule = TRUE),
+        use.names = FALSE
+    )
 
     # If no rownames exist, create default names
     if (is.null(rownames(X))) {

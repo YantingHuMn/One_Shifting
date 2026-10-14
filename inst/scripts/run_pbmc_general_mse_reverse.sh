@@ -92,22 +92,36 @@ echo "===Finish build count matrix==="
   
 echo "=== Starting ${method} pipeline ==="
 
-for data_mode in v1_reverse v1_reverse_trans_norm_recon_reverse_trans v1_recon_reverse_trans_norm; do
-    if [ "$data_mode" = "default" ]; then
-        mode_suffix="v1_trans_v2_no_trans"
-    elif [ "$data_mode" = "v1_trans_v2_trans" ]; then
-        mode_suffix="v1_trans_v2_trans"
-    elif [ "$data_mode" = "v1_reverse" ]; then
-        mode_suffix="v1_reverse_v2_no_trans"
-    elif [ "$data_mode" = "v1_trans_v2_trans_norm_100000" ]; then
-        mode_suffix="v1_trans_v2_trans_norm_100000"
-    elif [ "$data_mode" = "v1_reverse_trans_norm_recon_reverse_trans" ]; then
-        mode_suffix="v1_reverse_trans_norm_recon_reverse_trans"
-    elif [ "$data_mode" = "v1_recon_reverse_trans_norm" ]; then
-        mode_suffix="v1_recon_reverse_trans_norm"
-    fi
+# Single source of truth for directory naming. data_mode is bound to the R script
+# and must not change; mode_suffix is only used to name folders/files.
+get_mode_suffix() {
+    case "$1" in
+        default)                                   echo "v1_trans__v2_raw__recon_asis" ;;
+        v1_trans_v2_trans)                         echo "v1_trans__v2_trans__recon_asis" ;;
+        v1_reverse)                                echo "v1_raw__v2_raw__recon_asis" ;;
+        v1_trans_v2_trans_norm_100000)             echo "v1_trans__v2_norm100000_trans__recon_asis" ;;
+        v1_reverse_trans_norm_recon_reverse_trans) echo "v1_raw__v2_raw__recon_revtrans" ;;
+        v1_recon_reverse_trans_norm)               echo "v1_raw__v2_raw__recon_revtrans_revnorm" ;;
+        all_trans_norm)                            echo "v1_normF_trans__v2_normF_trans__recon_asis" ;;
+    esac
+}
 
-    for corr_dir in col row; do
+DATA_MODES=(v1_recon_reverse_trans_norm all_trans_norm)
+#CORR_DIRS=(col row)
+CORR_DIRS=(col)
+
+has_corr_dir() {
+    local d
+    for d in "${CORR_DIRS[@]}"; do
+        [ "$d" = "$1" ] && return 0
+    done
+    return 1
+}
+
+for data_mode in "${DATA_MODES[@]}"; do
+    mode_suffix=$(get_mode_suffix "$data_mode")
+
+    for corr_dir in "${CORR_DIRS[@]}"; do
         Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
         rm -f "${Figure_DIR}"/plots_summary_*.csv
     done
@@ -156,10 +170,10 @@ for this_trans_factor in "${trans_factor[@]}"; do
 
     mkdir -p "$OUT_DIR"
 
-    for factor in "${norm_factor[@]}"; do
+    for this_norm_factor in "${norm_factor[@]}"; do
 
         # Skip incompatible (standardize + count+1/sqrt/log) combinations
-        if [ "$factor" = "standardize" ]; then
+        if [ "$this_norm_factor" = "standardize" ]; then
             case "$this_trans_factor" in
                 no_trans) ;;  # allow
                 *) echo "[SKIP] $this_trans_factor incompatible with standardize (negative values)"
@@ -167,35 +181,35 @@ for this_trans_factor in "${trans_factor[@]}"; do
             esac
         fi
 
-        DATA_PATH1="$READ_DIR/$V1/Count_Matrix_norm_by_$factor.feather"
+        DATA_PATH1="$READ_DIR/$V1/Count_Matrix_norm_by_$this_norm_factor.feather"
         DATA_PATH2="$READ_DIR/$V2/Count_Matrix_norm_by_$V2_norm_factor.feather"
-        SUMMARY_FILE="${OUT_DIR}/hyper_par_norm_by_${factor}.tsv"
+        SUMMARY_FILE="${OUT_DIR}/hyper_par_norm_by_${this_norm_factor}.tsv"
 
         source ~/.bashrc
         conda activate vae_env2
         python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
-        python -u ../One_Shifting/myproject/Step2_train_${method}.py \
-        --data_path1 "$DATA_PATH1" \
-        --data_path2 "$DATA_PATH2" \
-        --out_summary "$SUMMARY_FILE" \
-        --early_stop \
-        --eval_metric val_loss \
-        --trans1_grid "$this_trans_factor" \
-        --trans2_grid "$V2_trans_factor" \
-        --nonzero_weight_grid 1.0 \
-        $METHOD_ARGS
+        # python -u ../One_Shifting/myproject/Step2_train_${method}.py \
+        # --data_path1 "$DATA_PATH1" \
+        # --data_path2 "$DATA_PATH2" \
+        # --out_summary "$SUMMARY_FILE" \
+        # --early_stop \
+        # --eval_metric val_loss \
+        # --trans1_grid "$this_trans_factor" \
+        # --trans2_grid "$V2_trans_factor" \
+        # --nonzero_weight_grid 1.0 \
+        # $METHOD_ARGS
         
         # reconstruct
         SAVED_DIR="${OUT_DIR}/saved_models"
-        OUT_PATH="${OUT_DIR}/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather"
+        OUT_PATH="${OUT_DIR}/reconstruct_trans_by_${this_trans_factor}_norm_by_${this_norm_factor}.feather"
 
-        python -u ../One_Shifting/myproject/Step3_reconstruct_${method}.py \
-        --data_path1 "$DATA_PATH1" \
-        --data_path2 "$DATA_PATH2" \
-        --transformed_out_dir "$OUT_DIR" \
-        --saved_models_dir "$SAVED_DIR" \
-        --out_path "$OUT_PATH"
+        # python -u ../One_Shifting/myproject/Step3_reconstruct_${method}.py \
+        # --data_path1 "$DATA_PATH1" \
+        # --data_path2 "$DATA_PATH2" \
+        # --transformed_out_dir "$OUT_DIR" \
+        # --saved_models_dir "$SAVED_DIR" \
+        # --out_path "$OUT_PATH"
 
         python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
         conda deactivate 
@@ -207,65 +221,37 @@ for this_trans_factor in "${trans_factor[@]}"; do
         # v1_reverse means v1 and recon reverse trans only
         # v1_reverse_trans_norm_recon_reverse_trans means v1 reverse trans and norm and recon reverse trans only
         # v1_recon_reverse_trans_norm means v1 and recon reverse trans and norm
-        for data_mode in v1_reverse v1_reverse_trans_norm_recon_reverse_trans v1_recon_reverse_trans_norm; do
+        for data_mode in "${DATA_MODES[@]}"; do
+        # for data_mode in v1_reverse v1_reverse_trans_norm_recon_reverse_trans v1_recon_reverse_trans_norm; do
         # for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
-            if [ "$data_mode" = "default" ]; then
-                mode_suffix="v1_trans_v2_no_trans"
-            elif [ "$data_mode" = "v1_trans_v2_trans" ]; then
-                mode_suffix="v1_trans_v2_trans"
-            elif [ "$data_mode" = "v1_reverse" ]; then
-                mode_suffix="v1_reverse_v2_no_trans"
-            elif [ "$data_mode" = "v1_trans_v2_trans_norm_100000" ]; then
-                mode_suffix="v1_trans_v2_trans_norm_100000"
-            elif [ "$data_mode" = "v1_reverse_trans_norm_recon_reverse_trans" ]; then
-                mode_suffix="v1_reverse_trans_norm_recon_reverse_trans"
-            elif [ "$data_mode" = "v1_recon_reverse_trans_norm" ]; then
-                mode_suffix="v1_recon_reverse_trans_norm"
+            mode_suffix=$(get_mode_suffix "$data_mode")
+
+            # standardize is not invertible, so the only data_mode that reverses the normalization is skipped here.
+            if [ "$data_mode" = "v1_recon_reverse_trans_norm" ] && [ "$this_norm_factor" = "standardize" ]; then
+                echo "[SKIP] $data_mode cannot reverse norm 'standardize' (trans: $this_trans_factor)"
+                continue
             fi
 
-            if [ "$data_mode" = "v1_reverse_trans_norm_recon_reverse_trans" ] || [ "$data_mode" = "v1_recon_reverse_trans_norm" ]; then
-                for corr_dir in col row; do
-                    Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
-                    mkdir -p "$Figure_DIR"
+            for corr_dir in "${CORR_DIRS[@]}"; do
+                Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
+                mkdir -p "$Figure_DIR"
 
-                    Rscript ../One_Shifting/R/run_correlation_scatter_reverse.R \
-                        "$READ_DIR/${V2}/Count_Matrix_norm_by_no_norm.feather" \
-                        "$READ_DIR/${V1}/Count_Matrix_norm_by_no_norm.feather" \
-                        "$OUT_DIR/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather" \
-                        "$Figure_DIR"  \
-                        "$OUT_DIR/saved_models" \
-                        "$factor" \
-                        "$V2_norm_factor" \
-                        "$this_trans_factor" \
-                        "$V2_trans_factor" \
-                        "${Figure_DIR}" \
-                        "$corr_dir" \
-                        "${V1}" \
-                        "${method}" \
-                        "$data_mode"
-                done
-            else
-                for corr_dir in col row; do
-                    Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
-                    mkdir -p "$Figure_DIR"
-
-                    Rscript ../One_Shifting/R/run_correlation_scatter_reverse.R \
-                        "$OUT_DIR/Count_matrix_transformed_rep2.feather" \
-                        "$OUT_DIR/Count_matrix_transformed_rep1.feather" \
-                        "$OUT_DIR/reconstruct_trans_by_${this_trans_factor}_norm_by_${factor}.feather" \
-                        "$Figure_DIR"  \
-                        "$OUT_DIR/saved_models" \
-                        "$factor" \
-                        "$V2_norm_factor" \
-                        "$this_trans_factor" \
-                        "$V2_trans_factor" \
-                        "${Figure_DIR}" \
-                        "$corr_dir" \
-                        "${V1}" \
-                        "${method}" \
-                        "$data_mode"
-                done
-            fi
+                Rscript ../One_Shifting/R/run_correlation_scatter_reverse.R \
+                    "$READ_DIR/${V2}/Count_Matrix_norm_by_no_norm.feather" \
+                    "$READ_DIR/${V1}/Count_Matrix_norm_by_no_norm.feather" \
+                    "$OUT_DIR/reconstruct_trans_by_${this_trans_factor}_norm_by_${this_norm_factor}.feather" \
+                    "$Figure_DIR"  \
+                    "$OUT_DIR/saved_models" \
+                    "$this_norm_factor" \
+                    "$V2_norm_factor" \
+                    "$this_trans_factor" \
+                    "$V2_trans_factor" \
+                    "${Figure_DIR}" \
+                    "$corr_dir" \
+                    "${V1}" \
+                    "${method}" \
+                    "$data_mode"
+            done
 
             sleep 2
 
@@ -279,26 +265,15 @@ done
 echo "=== Post-processing: combine figures and summary ==="
 module load conda_R
 
-for data_mode in v1_reverse v1_reverse_trans_norm_recon_reverse_trans v1_recon_reverse_trans_norm; do
+for data_mode in "${DATA_MODES[@]}"; do
+# for data_mode in v1_reverse v1_reverse_trans_norm_recon_reverse_trans v1_recon_reverse_trans_norm all_trans_norm; do
 # for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
-    if [ "$data_mode" = "default" ]; then
-        mode_suffix="v1_trans_v2_no_trans"
-    elif [ "$data_mode" = "v1_trans_v2_trans" ]; then
-        mode_suffix="v1_trans_v2_trans"
-    elif [ "$data_mode" = "v1_reverse" ]; then
-        mode_suffix="v1_reverse_v2_no_trans"
-    elif [ "$data_mode" = "v1_trans_v2_trans_norm_100000" ]; then
-        mode_suffix="v1_trans_v2_trans_norm_100000"
-    elif [ "$data_mode" = "v1_reverse_trans_norm_recon_reverse_trans" ]; then
-        mode_suffix="v1_reverse_trans_norm_recon_reverse_trans"
-    elif [ "$data_mode" = "v1_recon_reverse_trans_norm" ]; then
-        mode_suffix="v1_recon_reverse_trans_norm"
-    fi
+    mode_suffix=$(get_mode_suffix "$data_mode")
 
     COL_Figure_DIR="$OUTPUT_DIR/Figures_col_${mode_suffix}"
     ROW_Figure_DIR="$OUTPUT_DIR/Figures_row_${mode_suffix}"
 
-    for corr_dir in col row; do
+    for corr_dir in "${CORR_DIRS[@]}"; do
         Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
 
         Rscript ../One_Shifting/R/run_combine_figures_reverse.R \
@@ -329,7 +304,7 @@ for data_mode in v1_reverse v1_reverse_trans_norm_recon_reverse_trans v1_recon_r
         else
             mode_tag="_${data_mode}"
         fi
-        Rscript ../One_Shifting/R/Step_post_summary_bubble_table.R \
+        has_corr_dir col && Rscript ../One_Shifting/R/Step_post_summary_bubble_table.R \
             "$method" \
             "$V1" \
             "$OUTPUT_DIR" \
@@ -341,7 +316,7 @@ for data_mode in v1_reverse v1_reverse_trans_norm_recon_reverse_trans v1_recon_r
             "$V2_norm_factor" \
             "${trans_factor[@]}"
 
-        if [[ "$V1" == *RNA* && "$V2" == *ATAC* ]] || [[ "$V1" == *ATAC* && "$V2" == *RNA* ]]; then
+        if has_corr_dir row && { [[ "$V1" == *RNA* && "$V2" == *ATAC* ]] || [[ "$V1" == *ATAC* && "$V2" == *RNA* ]]; }; then
             Rscript ../One_Shifting/R/Step_post_summary_bubble_table.R \
                 "$method" \
                 "$V1" \

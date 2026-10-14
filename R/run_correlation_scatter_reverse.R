@@ -5,7 +5,7 @@ path2 <- args[2] # rep1
 path3 <- args[3] # vae/dca/scvi/etc reconstruction
 out_dir <- args[4]
 saved_models_dir <- args[5]
-factor <- args[6]
+this_norm_factor <- args[6]
 V2_norm_factor <- args[7]
 this_trans_factor <- args[8]
 V2_trans_factor <- args[9]
@@ -22,14 +22,10 @@ source("../One_Shifting/R/cal_corr_remove_zero.R")
 
 
 #  Main function: correlation scatter plot between reconstruction and original
-run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_dir,
-                                    factor, V2_norm_factor, this_trans_factor,
-                                    V2_trans_factor, save_csv_dir, corr,
-                                    y_title = NULL, x_title = NULL,
-                                    corr_method = "pearson",
-                                    filter_zero_gt = FALSE,
-                                    data_mode = "default") {
+run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_dir, this_norm_factor, V2_norm_factor, this_trans_factor, V2_trans_factor, save_csv_dir, corr,
+                                    y_title = NULL, x_title = NULL, corr_method = "pearson", filter_zero_gt = FALSE, data_mode = "default") {
 
+    # Load packages
     suppressPackageStartupMessages({
         library(jsonlite)
         library(arrow)
@@ -50,7 +46,7 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
     valid_data_modes <- c("default", "v1_trans_v2_trans", "v1_reverse",
                           "v1_trans_v2_trans_norm_100000", "v1_trans_v2_trans_norm_factor",
                           "v1_reverse_trans_norm_recon_reverse_trans",
-                          "v1_recon_reverse_trans_norm")
+                          "v1_recon_reverse_trans_norm", "all_trans_norm")
     if (!data_mode %in% valid_data_modes) {
         stop("Error: data_mode must be one of: ", paste(valid_data_modes, collapse = ", "))
     }
@@ -106,7 +102,7 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
         }
         S <- suppressWarnings(as.numeric(norm_factor))
         if (is.na(S)) {
-            stop("Cannot reverse normalization: factor must be no_norm, standardize, ",
+            stop("Cannot reverse normalization: norm factor must be no_norm, standardize, ",
                  "or numeric. Got: ", norm_factor)
         }
         if (length(lib_sizes) != nrow(mat)) {
@@ -114,6 +110,27 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
                  ") does not match nrow(mat) (", nrow(mat), ")")
         }
         return(mat / S * lib_sizes)
+    }
+
+    # Helper: apply the per-cell library-size normalization (forward direction),
+    #   x_norm[i, j] = count[i, j] / lib_size[i] * S
+    # used by the data_modes that have to bring a raw matrix into the normalized space.
+    apply_norm <- function(mat, norm_factor) {
+        if (norm_factor == "no_norm") {
+            return(mat)
+        }
+        if (norm_factor == "standardize") {
+            mat <- scale(mat)
+            mat[is.na(mat)] <- 0
+            return(mat)
+        }
+        S <- suppressWarnings(as.numeric(norm_factor))
+        if (is.na(S)) {
+            stop("Normalization factor must be no_norm, standardize, or numeric. Got: ", norm_factor)
+        }
+        lib_sizes <- rowSums(mat)
+        lib_sizes[lib_sizes == 0] <- 1  # avoid division by zero
+        return(mat / lib_sizes * S)
     }
 
     filter_tag <- if (filter_zero_gt) "filtered" else "unfiltered"
@@ -290,24 +307,32 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
     }
 
     # Apply data_mode transformations
-    if (data_mode == "v1_trans_v2_trans") {
+    # NOTE: df1 (V2 ground truth) and df2 (V1 input) are now always read as the RAW
+    # original matrices; only df3 (reconstruction) carries the trans/norm setting.
+    # Every branch below therefore states explicitly what is done to each of the three.
+    if (data_mode == "default") {
+        # v1 trans, no norm | v2 untouched | recon untouched
+        mat2 <- as.matrix(df2)
+        mat2 <- apply_trans(mat2, this_trans_factor)
+        df2 <- as.data.frame(mat2)
+
+        cat(paste("data_mode: default | input trans:", this_trans_factor, "\n"))
+    } else if (data_mode == "v1_trans_v2_trans") {
+        # v1 trans, no norm | v2 trans, no norm | recon untouched
         mat1 <- as.matrix(df1)
         mat1 <- apply_trans(mat1, this_trans_factor)
         df1 <- as.data.frame(mat1)
 
-        cat(paste("data_mode: v1_trans_v2_trans | ground truth trans:", this_trans_factor, "\n"))
-    } else if (data_mode == "v1_reverse") {
         mat2 <- as.matrix(df2)
-        mat2 <- reverse_trans(mat2, this_trans_factor)
+        mat2 <- apply_trans(mat2, this_trans_factor)
         df2 <- as.data.frame(mat2)
 
-        mat3 <- as.matrix(df3)
-        mat3 <- reverse_trans(mat3, this_trans_factor)
-        df3 <- as.data.frame(mat3)
-
-        cat(paste("data_mode: v1_reverse | reversed input & reconstruction trans:", this_trans_factor, "\n"))
+        cat(paste("data_mode: v1_trans_v2_trans | ground truth & input trans:", this_trans_factor, "\n"))
+    } else if (data_mode == "v1_reverse") {
+        # v1 untouched | v2 untouched | recon untouched
+        cat("data_mode: v1_reverse | no change applied to ground truth, input or reconstruction\n")
     } else if (data_mode == "v1_trans_v2_trans_norm_100000") {
-        # Same as v1_trans_v2_trans but also apply library size normalization (*100000) to ground truth (df1)
+        # v1 trans, no norm | v2 norm *100000 + trans | recon untouched
         mat1 <- as.matrix(df1)
         lib_sizes <- rowSums(mat1)
         lib_sizes[lib_sizes == 0] <- 1  # avoid division by zero
@@ -315,23 +340,32 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
         mat1 <- apply_trans(mat1, this_trans_factor)
         df1 <- as.data.frame(mat1)
 
-        cat(paste("data_mode: v1_trans_v2_trans_norm_100000 | ground truth library size norm *100000 + trans:", this_trans_factor, "\n"))
-    } else if (data_mode == "v1_trans_v2_trans_norm_factor") {
-        # Same as v1_trans_v2_trans but also apply the provided normalization factor to ground truth (df1)
+        mat2 <- as.matrix(df2)
+        mat2 <- apply_trans(mat2, this_trans_factor)
+        df2 <- as.data.frame(mat2)
+
+        cat(paste("data_mode: v1_trans_v2_trans_norm_100000 | ground truth library size norm *100000 + trans:", this_trans_factor, "| input trans:", this_trans_factor, "\n"))
+    } else if (data_mode == "v1_trans_v2_trans_norm_factor" || data_mode == "all_trans_norm") {
+        # Ground truth (df1) receives the SAME normalization factor and the SAME
+        # transformation that V1 (input) and the reconstruction already carry, so all
+        # three matrices end up in one space. Unlike v1_trans_v2_trans_norm_100000,
+        # the normalization constant follows `this_norm_factor` instead of being hardcoded.
+        # "all_trans_norm" is the driver-facing name; "v1_trans_v2_trans_norm_factor"
+        # is retained as an alias for older output directories.
         mat1 <- as.matrix(df1)
 
-        if (factor == "no_norm") {
+        if (this_norm_factor == "no_norm") {
             mat1 <- mat1
-        } else if (factor == "standardize") {
+        } else if (this_norm_factor == "standardize") {
             mat1 <- scale(mat1)
             mat1[is.na(mat1)] <- 0
         } else {
             lib_sizes <- rowSums(mat1)
             lib_sizes[lib_sizes == 0] <- 1  # avoid division by zero
 
-            current_norm_factor <- as.numeric(factor)
+            current_norm_factor <- as.numeric(this_norm_factor)
             if (is.na(current_norm_factor)) {
-                stop("data_mode v1_trans_v2_trans_norm_factor requires factor to be one of no_norm, standardize, or numeric. Got: ", factor)
+                stop("data_mode ", data_mode, " requires this_norm_factor to be one of no_norm, standardize, or numeric. Got: ", this_norm_factor)
             }
 
             mat1 <- mat1 / lib_sizes * current_norm_factor
@@ -340,7 +374,13 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
         mat1 <- apply_trans(mat1, this_trans_factor)
         df1 <- as.data.frame(mat1)
 
-        cat(paste("data_mode: v1_trans_v2_trans_norm_factor | ground truth norm:", factor, "+ trans:", this_trans_factor, "\n"))
+        # v1 (input) receives the same norm + trans
+        mat2 <- as.matrix(df2)
+        mat2 <- apply_norm(mat2, this_norm_factor)
+        mat2 <- apply_trans(mat2, this_trans_factor)
+        df2 <- as.data.frame(mat2)
+
+        cat(paste("data_mode:", data_mode, "| ground truth & input norm:", this_norm_factor, "+ trans:", this_trans_factor, "\n"))
     } else if (data_mode == "v1_reverse_trans_norm_recon_reverse_trans") {
         # df1 (ground truth V2) and df2 (V1) are raw no_norm counts here, so neither
         # needs undoing. Only the reconstruction lives in transformed space.
@@ -356,11 +396,11 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
         # must reverse the transform FIRST, then the normalization.
         mat3 <- as.matrix(df3)
         mat3 <- reverse_trans(mat3, this_trans_factor)
-        mat3 <- reverse_norm(mat3, factor, lib_sizes_v1)
+        mat3 <- reverse_norm(mat3, this_norm_factor, lib_sizes_v1)
         df3 <- as.data.frame(mat3)
 
         cat(paste("data_mode: v1_recon_reverse_trans_norm | reversed reconstruction trans:",
-                  this_trans_factor, "+ norm:", factor, "\n"))
+                  this_trans_factor, "+ norm:", this_norm_factor, "\n"))
     }
 
     # Filter out all-zero columns/rows in ground truth (df1), sync df2 & df3
@@ -542,7 +582,7 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
         geom_text(data = intersection_df %>% filter(Value %in% highlight_points),
                   aes(label = Value),
                   hjust = 0.5, vjust = -0.5, size = 3, color = "red") +
-        labs(title = paste0(method_label, " (", corr, ") V1: ", this_trans_factor, ",", factor, " V2: ", V2_trans_factor, ",", V2_norm_factor,
+        labs(title = paste0(method_label, " (", corr, ") V1: ", this_trans_factor, ",", this_norm_factor, " V2: ", V2_trans_factor, ",", V2_norm_factor,
                             if (filter_zero_gt) " [GT-zero filtered]" else "",
                             if (data_mode != "default") paste0(" [", data_mode, "]") else ""),
              subtitle = subtitle_text_with_stats,
@@ -554,20 +594,20 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
 
     #  Save plot, scatter CSV, and summary CSV
     plot_filename <- paste0(file_prefix, corr, "_scatter_v1_trans_", this_trans_factor,
-                            "_norm_", factor, "_v2_trans_", V2_trans_factor,
+                            "_norm_", this_norm_factor, "_v2_trans_", V2_trans_factor,
                             "_norm_", V2_norm_factor, ".png")
     ggsave(file.path(out_dir, plot_filename), p, width = 6.5, height = 4.5, dpi = 300)
     print(paste0(method_label, " scatter plot saved to ", file.path(out_dir, plot_filename)))
 
     csv_filename <- paste0(file_prefix, corr, "_scatter_v1_trans_", this_trans_factor,
-                           "_norm_", factor, "_v2_trans_", V2_trans_factor,
+                           "_norm_", this_norm_factor, "_v2_trans_", V2_trans_factor,
                            "_norm_", V2_norm_factor, ".csv")
     write.csv(intersection_df, file.path(out_dir, csv_filename), row.names = FALSE)
 
     # Append summary row to cumulative CSV
     summary_row <- data.frame(
         REP1_trans = this_trans_factor,
-        REP1_norm = factor,
+        REP1_norm = this_norm_factor,
         corr_type = corr,
         x_mean = round(x_avg, 4),
         residual_mean = round(residual_avg, 4),
@@ -609,7 +649,7 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
 # run_correlation_scatter(
 #     path1 = path1, path2 = path2, path3 = path3,
 #     out_dir = out_dir, saved_models_dir = saved_models_dir,
-#     factor = factor, V2_norm_factor = V2_norm_factor,
+#     this_norm_factor = this_norm_factor, V2_norm_factor = V2_norm_factor,
 #     this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
 #     save_csv_dir = save_csv_dir, corr = corr,
 #     y_title = y_title, x_title = x_title,
@@ -620,7 +660,7 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
 # run_correlation_scatter(
 #     path1 = path1, path2 = path2, path3 = path3,
 #     out_dir = out_dir, saved_models_dir = saved_models_dir,
-#     factor = factor, V2_norm_factor = V2_norm_factor,
+#     this_norm_factor = this_norm_factor, V2_norm_factor = V2_norm_factor,
 #     this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
 #     save_csv_dir = save_csv_dir, corr = corr,
 #     y_title = y_title, x_title = x_title,
@@ -631,7 +671,7 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
 # run_correlation_scatter(
 #     path1 = path1, path2 = path2, path3 = path3,
 #     out_dir = out_dir, saved_models_dir = saved_models_dir,
-#     factor = factor, V2_norm_factor = V2_norm_factor,
+#     this_norm_factor = this_norm_factor, V2_norm_factor = V2_norm_factor,
 #     this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
 #     save_csv_dir = save_csv_dir, corr = corr,
 #     y_title = y_title, x_title = x_title,
@@ -642,7 +682,7 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir, saved_models_d
 # run_correlation_scatter(
 #     path1 = path1, path2 = path2, path3 = path3,
 #     out_dir = out_dir, saved_models_dir = saved_models_dir,
-#     factor = factor, V2_norm_factor = V2_norm_factor,
+#     this_norm_factor = this_norm_factor, V2_norm_factor = V2_norm_factor,
 #     this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
 #     save_csv_dir = save_csv_dir, corr = corr,
 #     y_title = y_title, x_title = x_title,
@@ -654,7 +694,7 @@ tryCatch(
     run_correlation_scatter(
         path1 = path1, path2 = path2, path3 = path3,
         out_dir = out_dir, saved_models_dir = saved_models_dir,
-        factor = factor, V2_norm_factor = V2_norm_factor,
+        this_norm_factor = this_norm_factor, V2_norm_factor = V2_norm_factor,
         this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
         save_csv_dir = save_csv_dir, corr = corr,
         y_title = y_title, x_title = x_title,
@@ -669,7 +709,7 @@ tryCatch(
     run_correlation_scatter(
         path1 = path1, path2 = path2, path3 = path3,
         out_dir = out_dir, saved_models_dir = saved_models_dir,
-        factor = factor, V2_norm_factor = V2_norm_factor,
+        this_norm_factor = this_norm_factor, V2_norm_factor = V2_norm_factor,
         this_trans_factor = this_trans_factor, V2_trans_factor = V2_trans_factor,
         save_csv_dir = save_csv_dir, corr = corr,
         y_title = y_title, x_title = x_title,

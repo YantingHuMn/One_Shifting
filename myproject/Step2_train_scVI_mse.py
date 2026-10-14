@@ -207,7 +207,7 @@ class DecoderSCVI(nn.Module):
         )
         self.px_scale_decoder = nn.Sequential(
             nn.Linear(n_hidden, n_output),
-            nn.Softplus(),
+            nn.ReLU(),
         )
 
     def forward(self, z: torch.Tensor, *cat_list):

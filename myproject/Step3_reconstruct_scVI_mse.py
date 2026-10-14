@@ -106,7 +106,7 @@ class DecoderSCVI(nn.Module):
                                    n_layers=n_layers, n_hidden=n_hidden, dropout_rate=0,
                                    inject_covariates=inject_covariates,
                                    use_batch_norm=use_batch_norm, use_layer_norm=use_layer_norm)
-        self.px_scale_decoder = nn.Sequential(nn.Linear(n_hidden, n_output), nn.Softplus())
+        self.px_scale_decoder = nn.Sequential(nn.Linear(n_hidden, n_output), nn.ReLU())
 
     def forward(self, z, *cat_list):
         px = self.px_decoder(z, *cat_list)

@@ -141,9 +141,10 @@ def vae_loss(recon_x, x, mu, logvar, beta, weight_strategy='fixed',
 
     logvar_safe = torch.clamp(logvar, min=-20.0, max=20.0)
 
+    n_genes = x.shape[1]
     KLD = -0.5 * torch.mean(
         torch.sum(1 + logvar_safe - mu.pow(2) - logvar_safe.exp(), dim=1)
-    )
+    ) / n_genes
 
     return recon_loss + beta * KLD
 
