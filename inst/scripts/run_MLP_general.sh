@@ -129,7 +129,9 @@ for this_trans_factor in "${trans_factor[@]}"; do
         --trans "${this_trans_factor}" \
         --epochs 60 \
         --patience 10 \
+        --min_delta 0 \
         --out_summary ${OUT_DIR}/mlp_results.tsv
+        
 
         # predict
         SAVED_DIR="${OUT_DIR}/saved_models"

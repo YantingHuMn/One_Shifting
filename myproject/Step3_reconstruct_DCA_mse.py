@@ -95,6 +95,8 @@ def _apply_trans(df, trans):
         df.iloc[:, 1:] = np.log2(df.iloc[:, 1:] + 1) + 1
     elif trans == "no_trans":
         pass
+    else:
+        raise ValueError(f"Unknown trans: {trans}")
     return df
 
 def filter_and_transform(df1, df2, threshold_value, trans1, trans2):

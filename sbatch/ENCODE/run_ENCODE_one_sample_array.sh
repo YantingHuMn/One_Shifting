@@ -5,7 +5,7 @@
 #SBATCH --time=7-00:00:00
 #SBATCH --mem=100G
 #SBATCH --cpus-per-task=4
-#SBATCH --array=0-7
+#SBATCH --array=0-5
 #SBATCH --output=/dcs07/hongkai/data/yhu1/One_Shifting_Results/ENCODE/AAA_logs/submit_ENCODE_pip_%A_%a.out
 #SBATCH --error=/dcs07/hongkai/data/yhu1/One_Shifting_Results/ENCODE/AAA_logs/submit_ENCODE_pip_%A_%a.err
 #SBATCH --mail-user=yhu157@jh.edu

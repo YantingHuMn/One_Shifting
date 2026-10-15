@@ -138,6 +138,7 @@ def append_compare_result(compare_path, trans, norm_factor, pearson_corr, spearm
     if os.path.exists(compare_path):
         old_df = pd.read_csv(compare_path)
         out_df = pd.concat([old_df, row_df], ignore_index=True)
+        out_df = out_df.drop_duplicates(subset=["method", "trans", "norm_factor"], keep="last")
     else:
         out_df = row_df
 

@@ -173,13 +173,16 @@ def train_one_gene(X_train_np, y_train_np,
     best_val_pcc = 0.0
 
     # ---- Step 1: Hyperparameter search (train on train, evaluate on val) ----
+    X_tr = torch.tensor(X_train_np, dtype=torch.float32)
+    y_tr = torch.tensor(_apply_trans(y_train_np, trans), dtype=torch.float32).unsqueeze(1)
+    X_va = torch.tensor(X_val_np, dtype=torch.float32)
+    y_va = torch.tensor(_apply_trans(y_val_np, trans), dtype=torch.float32).unsqueeze(1)
+
     for h1, h2, lr, bs in product(
         hidden_grid1, hidden_grid2, lr_grid, bs_grid
     ):
-        X_tr = torch.tensor(_apply_trans(X_train_np, trans), dtype=torch.float32)
-        y_tr = torch.tensor(_apply_trans(y_train_np, trans), dtype=torch.float32).unsqueeze(1)
-        X_va = torch.tensor(_apply_trans(X_val_np, trans), dtype=torch.float32)
-        y_va = torch.tensor(_apply_trans(y_val_np, trans), dtype=torch.float32).unsqueeze(1)
+        train_loader = DataLoader(TensorDataset(X_tr, y_tr), batch_size=bs, shuffle=True)
+        val_loader   = DataLoader(TensorDataset(X_va, y_va), batch_size=bs, shuffle=False)
 
         train_loader = DataLoader(TensorDataset(X_tr, y_tr), batch_size=bs, shuffle=True)
         val_loader   = DataLoader(TensorDataset(X_va, y_va), batch_size=bs, shuffle=False)
@@ -209,11 +212,8 @@ def train_one_gene(X_train_np, y_train_np,
 
     # Step 2: Retrain with best config on train+val combined
     cfg = best_cfg
-    X_trainval = np.concatenate([X_train_np, X_val_np], axis=0)
-    y_trainval = np.concatenate([y_train_np, y_val_np], axis=0)
-
-    X_tv = torch.tensor(_apply_trans(X_trainval, cfg['trans']), dtype=torch.float32)
-    y_tv = torch.tensor(_apply_trans(y_trainval, cfg['trans']), dtype=torch.float32).unsqueeze(1)
+    X_tv = torch.cat([X_tr, X_va], dim=0)
+    y_tv = torch.cat([y_tr, y_va], dim=0)
 
     use_outer_val = (args.outer_es_val_frac > 0.0)
     if use_outer_val:
@@ -309,10 +309,10 @@ def main(args):
     assert tf_train.shape[0] == target_train.shape[0], "Train cell count mismatch!"
     assert tf_val.shape[0] == target_val.shape[0], "Val cell count mismatch!"
 
-    X_train = tf_train.values.astype(np.float32)
-    X_val   = tf_val.values.astype(np.float32)
+    X_train = _apply_trans(tf_train.values, args.trans)
+    X_val = _apply_trans(tf_val.values,   args.trans)
     target_train_np = target_train.values.astype(np.float32)
-    target_val_np   = target_val.values.astype(np.float32)
+    target_val_np = target_val.values.astype(np.float32)
     gene_names = list(target_train.columns)
 
     print(f"\nInput dimension: {X_train.shape[1]} TFs")
@@ -382,8 +382,8 @@ if __name__ == "__main__":
                         help="Data transform (passed from shell, e.g. no_trans, sqrt, sqrt+1, log2, count+1, log2(count+2))")
     parser.add_argument('--hidden_grid1', type=str, default="256")
     parser.add_argument('--hidden_grid2', type=str, default="128")
-    parser.add_argument('--lr_grid', type=str, default="0.001,0.0001")
-    parser.add_argument('--batch_size_grid', type=str, default="64,128")
+    parser.add_argument('--lr_grid', type=str, default="0.0001")
+    parser.add_argument('--batch_size_grid', type=str, default="64")
     parser.add_argument('--dropout', type=float, default=0.1)
 
     # Training
