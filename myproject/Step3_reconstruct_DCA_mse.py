@@ -1,11 +1,21 @@
 #!/usr/bin/env python3
 import argparse, os, json, glob
+import re
 import pandas as pd
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from pathlib import Path
+
+
+def sanitize_norm_name(norm):
+    """Make a normalization label safe to put in a filename without changing its meaning.
+
+    This function MUST stay byte-identical between Step2_train_* and Step3_reconstruct_*,
+    otherwise Step 2 writes a file Step 3 will not find.
+    """
+    return re.sub(r"[^0-9A-Za-z._+-]", "_", str(norm).strip())
 
 
 def _check_count_matrix(df, name, check_zero=True):
@@ -121,58 +131,26 @@ def filter_and_transform(df1, df2, threshold_value, trans1, trans2):
     return filtered_df1, filtered_df2
 
 
-def find_best_fold(saved_models_dir, criterion="inner_val_loss"):
-    fold_dirs = glob.glob(os.path.join(saved_models_dir, "fold_*"))
-    if not fold_dirs:
-        raise ValueError(f"No fold directories found in {saved_models_dir}")
-
-    best_fold = None
-    best_score = float("inf")
-
-    for fold_dir in fold_dirs:
-        config_path = os.path.join(fold_dir, "dca_config.json")
-        if not os.path.exists(config_path):
-            print(f"Warning: {config_path} not found, skipping")
-            continue
-
-        with open(config_path, "r") as f:
-            cfg = json.load(f)
-
-        score = cfg.get(criterion, float("inf"))
-        fold_name = os.path.basename(fold_dir)
-        print(f"{fold_name}: {criterion}={score:.6f}")
-
-        if score != score:
-            if best_fold is None:
-                best_fold = fold_dir
-        elif score < best_score:
-            best_score = score
-            best_fold = fold_dir
-
-    if best_fold is None:
-        raise ValueError("No valid fold found")
-
-    print(f"\n[BEST] {os.path.basename(best_fold)} with {criterion}={best_score:.6f}")
-    return best_fold
-
-
 @torch.no_grad()
 def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
 
     # 1) Find best model
-    final_model_path = os.path.join(args.saved_models_dir, "final_model.pt")
-    final_config_path = os.path.join(args.saved_models_dir, "final_config.json")
-
-    if os.path.exists(final_model_path) and os.path.exists(final_config_path):
-        print("[INFO] Using final_model (trained on all data)")
-        model_path = final_model_path
-        config_path = final_config_path
-    else:
-        print("[INFO] final_model not found, using best fold")
-        fold_dir = find_best_fold(args.saved_models_dir, args.criterion)
-        model_path = os.path.join(fold_dir, "dca_weights.pt")
-        config_path = os.path.join(fold_dir, "dca_config.json")
+    # The only model Step 3 ever reads is the single final model that Step 2 retrained
+    # on all cells. Fold directories are never scanned and outer test losses are never
+    # compared here: the outer test set is an evaluation quantity, not a selection key.
+    norm_tag = sanitize_norm_name(args.normalization)
+    model_path = os.path.join(args.saved_models_dir, f"final_model_{norm_tag}.pt")
+    config_path = os.path.join(args.saved_models_dir, f"final_config_{norm_tag}.json")
+    for _p, _what in ((model_path, "final model weights"), (config_path, "final model config")):
+        if not os.path.exists(_p):
+            raise FileNotFoundError(
+                f"{_what} not found for normalization '{args.normalization}'.\n"
+                f"  looked for: {_p}\n"
+                f"  saved_models_dir: {args.saved_models_dir}\n"
+                f"  Run Step 2 for this (transformation, normalization) combination first.")
+    print(f"[INFO] final model : {model_path}")
+    print(f"[INFO] final config: {config_path}")
 
     # 2) Load config
     with open(config_path, "r") as f:
@@ -262,8 +240,9 @@ if __name__ == "__main__":
     ap.add_argument("--transformed_out_dir", required=True,
                     help="Directory to save Count_matrix_transformed_rep1/rep2.feather")
     ap.add_argument("--saved_models_dir", required=True, help="saved_models directory")
-    ap.add_argument("--criterion", default="outer_test_loss",
-                    choices=["inner_val_loss", "outer_test_loss"])
+    ap.add_argument("--normalization", required=True,
+                    help="normalization label from the driver; selects "
+                         "final_model_<normalization>.pt")
     ap.add_argument("--out_path", required=True, help="Output reconstruction feather path")
     ap.add_argument("--cpu", action="store_true")
     args = ap.parse_args()

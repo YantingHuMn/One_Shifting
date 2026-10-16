@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import os
+import re
 import json
 import glob
 import math
@@ -10,6 +11,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from pathlib import Path
+
+
+def sanitize_norm_name(norm):
+    """Make a normalization label safe to put in a filename without changing its meaning.
+
+    This function MUST stay byte-identical between Step2_train_* and Step3_reconstruct_*,
+    otherwise Step 2 writes a file Step 3 will not find.
+    """
+    return re.sub(r"[^0-9A-Za-z._+-]", "_", str(norm).strip())
 
 
 def _check_count_matrix(df, name, check_zero=True):
@@ -151,94 +161,25 @@ def filter_and_transform(df1, df2, threshold_value, trans1, trans2,
     return filtered_df1, filtered_df2
 
 
-def find_weights_file(directory):
-    """Find model weights file (.pt or .pth) in directory."""
-    for ext in ("*.pt", "*.pth"):
-        matches = glob.glob(os.path.join(directory, ext))
-        if matches:
-            if len(matches) > 1:
-                print(f"  [WARNING] Multiple weight files found in {directory}, using: {matches[0]}")
-            return matches[0]
-    raise FileNotFoundError(f"No .pt or .pth file found in {directory}")
-
-
-def find_config_file(directory):
-    """Find config file (.json) in directory."""
-    matches = glob.glob(os.path.join(directory, "*.json"))
-    if matches:
-        if len(matches) > 1:
-            print(f"  [WARNING] Multiple JSON files found in {directory}, using: {matches[0]}")
-        return matches[0]
-    raise FileNotFoundError(f"No .json file found in {directory}")
-
-
-def find_best_fold(saved_models_dir, criterion="inner_val_loss"):
-    """Automatically find best fold."""
-    fold_dirs = glob.glob(os.path.join(saved_models_dir, "fold_*"))
-    if not fold_dirs:
-        raise ValueError(f"No fold directories found in {saved_models_dir}")
-
-    best_fold = None
-    best_score = float("inf")
-
-    for fold_dir in fold_dirs:
-        try:
-            config_path = find_config_file(fold_dir)
-        except FileNotFoundError:
-            print(f"Warning: no JSON config in {fold_dir}, skipping")
-            continue
-
-        with open(config_path, "r") as f:
-            cfg = json.load(f)
-
-        score = cfg.get(criterion, float("inf"))
-        fold_name = os.path.basename(fold_dir)
-        print(f"{fold_name}: {criterion}={score:.6f}")
-
-        if score != score:  # NaN check
-            if best_fold is None:
-                best_fold = fold_dir
-        elif score < best_score:
-            best_score = score
-            best_fold = fold_dir
-
-    if best_fold is None:
-        raise ValueError("No valid fold found")
-
-    print(f"\n[BEST] {os.path.basename(best_fold)} with {criterion}={best_score:.6f}")
-    return best_fold
-
-
 @torch.no_grad()
 def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
 
-    # Locate model weights and config
-    final_weights = None
-    final_config = None
-    for ext in ("*.pt", "*.pth"):
-        for f in glob.glob(os.path.join(args.saved_models_dir, ext)):
-            if "final" in os.path.basename(f).lower():
-                final_weights = f
-                break
-        if final_weights:
-            break
-    for f in glob.glob(os.path.join(args.saved_models_dir, "*.json")):
-        if "final" in os.path.basename(f).lower():
-            final_config = f
-            break
-
-    if final_weights and final_config:
-        print(f"[INFO] Using final model: {os.path.basename(final_weights)}")
-        model_path = final_weights
-        config_path = final_config
-    else:
-        print("[INFO] Final model not found, using best fold")
-        fold_dir = find_best_fold(args.saved_models_dir, args.criterion)
-        model_path = find_weights_file(fold_dir)
-        config_path = find_config_file(fold_dir)
-        print(f"  weights: {os.path.basename(model_path)}")
-        print(f"  config:  {os.path.basename(config_path)}")
+    # The only model Step 3 ever reads is the single final model that Step 2 retrained
+    # on all cells. Fold directories are never scanned and outer test losses are never
+    # compared here: the outer test set is an evaluation quantity, not a selection key.
+    norm_tag = sanitize_norm_name(args.normalization)
+    model_path = os.path.join(args.saved_models_dir, f"final_model_{norm_tag}.pt")
+    config_path = os.path.join(args.saved_models_dir, f"final_config_{norm_tag}.json")
+    for _p, _what in ((model_path, "final model weights"), (config_path, "final model config")):
+        if not os.path.exists(_p):
+            raise FileNotFoundError(
+                f"{_what} not found for normalization '{args.normalization}'.\n"
+                f"  looked for: {_p}\n"
+                f"  saved_models_dir: {args.saved_models_dir}\n"
+                f"  Run Step 2 for this (transformation, normalization) combination first.")
+    print(f"[INFO] final model : {model_path}")
+    print(f"[INFO] final config: {config_path}")
 
     # Load config 
     with open(config_path, "r") as f:
@@ -359,9 +300,9 @@ if __name__ == "__main__":
     ap.add_argument("--data_path2", required=True, help="V2 feather file (for column filtering)")
     ap.add_argument("--transformed_out_dir", required=True, help="Directory to save transformed data")
     ap.add_argument("--saved_models_dir", required=True, help="saved_models directory")
-    ap.add_argument("--criterion", default="outer_test_loss",
-                    choices=["inner_val_loss", "outer_test_loss"],
-                    help="Criterion for selecting best fold")
+    ap.add_argument("--normalization", required=True,
+                    help="normalization label from the driver; selects "
+                         "final_model_<normalization>.pt")
     ap.add_argument("--out_path", required=True, help="Output path for reconstructed data (.feather)")
     ap.add_argument("--cpu", action="store_true")
     args = ap.parse_args()

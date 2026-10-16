@@ -7,6 +7,7 @@ from torch.utils.data import TensorDataset, DataLoader, Subset
 import pandas as pd
 import argparse
 import os
+import re
 import numpy as np
 from itertools import product
 from sklearn.model_selection import KFold, train_test_split
@@ -289,7 +290,6 @@ class ScVIModel(nn.Module):
             use_batch_norm=use_batch_norm_decoder,
             use_layer_norm=use_layer_norm_decoder,
         )
-        self.log_var_gene = nn.Parameter(torch.zeros(n_input))
 
     def forward(self, x: torch.Tensor):
         """
@@ -381,18 +381,14 @@ def weighted_reconstruction_loss(recon_x, x, weight_strategy='fixed', zero_weigh
     return torch.mean(weighted_mse)
 
 
-def vae_loss(recon_x, x, mu, logvar, beta, log_var_gene,
+def vae_loss(recon_x, x, mu, logvar, beta,
              weight_strategy='fixed', zero_weight=1.0, nonzero_weight=5.0, trans=None):
-    # Gaussian NLL with a free per-gene variance (the MSE analogue of scVI's px_r).
-    # Per-cell SUM over genes, then mean over cells -- same units as the KL,
-    # matching scvi-tools' torch.mean(reconst_loss + weighted_kl_local).
-    weights = weighted_reconstruction_loss(
-        recon_x, x, weight_strategy, zero_weight, nonzero_weight, trans,
-        return_weights=True
+    # Plain weighted MSE, identical in form to the objective the VAE, DCA and
+    # Transformer arms minimize, so the four arms differ only in architecture.
+    # beta is pinned to 0 (see get_kl_weight), so the KL branch is never taken.
+    recon_loss = weighted_reconstruction_loss(
+        recon_x, x, weight_strategy, zero_weight, nonzero_weight, trans
     )
-    lvg = torch.clamp(log_var_gene, min=-20.0, max=20.0)
-    se = weights * (recon_x - x) ** 2
-    recon_loss = (0.5 * (se / lvg.exp() + lvg)).sum(dim=1).mean()
 
     if beta == 0:
         return recon_loss
@@ -400,12 +396,14 @@ def vae_loss(recon_x, x, mu, logvar, beta, log_var_gene,
     logvar_safe = torch.clamp(logvar, min=-20.0, max=20.0)
     KLD = -0.5 * torch.sum(
         1 + logvar_safe - mu.pow(2) - logvar_safe.exp(), dim=1
-    ).mean()
+    ).mean() / x.shape[1]
 
     return recon_loss + beta * KLD
 
-
-def get_kl_weight(epoch, min_kl_weight=0.0, max_kl_weight=1.0, n_epochs_kl_warmup=400):
+def get_kl_weight(epoch, min_kl_weight=0.0, max_kl_weight=0.0, n_epochs_kl_warmup=400):
+    # max_kl_weight is 0.0: the KL term is switched off for this arm so its objective
+    # is the same plain weighted MSE the other three arms minimize. The warmup
+    # schedule is left intact, so restoring a prior weight is a one-value change.
     if n_epochs_kl_warmup is None or n_epochs_kl_warmup <= 0:
         return max_kl_weight
 
@@ -432,7 +430,7 @@ def train_one_epoch(model, loader, optimizer, device, beta, weight_strategy='fix
             print(f"  [ERROR] NaN/Inf in reconstruction at batch {batch_idx}")
             return float('inf')
 
-        loss = vae_loss(recon, x, mu, logvar, beta, model.log_var_gene, weight_strategy, zero_weight, nonzero_weight, trans)
+        loss = vae_loss(recon, x, mu, logvar, beta, weight_strategy, zero_weight, nonzero_weight, trans)
 
         if torch.isnan(loss) or torch.isinf(loss):
             print(f"  [ERROR] NaN/Inf loss at batch {batch_idx}: {loss.item()}")
@@ -454,7 +452,7 @@ def eval_loss(model, loader, device, beta, weight_strategy='fixed', zero_weight=
     for (x,) in loader:
         x = x.to(device)
         recon, mu, logvar = model(x)
-        loss = vae_loss(recon, x, mu, logvar, beta, model.log_var_gene, weight_strategy, zero_weight, nonzero_weight, trans)        
+        loss = vae_loss(recon, x, mu, logvar, beta, weight_strategy, zero_weight, nonzero_weight, trans)        
         total += loss.item() * x.size(0)
         n += x.size(0)
     return total / max(n, 1)
@@ -505,13 +503,16 @@ class EarlyStopping:
         self.patience = patience
         self.min_delta = min_delta
         self.best = float("inf")
+        self.best_epoch = 0
         self.bad_epochs = 0
         self.stopped = False
         self.best_state = None
 
-    def step(self, metric, model=None):
+    def step(self, metric, model=None, epoch=None):
         if metric < self.best - self.min_delta:
             self.best = metric
+            if epoch is not None:
+                self.best_epoch = int(epoch)
             self.bad_epochs = 0
             if model is not None:
                 self.best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
@@ -532,6 +533,14 @@ def should_drop_last_train(n, bs, min_bn_batch=16):
     remainder = n % bs
     return 0 < remainder < min_bn_batch
 
+
+def sanitize_norm_name(norm):
+    """Make a normalization label safe to put in a filename without changing its meaning.
+
+    This function MUST stay byte-identical between Step2_train_* and Step3_reconstruct_*,
+    otherwise Step 2 writes a file Step 3 will not find.
+    """
+    return re.sub(r"[^0-9A-Za-z._+-]", "_", str(norm).strip())
 
 def make_loader(X, idx, batch_size, shuffle, drop_last=False):
     subset = Subset(TensorDataset(X), idx)
@@ -643,7 +652,7 @@ def outer10_inner_holdout(
     early_stop=False, patience=10, min_delta=0.0, check_every=1, outer_es_val_frac=0.1,
     n_splits=10, weight_strategy='fixed',
     zero_weight_grid=None, nonzero_weight_grid=None,
-    save_dir=None, eval_metric='val_loss',):
+    save_dir=None, eval_metric='val_loss', normalization=None,):
 
     if zero_weight_grid is None:
         zero_weight_grid = [1.0]
@@ -692,264 +701,268 @@ def outer10_inner_holdout(
             tensor_cache[key] = _prepare_tensors(fdf1, fdf2)
     print(f"[CACHE] Pre-computed {len(transform_cache)} (threshold, trans1, trans2) combinations.\n")
 
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    # --- transformation and normalization are EXPERIMENTAL CONDITIONS, not model
+    #     hyperparameters: one (transformation, normalization) combination is trained
+    #     per call of this script, so they are excluded from the configuration count. ---
+    if len(threshold_grid) != 1 or len(trans1_grid) != 1 or len(trans2_grid) != 1:
+        raise ValueError(
+            "threshold / trans1 / trans2 are experimental conditions, not hyperparameters. "
+            "This script trains exactly one (transformation, normalization) combination per "
+            f"call, but received {len(threshold_grid)} threshold, {len(trans1_grid)} trans1 "
+            f"and {len(trans2_grid)} trans2 value(s). Loop over them in the driver.")
+    if normalization is None:
+        raise ValueError("normalization must be provided (it names the final model file)")
+    norm_tag = sanitize_norm_name(normalization)
 
-    fold_best_cfgs = []
-    fold_val_losses = []
-    fold_test_losses = []
-    fold_val_metrics = []
-    fold_test_metrics = []
-    all_val_results = []
+    threshold, trans1, trans2 = threshold_grid[0], trans1_grid[0], trans2_grid[0]
+    X, X2 = tensor_cache[(threshold, trans1, trans2)]
+    input_dim = X.shape[1]
+    n_cells = int(X.shape[0])
+    all_cell_idx = np.arange(n_cells)
 
-    for fold_id, (outer_train_idx, outer_test_idx) in enumerate(kf.split(df1_raw), 1):
-        print(f"\n========== Fold {fold_id}/{n_splits} ==========")
-        tr_idx, val_idx = train_test_split(
-            outer_train_idx, test_size=inner_val_frac, random_state=seed, shuffle=True
-        )
+    MODEL_PARAM_NAMES = ["n_hidden", "n_latent", "n_layers", "lr", "batch_size", "zero_weight", "nonzero_weight"]
+    model_param_grids = [hidden_grid, latent_grid, n_layers_grid, lr_grid, bs_grid,
+                         zero_weight_grid, nonzero_weight_grid]
+    model_configs = [dict(zip(MODEL_PARAM_NAMES, combo))
+                     for combo in product(*model_param_grids)]
+    needs_selection = len(model_configs) > 1
 
-        best_cfg = None
-        best_val = float("inf")
-        best_val_loss = float("inf")
-        fold_val_combinations = []
+    print("\n" + "=" * 60)
+    print(f"[PLAN] transformation={trans1}  normalization={normalization}  "
+          f"({n_cells} cells, {input_dim} genes)")
+    print(f"[PLAN] {len(model_configs)} model configuration(s) -> "
+          + ("nested cross-validation, then a refit on all cells"
+             if needs_selection else
+             "no selection needed; best_epoch pass, then a refit on all cells"))
+    print("=" * 60, flush=True)
 
-        print(f"[Fold {fold_id}] Evaluating all hyperparameter combinations on validation set...")
-        for (threshold, trans1, trans2, n_hidden, n_latent, n_layers,
-             lr, bs, zero_w, nonzero_w) in product(
-                threshold_grid, trans1_grid, trans2_grid,
-                hidden_grid, latent_grid, n_layers_grid,
-                lr_grid, bs_grid,
-                zero_weight_grid, nonzero_weight_grid):
+    def _fit(cfg, train_idx, max_epochs, val_idx=None):
+        """Train one configuration from a fresh, identically seeded initialisation.
 
-            cache_key = (threshold, trans1, trans2)
-            X, X2 = tensor_cache[cache_key]
-            input_dim = X.shape[1]
-
-            tr_loader = make_loader(
-                X,
-                tr_idx,
-                batch_size=bs,
-                shuffle=True,
-                drop_last=should_drop_last_train(len(tr_idx), bs, min_bn_batch=16),
-            )
-            val_loader = make_loader(X, val_idx, batch_size=bs, shuffle=False, drop_last=False)
-
-            model = ScVIModel(
-                n_input=input_dim,
-                n_hidden=n_hidden,
-                n_latent=n_latent,
-                n_layers=n_layers,
-                dropout_rate=0.1,
-            ).to(device)
-            optimizer = optim.Adam(model.parameters(), lr=lr)
-
-            if early_stop:
-                es_inner = EarlyStopping(patience=patience, min_delta=min_delta)
-            beta_ep = get_kl_weight(0)
-            for ep in range(1, epochs_inner + 1):
-                beta_ep = get_kl_weight(ep)
-                train_one_epoch(model, tr_loader, optimizer, device, beta_ep,
-                                weight_strategy, zero_w, nonzero_w, trans1)
-                if early_stop and (ep % check_every == 0):
-                    if eval_metric == 'val_loss':
-                        curr_val = eval_loss(model, val_loader, device, beta_ep,
-                                             weight_strategy, zero_w, nonzero_w, trans1)
-                    elif eval_metric in ['pearson', 'spearman']:
-                        curr_val = eval_correlation_residual(
-                            model, val_loader, X2, val_idx, device, eval_metric)
-                    else:
-                        raise ValueError(f"Unknown eval_metric: {eval_metric}")
-                    if es_inner.step(curr_val, model):
-                        print(f"    [inner] early-stopped at epoch {ep}, "
-                              f"best_val={es_inner.best:.4f}", flush=True)
-                        if es_inner.best_state is not None:
-                            model.load_state_dict(es_inner.best_state)
-                        break
-
-            final_beta = beta_ep
-            if eval_metric == 'val_loss':
-                val_metric = eval_loss(model, val_loader, device, final_beta,
-                                       weight_strategy, zero_w, nonzero_w, trans1)
-                val_loss = val_metric
-            elif eval_metric in ['pearson', 'spearman']:
-                val_metric = eval_correlation_residual(
-                    model, val_loader, X2, val_idx, device, eval_metric)
-                val_loss = eval_loss(model, val_loader, device, final_beta,
-                                     weight_strategy, zero_w, nonzero_w, trans1)
-            else:
-                raise ValueError(f"Unknown eval_metric: {eval_metric}")
-
-            config_name = (
-                f"{zero_w}_{nonzero_w}_{trans1}_{trans2}_{threshold}_"
-                f"{n_hidden}_{n_latent}_{n_layers}_{lr}_{bs}_kl_warmup"
-            )
-            fold_val_combinations.append({
-                'config_name': config_name, 'val_metric': val_metric, 'fold': fold_id
-            })
-
-            if val_metric is None or not np.isfinite(val_metric):
-                print(
-                    f"[WARNING] Fold {fold_id}: invalid val_metric={val_metric}, val_loss={val_loss} "
-                    f"for threshold={threshold}, trans1={trans1}, trans2={trans2}, "
-                    f"n_hidden={n_hidden}, n_latent={n_latent}, n_layers={n_layers}, "
-                    f"lr={lr}, bs={bs}, "
-                    f"zero_w={zero_w}, nonzero_w={nonzero_w}"
-                )
-                continue
-
-            if val_metric < best_val:
-                best_val = val_metric
-                best_val_loss = val_loss
-                best_cfg = dict(
-                    threshold=threshold, trans1=trans1, trans2=trans2,
-                    n_hidden=n_hidden, n_latent=n_latent, n_layers=n_layers,
-                    lr=lr, batch_size=bs,
-                    kl_min_weight=0.0, kl_max_weight=1.0, n_epochs_kl_warmup=400,
-                    final_kl_weight=final_beta,
-                    zero_weight=zero_w, nonzero_weight=nonzero_w,
-                )
-
-        all_val_results.extend(fold_val_combinations)
-        if best_cfg is None:
-            raise ValueError(f"[Fold {fold_id}] No valid config found.")
-
-        print(f"[Fold {fold_id}] Best config: {best_cfg}, "
-              f"val_metric({eval_metric})={best_val:.4f}")
-        fold_best_cfgs.append(best_cfg)
-        fold_val_losses.append(best_val_loss)
-        fold_val_metrics.append(best_val)
-
-        # --- retrain best config on full train, evaluate on test ---
-        print(f"[Fold {fold_id}] Retraining best config on full training set...")
-        c = best_cfg
-        cache_key = (c["threshold"], c["trans1"], c["trans2"])
-        X, X2 = tensor_cache[cache_key]
-        input_dim = X.shape[1]
-
-        use_outer_val = outer_es_val_frac > 0.0
-        if use_outer_val:
-            tr_full_idx, outer_val_idx = train_test_split(
-                outer_train_idx, test_size=outer_es_val_frac, random_state=seed, shuffle=True
-            )
-        else:
-            tr_full_idx = outer_train_idx
-
-        train_loader_full = make_loader(
-            X,
-            tr_full_idx,
-            batch_size=c["batch_size"],
-            shuffle=True,
-            drop_last=should_drop_last_train(len(tr_full_idx), c["batch_size"], min_bn_batch=16),
-        )
-        if use_outer_val:
-            outer_val_loader = make_loader(X, outer_val_idx, batch_size=c["batch_size"], shuffle=False, drop_last=False)
-
+        val_idx given -> early-stop on it, restore the best checkpoint, and return the
+                         epoch at which it was reached.
+        val_idx None  -> train exactly max_epochs with no validation and no early
+                         stopping (used for every model that is actually kept).
+        Returns (model, best_epoch, best_metric, val_loss_at_best).
+        """
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
         model = ScVIModel(
-            n_input=input_dim,
-            n_hidden=c["n_hidden"],
-            n_latent=c["n_latent"],
-            n_layers=c["n_layers"],
-            dropout_rate=0.1,
-        ).to(device)
-        optimizer = optim.Adam(model.parameters(), lr=c["lr"])
+            n_input=input_dim, n_hidden=cfg["n_hidden"], n_latent=cfg["n_latent"],
+            n_layers=cfg["n_layers"], dropout_rate=0.1).to(device)
+        optimizer = optim.Adam(model.parameters(), lr=cfg["lr"])
+        train_loader = make_loader(X, train_idx, batch_size=cfg["batch_size"], shuffle=True)
 
-        if early_stop:
-            es_outer = EarlyStopping(patience=patience, min_delta=min_delta)
-        beta_ep = get_kl_weight(0)
-        for ep in range(1, epochs_outer + 1):
-            beta_ep = get_kl_weight(ep)
-            tr_loss = train_one_epoch(
-                model, train_loader_full, optimizer, device, beta_ep,
-                weight_strategy, c["zero_weight"], c["nonzero_weight"], c["trans1"],
-            )
-            if early_stop and (ep % check_every == 0):
-                if use_outer_val:
-                    if eval_metric == 'val_loss':
-                        monitor = eval_loss(
-                            model, outer_val_loader, device, beta_ep,
-                            weight_strategy, c["zero_weight"], c["nonzero_weight"], c["trans1"])
-                    elif eval_metric in ['pearson', 'spearman']:
-                        monitor = eval_correlation_residual(
-                            model, outer_val_loader, X2, outer_val_idx, device, eval_metric)
+        if val_idx is None:
+            for ep in range(1, int(max_epochs) + 1):
+                train_one_epoch(model, train_loader, optimizer, device, 0.0,
+                                weight_strategy, cfg["zero_weight"],
+                                cfg["nonzero_weight"], trans1)
+            return model, int(max_epochs), None, None
+
+        val_loader = make_loader(X, val_idx, batch_size=cfg["batch_size"], shuffle=False)
+        es = EarlyStopping(patience=patience, min_delta=min_delta)
+        for ep in range(1, int(max_epochs) + 1):
+            train_one_epoch(model, train_loader, optimizer, device, 0.0,
+                                weight_strategy, cfg["zero_weight"],
+                                cfg["nonzero_weight"], trans1)
+            if ep % check_every == 0:
+                if eval_metric == 'val_loss':
+                    curr = eval_loss(model, val_loader, device, 0.0, weight_strategy,
+                                     cfg["zero_weight"], cfg["nonzero_weight"], trans1)
+                elif eval_metric in ['pearson', 'spearman']:
+                    curr = eval_correlation_residual(model, val_loader, X2, val_idx,
+                                                     device, eval_metric)
                 else:
-                    monitor = tr_loss
-                if es_outer.step(monitor, model):
-                    tag = "val" if use_outer_val else "train"
-                    print(f"[outer retrain] early-stopped at epoch {ep}, "
-                          f"best_{tag}={es_outer.best:.4f}", flush=True)
-                    if es_outer.best_state is not None:
-                        model.load_state_dict(es_outer.best_state)
+                    raise ValueError(f"Unknown eval_metric: {eval_metric}")
+                if es.step(curr, model, epoch=ep):
                     break
+        # restore the best checkpoint whether or not early stopping fired
+        if es.best_state is not None:
+            model.load_state_dict(es.best_state)
+        v_loss = eval_loss(model, val_loader, device, 0.0, weight_strategy,
+                                     cfg["zero_weight"], cfg["nonzero_weight"], trans1)
+        return model, int(max(1, es.best_epoch)), float(es.best), float(v_loss)
 
-        final_beta = beta_ep
-
-        # test evaluation
-        test_loader = make_loader(X, outer_test_idx, batch_size=c["batch_size"], shuffle=False, drop_last=False)
-        test_loss = eval_loss(
-            model, test_loader, device, final_beta,
-            weight_strategy, c["zero_weight"], c["nonzero_weight"], c["trans1"])
+    def _evaluate(model, idx, cfg):
+        loader = make_loader(X, idx, batch_size=cfg["batch_size"], shuffle=False)
+        val_loader = loader
+        loss = eval_loss(model, val_loader, device, 0.0, weight_strategy,
+                                     cfg["zero_weight"], cfg["nonzero_weight"], trans1)
         if eval_metric == 'val_loss':
-            test_metric = test_loss
-        elif eval_metric in ['pearson', 'spearman']:
-            test_metric = eval_correlation_residual(
-                model, test_loader, X2, outer_test_idx, device, eval_metric)
+            metric = loss
         else:
-            test_metric = test_loss
+            metric = eval_correlation_residual(model, loader, X2, idx, device, eval_metric)
+        return float(loss), float(metric)
 
-        fold_test_losses.append(test_loss)
-        fold_test_metrics.append(test_metric)
-        print(f"[Test] loss={test_loss:.4f}, metric({eval_metric})={test_metric:.4f}")
+    fold_best_cfgs, fold_val_losses, fold_val_metrics = [], [], []
+    fold_test_losses, fold_test_metrics, fold_best_epochs = [], [], []
+    all_val_results = []
+    inner_metric_by_config, inner_epoch_by_config = {}, {}
 
-        # save
-        fold_dir = os.path.join(save_dir, f"fold_{fold_id}")
-        os.makedirs(fold_dir, exist_ok=True)
-        torch.save(model.state_dict(), os.path.join(fold_dir, "scvi_mse_weights.pt"))
-        with open(os.path.join(fold_dir, "scvi_mse_config.json"), "w") as f:
-            json.dump({
-                "input_dim": int(input_dim),
-                "threshold": float(c["threshold"]),
-                "trans1": str(c["trans1"]),
-                "trans2": str(c["trans2"]),
-                "n_hidden": int(c["n_hidden"]),
-                "n_latent": int(c["n_latent"]),
-                "n_layers": int(c["n_layers"]),
-                "lr": float(c["lr"]),
-                "batch_size": int(c["batch_size"]),
-                "kl_min_weight": float(c["kl_min_weight"]),
-                "kl_max_weight": float(c["kl_max_weight"]),
-                "n_epochs_kl_warmup": int(c["n_epochs_kl_warmup"]),
-                "final_kl_weight": float(final_beta),
-                "zero_weight": float(c["zero_weight"]),
-                "nonzero_weight": float(c["nonzero_weight"]),
-                "weight_strategy": weight_strategy,
-                "eval_metric": eval_metric,
-                "inner_val_loss": float(best_val_loss),
-                "inner_val_metric": float(best_val),
-                "outer_test_loss": float(test_loss),
-                "outer_test_metric": float(test_metric),
-                "seed": int(seed),
-            }, f)
-        print(f"[SAVE] saved to: {fold_dir}")
+    if not needs_selection:
+        # ---------- single configuration: two passes, no KFold, no outer test ----------
+        final_cfg = model_configs[0]
+        tr_idx, va_idx = train_test_split(all_cell_idx, test_size=inner_val_frac,
+                                          random_state=seed, shuffle=True)
+        print(f"\n[pass 1] {len(tr_idx)} train / {len(va_idx)} validation cells, "
+              f"early stopping on validation to pick best_epoch", flush=True)
+        tmp_model, final_best_epoch, final_inner_metric, final_inner_loss = _fit(
+            final_cfg, tr_idx, epochs_inner, val_idx=va_idx)
+        del tmp_model          # the pass-1 model only supplies best_epoch; it is discarded
+        print(f"[pass 1] best_epoch={final_best_epoch}  "
+              f"val_metric({eval_metric})={final_inner_metric:.6f}", flush=True)
 
-    # summary
+        all_val_results.append(dict(config_name=str(final_cfg), fold=0,
+                                    val_metric=float(final_inner_metric),
+                                    val_loss=float(final_inner_loss),
+                                    best_epoch=int(final_best_epoch)))
+        selection_mode, n_splits_used = "single_config", 0
+        outer_test_loss_mean = outer_test_loss_sd = None
+        outer_test_metric_mean = outer_test_metric_sd = None
+    else:
+        # ---------------------- nested cross-validation ----------------------
+        kf = KFold(n_splits=n_splits, shuffle=True, random_state=seed)
+        for fold_id, (outer_train_idx, outer_test_idx) in enumerate(kf.split(df1_raw), 1):
+            print(f"\n========== Outer fold {fold_id}/{n_splits} ==========", flush=True)
+            tr_idx, val_idx = train_test_split(outer_train_idx, test_size=inner_val_frac,
+                                               random_state=seed, shuffle=True)
+            best_ci, best_val, best_val_loss, best_ep = None, float("inf"), float("inf"), None
+
+            for ci, cfg in enumerate(model_configs):
+                tmp_model, ep_i, m_i, l_i = _fit(cfg, tr_idx, epochs_inner, val_idx=val_idx)
+                del tmp_model      # inner models are temporary: they only rank configs
+                if m_i is None or not np.isfinite(m_i):
+                    print(f"  [WARNING] fold {fold_id} config {cfg} gave "
+                          f"val_metric={m_i}; skipped", flush=True)
+                    continue
+                inner_metric_by_config.setdefault(ci, []).append(float(m_i))
+                inner_epoch_by_config.setdefault(ci, []).append(int(ep_i))
+                all_val_results.append(dict(config_name=str(cfg), fold=fold_id,
+                                            val_metric=float(m_i), val_loss=float(l_i),
+                                            best_epoch=int(ep_i)))
+                if m_i < best_val:
+                    best_ci, best_val, best_val_loss, best_ep = ci, float(m_i), float(l_i), int(ep_i)
+
+            if best_ci is None:
+                raise ValueError(f"[Fold {fold_id}] no configuration produced a finite "
+                                 f"inner validation metric")
+            fold_cfg = model_configs[best_ci]
+            print(f"[Fold {fold_id}] inner-selected config: {fold_cfg}  "
+                  f"inner_val_metric={best_val:.6f}  best_epoch={best_ep}", flush=True)
+
+            # refit the fold's config on the FULL outer training set for its best_epoch,
+            # with no validation split and no early stopping
+            fold_model, _, _, _ = _fit(fold_cfg, outer_train_idx, best_ep, val_idx=None)
+
+            # the outer test set is touched exactly once, here, and only to evaluate
+            t_loss, t_metric = _evaluate(fold_model, outer_test_idx, fold_cfg)
+            print(f"[Fold {fold_id}] outer test (evaluation only): "
+                  f"loss={t_loss:.6f}  metric({eval_metric})={t_metric:.6f}", flush=True)
+
+            # the summary writer also prints the experimental conditions, so they are
+            # merged into the per-fold record; model_configs itself stays pure
+            fold_best_cfgs.append(dict(threshold=threshold, trans1=trans1,
+                                       trans2=trans2, final_kl_weight=0.0, **fold_cfg))
+            fold_val_losses.append(best_val_loss)
+            fold_val_metrics.append(best_val)
+            fold_test_losses.append(t_loss)
+            fold_test_metrics.append(t_metric)
+            fold_best_epochs.append(int(best_ep))
+
+            fold_dir = os.path.join(save_dir, f"fold_{fold_id}")
+            os.makedirs(fold_dir, exist_ok=True)
+            torch.save(fold_model.state_dict(), os.path.join(fold_dir, "weights.pt"))
+            with open(os.path.join(fold_dir, "metrics.json"), "w") as fh:
+                json.dump(dict(fold=fold_id, config=fold_cfg, best_epoch=int(best_ep),
+                               inner_val_metric=best_val, inner_val_loss=best_val_loss,
+                               outer_test_loss=t_loss, outer_test_metric=t_metric,
+                               note=("outer test metrics are for evaluation only and are "
+                                     "never used to select a configuration, an epoch, a "
+                                     "fold or the final model")), fh, indent=2)
+            del fold_model
+
+        # final configuration comes from the INNER validation results only
+        mean_inner = {ci: float(np.mean(v)) for ci, v in inner_metric_by_config.items()
+                      if len(v) > 0}
+        if not mean_inner:
+            raise ValueError("no configuration produced a finite inner validation metric")
+        best_ci = min(mean_inner, key=lambda c: mean_inner[c])
+        final_cfg = model_configs[best_ci]
+        final_inner_metric = mean_inner[best_ci]
+        final_best_epoch = int(max(1, round(float(np.median(inner_epoch_by_config[best_ci])))))
+        selection_mode, n_splits_used = "nested_cv", int(n_splits)
+
+        outer_test_loss_mean = float(np.mean(fold_test_losses))
+        outer_test_loss_sd = float(np.std(fold_test_losses, ddof=1)) if len(fold_test_losses) > 1 else 0.0
+        outer_test_metric_mean = float(np.mean(fold_test_metrics))
+        outer_test_metric_sd = float(np.std(fold_test_metrics, ddof=1)) if len(fold_test_metrics) > 1 else 0.0
+
+        print(f"\n[OUTER TEST, evaluation only] loss  mean={outer_test_loss_mean:.6f} "
+              f"sd={outer_test_loss_sd:.6f}")
+        print(f"[OUTER TEST, evaluation only] {eval_metric} mean={outer_test_metric_mean:.6f} "
+              f"sd={outer_test_metric_sd:.6f}")
+        print(f"[SELECT] final config from mean inner validation metric: {final_cfg}")
+        print(f"[SELECT] final best_epoch = median of {inner_epoch_by_config[best_ci]} "
+              f"= {final_best_epoch}", flush=True)
+
+    # ---------------- the one model that is kept: all cells, fixed epochs ----------------
+    print(f"\n========== Final model: all {n_cells} cells, {final_best_epoch} epochs, "
+          f"no validation split ==========", flush=True)
+    final_model, _, _, _ = _fit(final_cfg, all_cell_idx, final_best_epoch, val_idx=None)
+
+    final_weights_path = os.path.join(save_dir, f"final_model_{norm_tag}.pt")
+    final_config_path = os.path.join(save_dir, f"final_config_{norm_tag}.json")
+    torch.save(final_model.state_dict(), final_weights_path)
+    with open(final_config_path, "w") as fh:
+        json.dump({
+            "normalization": str(normalization),
+            "transformation": str(trans1),
+            "trans1": str(trans1),
+            "trans2": str(trans2),
+            "threshold": float(threshold),
+            "input_dim": int(input_dim),
+            "n_hidden": final_cfg["n_hidden"],
+            "n_latent": final_cfg["n_latent"],
+            "n_layers": final_cfg["n_layers"],
+            "lr": final_cfg["lr"],
+            "batch_size": final_cfg["batch_size"],
+            "zero_weight": final_cfg["zero_weight"],
+            "nonzero_weight": final_cfg["nonzero_weight"],
+            "weight_strategy": weight_strategy,
+            "eval_metric": eval_metric,
+            "final_best_epoch": int(final_best_epoch),
+            "selection_mode": selection_mode,
+            "n_splits_used": int(n_splits_used),
+            "inner_validation_metric": float(final_inner_metric),
+            "outer_test_loss_mean": outer_test_loss_mean,
+            "outer_test_loss_sd": outer_test_loss_sd,
+            "outer_test_metric_mean": outer_test_metric_mean,
+            "outer_test_metric_sd": outer_test_metric_sd,
+            "n_cells_total": int(n_cells),
+            "n_cells_trained_on": int(n_cells),
+            "seed": int(seed)
+        }, fh, indent=2)
+    print(f"[SAVE] final model  -> {final_weights_path}")
+    print(f"[SAVE] final config -> {final_config_path}", flush=True)
+
     val_df = pd.DataFrame(all_val_results)
-    val_df_grouped = val_df.groupby('config_name')['val_metric'].mean().reset_index()
-    val_df_grouped.columns = ['config_name', 'mean_val_metric']
-    val_df_grouped = val_df_grouped.sort_values('mean_val_metric')
-    val_path = os.path.join(save_dir, 'all_validation_results.csv')
+    if val_df.empty:
+        val_df = pd.DataFrame(columns=["config_name", "fold", "val_metric",
+                                       "val_loss", "best_epoch"])
+        val_df_grouped = val_df.copy()
+    else:
+        val_df_grouped = (val_df.groupby("config_name", as_index=False)
+                          .agg(mean_val_metric=("val_metric", "mean"),
+                               sd_val_metric=("val_metric", "std"),
+                               median_best_epoch=("best_epoch", "median"),
+                               n_folds=("fold", "nunique"))
+                          .sort_values("mean_val_metric"))
+    val_path = os.path.join(save_dir, f"all_validation_results_{norm_tag}.csv")
     val_df_grouped.to_csv(val_path, index=False)
-    print(f"\n[SAVE] All validation results saved to: {val_path}")
-    print(f"\n{'=' * 60}")
-    print("TOP 5 CONFIGURATIONS BY VALIDATION METRIC:")
-    print(val_df_grouped.head())
-
-    mean_test = float(np.mean(fold_test_losses))
-    std_test = float(np.std(fold_test_losses, ddof=1)) if len(fold_test_losses) > 1 else 0.0
-    mean_test_metric = float(np.mean(fold_test_metrics))
-    std_test_metric = float(np.std(fold_test_metrics, ddof=1)) if len(fold_test_metrics) > 1 else 0.0
-
-    print(f"\n[FINAL] {n_splits}-fold Test Loss: mean={mean_test:.4f}, sd={std_test:.4f}")
-    print(f"[FINAL] {n_splits}-fold Test Metric ({eval_metric}): "
-          f"mean={mean_test_metric:.4f}, sd={std_test_metric:.4f}")
+    print(f"[SAVE] inner validation results -> {val_path}")
 
     return {
         "best_cfgs_per_fold": fold_best_cfgs,
@@ -957,13 +970,27 @@ def outer10_inner_holdout(
         "val_metrics_per_fold": fold_val_metrics,
         "test_losses_per_fold": fold_test_losses,
         "test_metrics_per_fold": fold_test_metrics,
-        "test_loss_mean": mean_test,
-        "test_loss_sd": std_test,
-        "test_metric_mean": mean_test_metric,
-        "test_metric_sd": std_test_metric,
+        "best_epochs_per_fold": fold_best_epochs,
+        "test_loss_mean": outer_test_loss_mean,
+        "test_loss_sd": outer_test_loss_sd,
+        "test_metric_mean": outer_test_metric_mean,
+        "test_metric_sd": outer_test_metric_sd,
         "eval_metric": eval_metric,
+        "selection_mode": selection_mode,
+        "n_splits_used": int(n_splits_used),
+        "final_config": final_cfg,
+        "final_best_epoch": int(final_best_epoch),
+        "inner_validation_metric": float(final_inner_metric),
+        "normalization": str(normalization),
+        "norm_tag": norm_tag,
+        "final_weights_path": final_weights_path,
+        "final_config_path": final_config_path,
+        "n_cells_total": int(n_cells),
         "validation_df": val_df_grouped,
     }
+
+def _fmt(v):
+    return "null" if v is None else f"{v:.6f}"
 
 
 def main(args):
@@ -1019,6 +1046,7 @@ def main(args):
         zero_weight_grid=zero_weight_grid,
         nonzero_weight_grid=nonzero_weight_grid,
         save_dir=save_dir,
+        normalization=args.normalization,
         eval_metric=args.eval_metric,
     )
 
@@ -1043,10 +1071,10 @@ def main(args):
                         f"{cfg['lr']}\t{cfg['batch_size']}\t{cfg['final_kl_weight']}\t"
                         f"{cfg['zero_weight']}\t{cfg['nonzero_weight']}\t"
                         f"{vl:.6f}\t{vm:.6f}\t{tl:.6f}\t{tm:.6f}\n")
-            f.write(f"# mean_test_loss\t{results['test_loss_mean']:.6f}\n")
-            f.write(f"# sd_test_loss\t{results['test_loss_sd']:.6f}\n")
-            f.write(f"# mean_test_metric ({args.eval_metric})\t{results['test_metric_mean']:.6f}\n")
-            f.write(f"# sd_test_metric ({args.eval_metric})\t{results['test_metric_sd']:.6f}\n")
+            f.write(f"# mean_test_loss\t{_fmt(results['test_loss_mean'])}\n")
+            f.write(f"# sd_test_loss\t{_fmt(results['test_loss_sd'])}\n")
+            f.write(f"# mean_test_metric ({args.eval_metric})\t{_fmt(results['test_metric_mean'])}\n")
+            f.write(f"# sd_test_metric ({args.eval_metric})\t{_fmt(results['test_metric_sd'])}\n")
         print(f"[SAVE] wrote summary to {args.out_summary}")
 
 
@@ -1076,6 +1104,8 @@ if __name__ == "__main__":
     parser.add_argument('--inner_val_frac', type=float, default=0.1)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--cpu', action='store_true')
+    parser.add_argument('--normalization', type=str, required=True,
+                        help='normalization label from the driver; names the final model file')
     parser.add_argument('--out_summary', type=str, required=True)
     parser.add_argument('--early_stop', action='store_true', default=False)
     parser.add_argument('--patience', type=int, default=10)
