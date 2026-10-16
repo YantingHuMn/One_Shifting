@@ -4,7 +4,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --time=3-00:00:00
 #SBATCH --mem=100G
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=1
 #SBATCH --array=0-3
 #SBATCH --output=/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/AAA_logs/submit_HCA_pip_%A_%a.out
 #SBATCH --error=/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/AAA_logs/submit_HCA_pip_%A_%a.err
@@ -24,7 +24,7 @@ export sample_name
 export folder_name="HCA"
 export dropout_keep_par
 
-methods=("VAE" "DCA_mse" "scVI_mse" "Transformer_denoise")
+methods=("VAE" "DCA_mse")
 # methods=("scVI_mse" "Transformer_denoise")
 
 configs=(

@@ -205,7 +205,8 @@ def eval_loss(model, loader, device, beta, weight_strategy='fixed',
             print(f"  [ERROR] NaN/Inf in eval input batch {batch_idx}, trans={trans}")
             return float("inf")
 
-        recon, mu, logvar = model(x)
+        mu, logvar = model.encode(x)
+        recon = model.decode(mu)
 
         if torch.isnan(recon).any() or torch.isinf(recon).any():
             print(f"  [ERROR] NaN/Inf in eval reconstruction at batch {batch_idx}, trans={trans}")
@@ -253,7 +254,8 @@ def eval_correlation_residual(model, loader, v2_data, indices, device, corr_type
     
     for (x,) in loader:
         x = x.to(device)
-        recon, mu, logvar = model(x)
+        mu, logvar = model.encode(x)
+        recon = model.decode(mu)
         all_v1.append(x.cpu().numpy())
         all_recon.append(recon.cpu().numpy())
     

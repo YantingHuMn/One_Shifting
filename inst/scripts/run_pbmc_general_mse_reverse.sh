@@ -153,14 +153,14 @@ fi
 echo "Bubble reset done, proceeding with $method..."
 
 if [ "$method" = "VAE" ]; then
-    METHOD_ARGS="--beta_grid 0 --hidden_grid1 4096 --hidden_grid2 1024"
+    METHOD_ARGS="--beta_grid 0 --hidden_grid1 4096 --hidden_grid2 1024 --epochs_inner 100 --epochs_outer 100"
 elif [ "$method" = "DCA_mse" ]; then
-    METHOD_ARGS="--dropout_grid 0.0 --hidden_grid1 4096 --hidden_grid2 1024"
+    METHOD_ARGS="--dropout_grid 0.0 --hidden_grid1 4096 --hidden_grid2 1024 --epochs_inner 100 --epochs_outer 100"
 elif [ "$method" = "scVI_mse" ]; then
     # METHOD_ARGS="--hidden_grid 512,256,128,64"
     METHOD_ARGS="--hidden_grid 512 --latent_grid 10 --epochs_inner 400 --epochs_outer 400"
 elif [ "$method" = "Transformer_denoise" ]; then
-    METHOD_ARGS="--n_tokens_grid 32 --d_model_grid 64 --nhead_grid 4 --num_layers_grid 1 --dim_feedforward_grid 128 --dropout_grid 0.1"
+    METHOD_ARGS="--n_tokens_grid 32 --d_model_grid 64 --nhead_grid 4 --num_layers_grid 1 --dim_feedforward_grid 128 --dropout_grid 0.1 --epochs_inner 100 --epochs_outer 100"
 fi
         
 # train - find par
@@ -210,7 +210,8 @@ for this_trans_factor in "${trans_factor[@]}"; do
         --data_path2 "$DATA_PATH2" \
         --transformed_out_dir "$OUT_DIR" \
         --saved_models_dir "$SAVED_DIR" \
-        --out_path "$OUT_PATH"
+        --out_path "$OUT_PATH" \
+        --normalization "$this_norm_factor"
 
         python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
         conda deactivate 

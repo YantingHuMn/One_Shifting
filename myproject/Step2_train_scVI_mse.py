@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import TensorDataset, DataLoader, Subset
+from torch.utils.data import TensorDataset, DataLoader, Subset, RandomSampler, BatchSampler
 
 import pandas as pd
 import argparse
@@ -451,7 +451,10 @@ def eval_loss(model, loader, device, beta, weight_strategy='fixed', zero_weight=
     n = 0
     for (x,) in loader:
         x = x.to(device)
-        recon, mu, logvar = model(x)
+        x_input = torch.log1p(x) if model.log_variational else x
+        mu, variance, _ = model.z_encoder(x_input)
+        recon = model.decoder(mu)
+        logvar = torch.log(variance)
         loss = vae_loss(recon, x, mu, logvar, beta, weight_strategy, zero_weight, nonzero_weight, trans)        
         total += loss.item() * x.size(0)
         n += x.size(0)
@@ -465,7 +468,10 @@ def eval_correlation_residual(model, loader, v2_data, indices, device, corr_type
     all_recon = []
     for (x,) in loader:
         x = x.to(device)
-        recon, mu, logvar = model(x)
+        x_input = torch.log1p(x) if model.log_variational else x
+        mu, variance, _ = model.z_encoder(x_input)
+        recon = model.decoder(mu)
+        logvar = torch.log(variance)
         all_v1.append(x.cpu().numpy())
         all_recon.append(recon.cpu().numpy())
     v1_array = np.vstack(all_v1)
@@ -527,11 +533,62 @@ def parse_grid(s, typ=int):
     return [typ(x) for x in s.split(",") if x.strip() != ""]
 
 
-def should_drop_last_train(n, bs, min_bn_batch=16):
-    if n <= bs:
-        return False
-    remainder = n % bs
-    return 0 < remainder < min_bn_batch
+class MergeSingletonBatchSampler:
+    def __init__(self, sampler, batch_size):
+        self.sampler = sampler
+        self.batch_size = batch_size
+
+    def __iter__(self):
+        previous_batch = None
+
+        for batch in BatchSampler(
+            self.sampler,
+            batch_size=self.batch_size,
+            drop_last=False
+        ):
+            if previous_batch is None:
+                previous_batch = batch
+            elif len(batch) == 1:
+                previous_batch.extend(batch)
+                yield previous_batch
+                previous_batch = None
+            else:
+                yield previous_batch
+                previous_batch = batch
+
+        if previous_batch is not None:
+            yield previous_batch
+
+    def __len__(self):
+        n = len(self.sampler)
+        n_batches = (n + self.batch_size - 1) // self.batch_size
+
+        if n > self.batch_size and n % self.batch_size == 1:
+            return n_batches - 1
+
+        return n_batches
+
+
+def make_loader(X, idx, batch_size, shuffle, merge_singleton=False):
+    subset = Subset(TensorDataset(X), idx)
+
+    if merge_singleton:
+        sampler = RandomSampler(subset) if shuffle else range(len(subset))
+
+        return DataLoader(
+            subset,
+            batch_sampler=MergeSingletonBatchSampler(
+                sampler,
+                batch_size
+            )
+        )
+
+    return DataLoader(
+        subset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        drop_last=False
+    )
 
 
 def sanitize_norm_name(norm):
@@ -542,14 +599,6 @@ def sanitize_norm_name(norm):
     """
     return re.sub(r"[^0-9A-Za-z._+-]", "_", str(norm).strip())
 
-def make_loader(X, idx, batch_size, shuffle, drop_last=False):
-    subset = Subset(TensorDataset(X), idx)
-    return DataLoader(
-        subset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        drop_last=drop_last
-    )
 
 def _apply_trans(df, trans):
     if trans == "sqrt+1":
@@ -759,9 +808,7 @@ def outer10_inner_holdout(
         # evaluation loaders need no such guard: eval_loss and eval_correlation_residual
         # both put the model in eval() mode, where BatchNorm uses its running statistics.
         train_loader = make_loader(X, train_idx, batch_size=cfg["batch_size"],
-                                   shuffle=True,
-                                   drop_last=should_drop_last_train(
-                                       len(train_idx), cfg["batch_size"], min_bn_batch=16))
+                                   shuffle=True, merge_singleton=True)
 
         if val_idx is None:
             for ep in range(1, int(max_epochs) + 1):
