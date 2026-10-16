@@ -189,27 +189,28 @@ for this_trans_factor in "${trans_factor[@]}"; do
         conda activate vae_env2
         python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
-        # python -u ../One_Shifting/myproject/Step2_train_${method}.py \
-        # --data_path1 "$DATA_PATH1" \
-        # --data_path2 "$DATA_PATH2" \
-        # --out_summary "$SUMMARY_FILE" \
-        # --early_stop \
-        # --eval_metric val_loss \
-        # --trans1_grid "$this_trans_factor" \
-        # --trans2_grid "$V2_trans_factor" \
-        # --nonzero_weight_grid 1.0 \
-        # $METHOD_ARGS
+        python -u ../One_Shifting/myproject/Step2_train_${method}.py \
+        --data_path1 "$DATA_PATH1" \
+        --data_path2 "$DATA_PATH2" \
+        --out_summary "$SUMMARY_FILE" \
+        --early_stop \
+        --eval_metric val_loss \
+        --trans1_grid "$this_trans_factor" \
+        --trans2_grid "$V2_trans_factor" \
+        --normalization "$this_norm_factor" \
+        --nonzero_weight_grid 1.0 \
+        $METHOD_ARGS
         
         # reconstruct
         SAVED_DIR="${OUT_DIR}/saved_models"
         OUT_PATH="${OUT_DIR}/reconstruct_trans_by_${this_trans_factor}_norm_by_${this_norm_factor}.feather"
 
-        # python -u ../One_Shifting/myproject/Step3_reconstruct_${method}.py \
-        # --data_path1 "$DATA_PATH1" \
-        # --data_path2 "$DATA_PATH2" \
-        # --transformed_out_dir "$OUT_DIR" \
-        # --saved_models_dir "$SAVED_DIR" \
-        # --out_path "$OUT_PATH"
+        python -u ../One_Shifting/myproject/Step3_reconstruct_${method}.py \
+        --data_path1 "$DATA_PATH1" \
+        --data_path2 "$DATA_PATH2" \
+        --transformed_out_dir "$OUT_DIR" \
+        --saved_models_dir "$SAVED_DIR" \
+        --out_path "$OUT_PATH"
 
         python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
         conda deactivate 
@@ -218,12 +219,7 @@ for this_trans_factor in "${trans_factor[@]}"; do
         echo "=== Step 7: Correlation analysis ==="
         module load conda_R
 
-        # v1_reverse means v1 and recon reverse trans only
-        # v1_reverse_trans_norm_recon_reverse_trans means v1 reverse trans and norm and recon reverse trans only
-        # v1_recon_reverse_trans_norm means v1 and recon reverse trans and norm
         for data_mode in "${DATA_MODES[@]}"; do
-        # for data_mode in v1_reverse v1_reverse_trans_norm_recon_reverse_trans v1_recon_reverse_trans_norm; do
-        # for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
             mode_suffix=$(get_mode_suffix "$data_mode")
 
             # standardize is not invertible, so the only data_mode that reverses the normalization is skipped here.
@@ -266,8 +262,6 @@ echo "=== Post-processing: combine figures and summary ==="
 module load conda_R
 
 for data_mode in "${DATA_MODES[@]}"; do
-# for data_mode in v1_reverse v1_reverse_trans_norm_recon_reverse_trans v1_recon_reverse_trans_norm all_trans_norm; do
-# for data_mode in default v1_trans_v2_trans v1_reverse v1_trans_v2_trans_norm_100000; do
     mode_suffix=$(get_mode_suffix "$data_mode")
 
     COL_Figure_DIR="$OUTPUT_DIR/Figures_col_${mode_suffix}"

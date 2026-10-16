@@ -541,7 +541,13 @@ def outer_cv_inner_holdout(
             nhead=cfg["nhead"], num_layers=cfg["num_layers"],
             dim_feedforward=cfg["dim_feedforward"], dropout=cfg["dropout"]).to(device)
         optimizer = optim.Adam(model.parameters(), lr=cfg["lr"])
-        train_loader = make_loader(X, train_idx, batch_size=cfg["batch_size"], shuffle=True)
+        # DCA and scVI carry BatchNorm1d, which raises in train mode on a batch of one.
+        # should_drop_last_train() drops a trailing batch only when it is smaller than
+        # min_bn_batch, so normal batches are never discarded. The validation / test /
+        # evaluation loaders need no such guard: eval_loss and eval_correlation_residual
+        # both put the model in eval() mode, where BatchNorm uses its running statistics.
+        train_loader = make_loader(X, train_idx, batch_size=cfg["batch_size"],
+                                   shuffle=True)
 
         if val_idx is None:
             for ep in range(1, int(max_epochs) + 1):

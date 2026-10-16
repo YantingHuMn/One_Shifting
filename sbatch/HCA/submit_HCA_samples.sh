@@ -1,12 +1,12 @@
 #!/bin/bash
 dropout_keep_par=""
-tsv="/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA_input_sample_pairs.tsv"
+tsv="/dcs11/hongkai/data/yhu1/One_Shifting_Results/HCA_input_sample_pairs.tsv"
 # run_first_n_sample=4
 
 worker_script="/dcs10/hongkai/data/yhu1/One_Shifting/sbatch/HCA/run_HCA_one_sample_array.sh"
 plot_script="/dcs10/hongkai/data/yhu1/One_Shifting/sbatch/HCA/run_HCA_one_sample_plot.sh"
 
-log_dir="/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/AAA_logs"
+log_dir="/dcs11/hongkai/data/yhu1/One_Shifting_Results/HCA/AAA_logs"
 mkdir -p "$log_dir"
 
 # tail -n +2 "$tsv" | awk -v n="$run_first_n_sample" 'NR <= n {print $2}' | while read -r sample_name; do
@@ -14,7 +14,7 @@ mkdir -p "$log_dir"
 # selected_rows="8,9"
 # selected_rows="10,11,12,13"
 # selected_rows="14,15,16,17,18,19"
-selected_rows="8,9,10,11,12,13,14,15,16,17,18,19"
+selected_rows=""
 
 
 tail -n +2 "$tsv" | awk -v rows="$selected_rows" '
@@ -39,8 +39,8 @@ all || keep[NR] {print $2}
         --job-name="HCA_${dropout_keep_par}_${sample_name}" \
         --exclude=compute-170 \
         --export=ALL,sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}" \
-        --output="${log_dir}/submit_HCA_plot_${dropout_keep_par}_${sample_name}_%a.out" \
-        --error="${log_dir}/submit_HCA_plot_${dropout_keep_par}_${sample_name}_%a.err" \
+        --output="${log_dir}/submit_HCA_gpu_${dropout_keep_par}_${sample_name}_%a.out" \
+        --error="${log_dir}/submit_HCA_gpu_${dropout_keep_par}_${sample_name}_%a.err" \
         "$worker_script" | awk '{print $4}')
 
     echo "Submitted training array job: ${train_job_id}"
