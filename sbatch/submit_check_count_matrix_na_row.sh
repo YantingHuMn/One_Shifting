@@ -14,8 +14,8 @@ cd /dcs10/hongkai/data/yhu1/One_Shifting
 
 folder_names=(
     # "HCA"
-    "ENCODE"
-    # "10x"
+    # "ENCODE"
+    "10x"
 )
 
 folder_name="${folder_names[$SLURM_ARRAY_TASK_ID]}"
@@ -60,10 +60,10 @@ if [[ ! -d "$read_dir" ]]; then
 fi
 
 # Each array task has a different output CSV, so there is no cross-task conflict.
-rm -f "$output_clear_csv"
-rm -f "$output_na_csv"
-rm -f ${read_dir}/${folder_name}_check_method_complete.csv
-rm -f ${read_dir}/${folder_name}_data_description.csv
+# rm -f "$output_clear_csv"
+# rm -f "$output_na_csv"
+# rm -f ${read_dir}/${folder_name}_check_method_complete.csv
+# rm -f ${read_dir}/${folder_name}_data_description.csv
 
 tail -n +2 "$tsv" |
 awk -v rows="$selected_rows" '
@@ -95,35 +95,39 @@ while read -r sample_name; do
     echo "Start sample: $(date)"
     echo "======================================"
 
-    Rscript /dcs10/hongkai/data/yhu1/One_Shifting/R/check_clear_method_summary.R \
-        "$sample_name" \
-        "$read_dir" \
-        "$output_clear_csv"
+    # Rscript /dcs10/hongkai/data/yhu1/One_Shifting/R/check_clear_method_summary.R \
+    #     "$sample_name" \
+    #     "$read_dir" \
+    #     "$output_clear_csv"
 
-    Rscript /dcs10/hongkai/data/yhu1/One_Shifting/R/check_count_matrix_na_row.R \
-        "$sample_name" \
-        "$read_dir" \
-        "$output_na_csv"
+    # Rscript /dcs10/hongkai/data/yhu1/One_Shifting/R/check_count_matrix_na_row.R \
+    #     "$sample_name" \
+    #     "$read_dir" \
+    #     "$output_na_csv"
 
-    Rscript /dcs10/hongkai/data/yhu1/One_Shifting/R/check_method_complete.R \
-        "$sample_name" \
-        "$read_dir" \
-        "${read_dir}/${folder_name}_check_method_complete.csv"
+    # Rscript /dcs10/hongkai/data/yhu1/One_Shifting/R/check_method_complete.R \
+    #     "$sample_name" \
+    #     "$read_dir" \
+    #     "${read_dir}/${folder_name}_check_method_complete.csv"
 
-    Rscript /dcs10/hongkai/data/yhu1/One_Shifting/R/record_data_description.R \
-        "$sample_name" \
-        "$read_dir" \
-        "${read_dir}/${folder_name}_data_description.csv"
+    # Rscript /dcs10/hongkai/data/yhu1/One_Shifting/R/record_data_description.R \
+    #     "$sample_name" \
+    #     "$read_dir" \
+    #     "${read_dir}/${folder_name}_data_description.csv"
 
     export sample_name
     export folder_name="${folder_name}"
     export dropout_keep_par
 
     bash ../One_Shifting/inst/scripts/run_bubble_method_plot.sh \
-        "../One_Shifting/inst/config/config_run_multi_RNA_HCA_10x_ENCODE.sh"
+        "../One_Shifting/inst/config/config_run_multi_RNA_HCA_10x_ENCODE.sh" \
+        "scVI_mse" \
+        "selected"
 
     bash ../One_Shifting/inst/scripts/run_bubble_method_plot.sh \
-        "../One_Shifting/inst/config/config_run_multi_ATAC_HCA_10x_ENCODE.sh"
+        "../One_Shifting/inst/config/config_run_multi_ATAC_HCA_10x_ENCODE.sh" \
+        "scVI_mse" \
+        "selected"
 
     echo "Finished sample_name=${sample_name}"
     echo "End sample: $(date)"

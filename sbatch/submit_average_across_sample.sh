@@ -28,8 +28,9 @@ Rscript ../One_Shifting/R/run_evaluation_across_samples_one_scale.R \
     "$tsv" \
     "all" \
     "" \
-    "col"
-
+    "col" \
+    "scVI_mse" \
+    "selected"
 
 # Rscript ../One_Shifting/R/check_HCA_sparsity.R \
 #     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA"

@@ -120,15 +120,16 @@ def compute_matrix_correlation(pred_df, truth_df):
     else:
         mean_spearman = float(np.mean(spearman_list))
 
-    return mean_pearson, mean_spearman
+    return mean_pearson, mean_spearman, len(pearson_list)
 
-def append_compare_result(compare_path, trans, norm_factor, pearson_corr, spearman_corr):
+def append_compare_result(compare_path, trans, norm_factor, pearson_corr, spearman_corr, n_genes):
     row_df = pd.DataFrame([{
         "method": "mlp_TF_gene",
         "trans": trans,
         "norm_factor": norm_factor,
         "pearson_corr": pearson_corr,
-        "spearman_corr": spearman_corr
+        "spearman_corr": spearman_corr,
+        "n_genes": n_genes
     }])
 
     out_dir = os.path.dirname(compare_path)
@@ -183,9 +184,12 @@ def main(args):
 
     print(f"\n[INFO] Found models for {len(available_genes)}/{len(gene_names)} genes")
 
-    if len(available_genes) == 0:
-        print("[ERROR] No models found! Please check --model_dir path")
-        return
+    if len(available_genes) < len(gene_names):
+        raise RuntimeError(
+            f"Only {len(available_genes)}/{len(gene_names)} genes have trained models -- "
+            f"Step 2 did not finish for this (trans, norm) combination. Refusing to append "
+            f"a partial row to {args.compare_combinations_save_path}."
+        )
 
     # Predict per gene
     pred_dict = {}

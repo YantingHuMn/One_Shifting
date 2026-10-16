@@ -42,6 +42,55 @@ if (length(args) >= 5 && !is.na(args[5]) && args[5] != "") {
     corr_dirs <- c("col", "row")
 }
 
+# args6: comma-separated methods to exclude; use "none" to exclude nothing
+if (length(args) >= 6 && !is.na(args[6]) && args[6] != "" && tolower(args[6]) != "none") {
+    excluded_methods <- str_split(args[6], ",")[[1]]
+    excluded_methods <- str_trim(excluded_methods)
+    excluded_methods <- excluded_methods[excluded_methods != ""]
+} else {
+    excluded_methods <- character(0)
+}
+
+method_filter_suffix <- if (length(excluded_methods) == 1) {
+    paste0("_no_", excluded_methods)
+} else {
+    ""
+}
+
+# args7: "all" for all modes, "selected" for the two selected modes,
+# or a comma-separated list of exact mode suffixes
+available_mode_suffixes <- c(
+    "v1_trans_v2_no_trans",
+    "v1_trans_v2_trans",
+    "v1_reverse_v2_no_trans",
+    "v1_trans_v2_trans_norm_100000",
+    "v1_normF_trans__v2_normF_trans__recon_asis",
+    "v1_raw__v2_raw__recon_revtrans_revnorm"
+)
+
+selected_mode_suffixes <- c(
+    "v1_normF_trans__v2_normF_trans__recon_asis",
+    "v1_raw__v2_raw__recon_revtrans_revnorm"
+)
+
+if (length(args) < 7 || is.na(args[7]) || args[7] == "" || tolower(args[7]) == "all") {
+    mode_suffixes <- available_mode_suffixes
+} else if (tolower(args[7]) == "selected") {
+    mode_suffixes <- selected_mode_suffixes
+} else {
+    mode_suffixes <- str_split(args[7], ",")[[1]]
+    mode_suffixes <- str_trim(mode_suffixes)
+    mode_suffixes <- mode_suffixes[mode_suffixes != ""]
+
+    invalid_mode_suffixes <- setdiff(mode_suffixes, available_mode_suffixes)
+    if (length(invalid_mode_suffixes) > 0) {
+        stop(
+            "args7 contains unsupported mode suffixes: ",
+            paste(invalid_mode_suffixes, collapse = ", ")
+        )
+    }
+}
+
 # Convert label to real folder path
 # no_extra_subdir / none / default means no extra folder
 extra_subdir_path_map <- extra_subdirs
@@ -62,20 +111,6 @@ input_types <- c("RNA", "ATAC")
 corr_object_map <- c(
     col = "gene",
     row = "cell"
-)
-
-data_modes <- c(
-    "default",
-    "v1_trans_v2_trans",
-    "v1_reverse",
-    "v1_trans_v2_trans_norm_100000"
-)
-
-mode_suffix_map <- c(
-    default = "v1_trans_v2_no_trans",
-    v1_trans_v2_trans = "v1_trans_v2_trans",
-    v1_reverse = "v1_reverse_v2_no_trans",
-    v1_trans_v2_trans_norm_100000 = "v1_trans_v2_trans_norm_100000"
 )
 
 # ============================================================
@@ -117,10 +152,12 @@ sample_names <- sample_info$sample_name
 
 print(sample_names)
 print(extra_subdirs)
+print(excluded_methods)
+print(mode_suffixes)
 
 
 # Function: read one table_df file
-read_one_bubble_table <- function(sample_name, sample_base_dir, input_type, corr_dir, mode_suffix, extra_subdir = "", extra_subdir_label = "no_extra_subdir") {
+read_one_bubble_table <- function(sample_name, sample_base_dir, input_type, corr_dir, mode_suffix, method_filter_suffix = "", extra_subdir = "", extra_subdir_label = "no_extra_subdir") {
     corr_object <- corr_object_map[[corr_dir]]
 
     sample_dir <- file.path(
@@ -138,6 +175,7 @@ read_one_bubble_table <- function(sample_name, sample_base_dir, input_type, corr
             corr_object,
             "_",
             mode_suffix,
+            method_filter_suffix,
             "_table_df.csv"
         )
     )
@@ -450,9 +488,7 @@ plot_residual_bubble <- function(avg_df, title_text, out_png, subtitle_text = NU
 all_aggregated <- list()
 
 for (input_type in input_types) {
-    for (data_mode in data_modes) {
-
-        mode_suffix <- mode_suffix_map[[data_mode]]
+    for (mode_suffix in mode_suffixes) {
 
         message("========================================")
         message("Processing combined plot: ", input_type, " | ", mode_suffix)
@@ -476,6 +512,7 @@ for (input_type in input_types) {
                         input_type = input_type,
                         corr_dir = corr_dir,
                         mode_suffix = mode_suffix,
+                        method_filter_suffix = method_filter_suffix,
                         extra_subdir = extra_subdir_path,
                         extra_subdir_label = extra_subdir_label
                     )
@@ -487,8 +524,13 @@ for (input_type in input_types) {
 
         all_df <- bind_rows(df_list_all)
 
+        if (length(excluded_methods) > 0 && nrow(all_df) > 0) {
+            all_df <- all_df %>%
+                filter(!tolower(method) %in% tolower(excluded_methods))
+        }
+
         if (nrow(all_df) == 0) {
-            message("[Skip] No files found for: ", input_type, " | ", mode_suffix)
+            message("[Skip] No rows found after file reading and method filtering for: ", input_type, " | ", mode_suffix)
             next
         }
 

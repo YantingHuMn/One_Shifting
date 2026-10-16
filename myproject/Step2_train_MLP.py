@@ -211,6 +211,12 @@ def train_one_gene(X_train_np, y_train_np,
             best_cfg = dict(trans=trans, h1=h1, h2=h2, lr=lr, bs=bs)
 
     # Step 2: Retrain with best config on train+val combined
+    if best_cfg is None:
+        raise RuntimeError(
+            f"[{gene_name}] every hyper-parameter configuration returned a non-finite "
+            f"validation loss -- the model diverged. This usually means the input scale "
+            f"is too large for lr={lr_grid}: check this (trans, norm) combination."
+        )
     cfg = best_cfg
     X_tv = torch.cat([X_tr, X_va], dim=0)
     y_tv = torch.cat([y_tr, y_va], dim=0)
