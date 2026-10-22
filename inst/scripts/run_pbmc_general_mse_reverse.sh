@@ -27,8 +27,9 @@ CONDITION="given_${V2}_${V2_norm_factor}_${V2_trans_factor}"
 OUTPUT_DIR="${READ_DIR}/${method}/${CONDITION}"
 mkdir -p $OUTPUT_DIR
 
-trans_factor=("no_trans" "sqrt" "sqrt+1" "log2" "count+1" "log2(count+2)")
-norm_factor=("no_norm" 1000000 100000 10000 1000 "standardize")
+trans_factor=("no_trans" "count+1" "sqrt" "sqrt+1" "log2" "log2(count+2)")
+# norm_factor=("no_norm" 1000000 100000 10000 1000 "standardize") 
+norm_factor=("no_norm" 1000000 100000 10000 1000) # ReLU not allow standardize
 norm_factor_string=$(IFS=','; echo "${norm_factor[*]}")
 
 module load conda_R
@@ -158,7 +159,7 @@ elif [ "$method" = "DCA_mse" ]; then
     METHOD_ARGS="--dropout_grid 0.0 --hidden_grid1 4096 --hidden_grid2 1024 --epochs_inner 100 --epochs_outer 100"
 elif [ "$method" = "scVI_mse" ]; then
     # METHOD_ARGS="--hidden_grid 512,256,128,64"
-    METHOD_ARGS="--hidden_grid 512 --latent_grid 10 --epochs_inner 400 --epochs_outer 400"
+    METHOD_ARGS="--hidden_grid 512 --latent_grid 32 --epochs_inner 400 --epochs_outer 400"
 elif [ "$method" = "Transformer_denoise" ]; then
     METHOD_ARGS="--n_tokens_grid 32 --d_model_grid 64 --nhead_grid 4 --num_layers_grid 1 --dim_feedforward_grid 128 --dropout_grid 0.1 --epochs_inner 100 --epochs_outer 100"
 fi

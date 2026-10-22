@@ -3,7 +3,7 @@
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --time=3-00:00:00
-#SBATCH --mem=100G
+#SBATCH --mem=70G
 #SBATCH --cpus-per-task=1
 #SBATCH --array=0-3
 #SBATCH --output=/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/AAA_logs/submit_HCA_pip_%A_%a.out
@@ -25,7 +25,8 @@ export folder_name="HCA"
 export dropout_keep_par
 
 methods=("VAE" "DCA_mse")
-# methods=("scVI_mse" "Transformer_denoise")
+# "scVI_mse" 
+# methods=("Transformer_denoise")
 
 configs=(
     "../One_Shifting/inst/config/config_run_multi_RNA_HCA_10x_ENCODE.sh"

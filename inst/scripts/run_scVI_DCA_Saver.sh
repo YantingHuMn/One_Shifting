@@ -1,9 +1,26 @@
 #!/bin/bash
-READ_DIR="$1"
-V1="$2"
-V2="$3"
-LOSS="$4"
+CONFIG_FILE="$1"
+LOSS="$2"
 
+if [ -z "$CONFIG_FILE" ] || [ -z "$LOSS" ]; then
+    echo "Usage: bash run_pipeline.sh <config_file> <LOSS>"
+    echo "  config_file: path to config (e.g. configs/pbmc_atac_rna.sh)"
+    echo "  LOSS: zinb or other method"
+    exit 1
+fi
+
+source "$CONFIG_FILE"
+
+echo "INPUT_FILE: $INPUT_FILE"
+echo "GROUND_TRUTH_FILE: $GROUND_TRUTH_FILE"
+echo "READ_DIR: $READ_DIR"
+echo "INPUT_CATEGORY: $V1"
+echo "OUTPUT_CATEGORY: $V2"
+echo "V2_norm_factor: $V2_norm_factor"
+echo "V2_trans_factor: $V2_trans_factor"
+echo "dropout_keep_par: $dropout_keep_par"
+
+CONDITION="given_${V2}_${V2_norm_factor}_${V2_trans_factor}"
 INPUT_PATH="${READ_DIR}/${V1}/Count_Matrix_norm_by_no_norm.feather"
 GROUND_TRUTH_PATH="${READ_DIR}/${V2}/Count_Matrix_norm_by_no_norm.feather"
 

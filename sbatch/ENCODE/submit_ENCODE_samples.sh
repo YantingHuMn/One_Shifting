@@ -1,12 +1,19 @@
 #!/bin/bash
 dropout_keep_par=""
-tsv="/dcs07/hongkai/data/yhu1/One_Shifting_Results/ENCODE_input_sample_pairs.tsv"
+tsv="/dcs11/hongkai/data/yhu1/One_Shifting_Results/ENCODE_input_sample_pairs.tsv"
 # run_first_n_sample=9
+export folder_name="ENCODE"
 
 worker_script="/dcs10/hongkai/data/yhu1/One_Shifting/sbatch/ENCODE/run_ENCODE_one_sample_array.sh"
 plot_script="/dcs10/hongkai/data/yhu1/One_Shifting/sbatch/ENCODE/run_ENCODE_one_sample_plot.sh"
+baseline_worker_script="/dcs10/hongkai/data/yhu1/One_Shifting/sbatch/run_scVI_DCA_Saver_multi.sh"
 
-log_dir="/dcs07/hongkai/data/yhu1/One_Shifting_Results/ENCODE/AAA_logs"
+# train, plot, baseline
+tasks="train"
+
+has_task () { [[ ",${tasks// /}," == *",$1,"* ]]; }
+
+log_dir="/dcs11/hongkai/data/yhu1/One_Shifting_Results/ENCODE/AAA_logs"
 mkdir -p "$log_dir"
 
 # tail -n +2 "$tsv" | awk -v n="$run_first_n_sample" 'NR <= n {print $2}' | while read -r sample_name; do
@@ -31,29 +38,58 @@ all || keep[NR] {print $2}
         continue
     fi
 
-    echo "Submitting training array for sample_name=${sample_name}"
+    train_job_id=""
 
-    train_job_id=$(sbatch \
-        --job-name="ENCODE_${dropout_keep_par}_${sample_name}" \
-        --exclude=compute-170 \
-        --export=ALL,sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}" \
-        --output="${log_dir}/submit_ENCODE_plot_${dropout_keep_par}_${sample_name}_%a.out" \
-        --error="${log_dir}/submit_ENCODE_plot_${dropout_keep_par}_${sample_name}_%a.err" \
-        "$worker_script" | awk '{print $4}')
+    if has_task train; then
+        echo "Submitting training array for sample_name=${sample_name}"
 
-    echo "Submitted training array job: ${train_job_id}"
+        train_job_id=$(sbatch \
+            --job-name="ENCODE_${dropout_keep_par}_${sample_name}" \
+            --exclude=compute-170 \
+            --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}" \
+            --output="${log_dir}/submit_${folder_name}_gpu_${dropout_keep_par}_${sample_name}_%a.out" \
+            --error="${log_dir}/submit_${folder_name}_gpu_${dropout_keep_par}_${sample_name}_%a.err" \
+            "$worker_script" | awk '{print $4}')
 
-    # echo "Submitting dependent plot job for sample_name=${sample_name}"
+        echo "Submitted training array job: ${train_job_id}"
+    fi
 
-    # plot_job_id=$(sbatch \
-    #     --job-name="ENCODE_plot_${dropout_keep_par}_${sample_name}" \
-    #     --dependency=afterok:${train_job_id} \
-    #     --exclude=compute-170 \
-    #     --export=ALL,sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}" \
-    #     --output="${log_dir}/plot_ENCODE_${dropout_keep_par}_${sample_name}_%A.out" \
-    #     --error="${log_dir}/plot_ENCODE_${dropout_keep_par}_${sample_name}_%A.err" \
-    #     "$plot_script" | awk '{print $4}')
+    if has_task plot; then
+        echo "Submitting dependent plot job for sample_name=${sample_name}"
 
-    # echo "Submitted plot job: ${plot_job_id}, dependency=afterok:${train_job_id}"
-    # echo "--------------------------------------"
+        # only chain the dependency when this sample's train job was actually submitted
+        if [[ -n "$train_job_id" ]]; then
+            plot_dependency=(--dependency=afterok:${train_job_id})
+        else
+            plot_dependency=()
+            echo "  (no train job in this run, submitting the plot job without a dependency)"
+        fi
+
+        plot_job_id=$(sbatch \
+            --job-name="ENCODE_plot_${dropout_keep_par}_${sample_name}" \
+            "${plot_dependency[@]}" \
+            --exclude=compute-170 \
+            --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}" \
+            --output="${log_dir}/plot_${folder_name}_${dropout_keep_par}_${sample_name}_%A.out" \
+            --error="${log_dir}/plot_${folder_name}_${dropout_keep_par}_${sample_name}_%A.err" \
+            "$plot_script" | awk '{print $4}')
+
+        echo "Submitted plot job: ${plot_job_id}, dependency=${train_job_id:-none}"
+        echo "--------------------------------------"
+    fi
+
+    # scVI, DCA, Saver
+    if has_task baseline; then
+        echo "Submitting training baseline array for sample_name=${sample_name}"
+
+        baseline_job_id=$(sbatch \
+            --job-name="ENCODE_scVI_DCA_Saver_${sample_name}" \
+            --exclude=compute-170 \
+            --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}" \
+            --output="${log_dir}/submit_${folder_name}_baseline_${dropout_keep_par}_${sample_name}_%a.out" \
+            --error="${log_dir}/submit_${folder_name}_baseline_${dropout_keep_par}_${sample_name}_%a.err" \
+            "$baseline_worker_script" | awk '{print $4}')
+
+        echo "Submitted training baseline array job: ${baseline_job_id}"
+    fi
 done
