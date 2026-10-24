@@ -72,7 +72,7 @@ module load conda_R
 Rscript ../One_Shifting/myproject/Step2_3_train_Saver.R \
     "$INPUT_PATH" \
     "${READ_DIR}/SAVER/reconstruct_SAVER_trans_by_no_trans_norm_by_no_norm.feather" \
-    $(nproc)
+    "${SLURM_CPUS_PER_TASK:-1}"
 
 
 echo "======Figures: Correlation Scatter Plots======"

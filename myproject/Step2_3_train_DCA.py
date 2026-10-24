@@ -36,7 +36,8 @@ dca(adata,
     ae_type=args.ae_type,
     epochs=args.epochs,
     batch_size=args.batch_size,
-    early_stop=args.patience)
+    early_stop=args.patience,
+    random_state=args.seed)
 
 print(f"AnnData shape after DCA: {adata.shape}")
 

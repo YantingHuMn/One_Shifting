@@ -10,8 +10,10 @@ parser.add_argument('--loss', type=str, required=True, help='zinb, nb, poisson')
 parser.add_argument('--max_epochs', type=int, default=60, help='Max training epochs')
 parser.add_argument('--batch_size', type=int, default=32, help='Batch size')
 parser.add_argument('--patience', type=int, default=5, help='Early stopping patience')
+parser.add_argument('--seed', type=int, default=42, help='Random seed')
 
 args = parser.parse_args()
+scvi.settings.seed = args.seed
 
 # SCVI require gene by cell
 df = pd.read_feather(args.input)
@@ -35,7 +37,7 @@ model.train(
     datasplitter_kwargs={"drop_last": True},
 )
 
-denoised = model.get_normalized_expression()
+denoised = model.get_normalized_expression(library_size="latent")
 
 denoised_df = pd.DataFrame(
     denoised,
