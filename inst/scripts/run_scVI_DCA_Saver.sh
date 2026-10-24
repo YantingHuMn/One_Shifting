@@ -82,10 +82,11 @@ if run_step DCA; then
     conda activate dca_env
     python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
+    # use default nb-conddisp for dca
     python ../One_Shifting/myproject/Step2_3_train_DCA.py \
         --input "$INPUT_PATH" \
         --output "${READ_DIR}/DCA/reconstruct_DCA_trans_by_no_trans_norm_by_no_norm.feather" \
-        --ae_type "${LOSS}"
+        --ae_type "nb-conddisp"
 
     python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
     conda deactivate

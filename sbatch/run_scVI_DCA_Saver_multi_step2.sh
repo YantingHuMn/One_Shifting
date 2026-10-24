@@ -43,8 +43,6 @@ fi
 
 config=${configs[$task_id]}
 
-nvidia-smi
-
 echo "Array task $SLURM_ARRAY_TASK_ID: READ_DIR=$READ_DIR, V1=$V1, V2=$V2"
 
 bash ../One_Shifting/inst/scripts/run_scVI_DCA_Saver.sh \

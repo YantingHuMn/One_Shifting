@@ -7,7 +7,7 @@ export folder_name="HCA"
 worker_script="/dcs10/hongkai/data/yhu1/One_Shifting/sbatch/HCA/run_HCA_one_sample_array.sh"
 plot_script="/dcs10/hongkai/data/yhu1/One_Shifting/sbatch/HCA/run_HCA_one_sample_plot.sh"
 baseline_worker_script_step1_gpu="/dcs10/hongkai/data/yhu1/One_Shifting/sbatch/run_scVI_DCA_Saver_multi_step1.sh"
-baseline_worker_script_step2_cpu="/dcs10/hongkai/data/yhu1/One_Shifting/sbatch/run_scVI_DCA_Saver_multi_step1.sh"
+baseline_worker_script_step2_cpu="/dcs10/hongkai/data/yhu1/One_Shifting/sbatch/run_scVI_DCA_Saver_multi_step2.sh"
 
 # train, plot, baseline
 tasks="baseline"
@@ -101,7 +101,7 @@ all || keep[NR] {print $2}
         baseline_cpu_job_id=$(sbatch \
             --job-name="HCA_scVI_DCA_Saver_${sample_name}" \
             --exclude=compute-170 \
-            --dependency=afterok:${baseline_gpu_job_id} \
+            --dependency=aftercorr:${baseline_gpu_job_id} \
             --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}" \
             --output="${log_dir}/submit_${folder_name}_baseline_cpu_job_${dropout_keep_par}_${sample_name}_%a.out" \
             --error="${log_dir}/submit_${folder_name}_baseline_cpu_job_${dropout_keep_par}_${sample_name}_%a.err" \

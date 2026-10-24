@@ -269,9 +269,32 @@ run_correlation_scatter <- function(path1, path2, path3, out_dir,
                             if (filter_zero_gt) "_noGTzero" else "",
                             ".csv")
 
+    # Append, then keep only the most recent row per (transformation, normalization,
+    # direction, filter) combination. Without this a rerun of the same sample -- a resubmit
+    # after a failure, or a second pass with changed settings -- adds a duplicate row that
+    # the downstream bubble plot draws twice. Nothing in the baseline driver clears these
+    # files (unlike the MSE-arm driver, which rm -f's them before each run), so the
+    # de-duplication has to happen here.
+    key_cols <- c("REP1_trans", "REP1_norm", "corr_type", "filter_zero_gt")
+
     if (file.exists(save_csv_path)) {
         existing_data <- read.csv(save_csv_path, stringsAsFactors = FALSE)
-        updated_data  <- rbind(existing_data, summary_row)
+
+        if (!setequal(names(existing_data), names(summary_row))) {
+            stop("Columns in ", save_csv_path, " do not match the new summary row (missing: ",
+                 paste(setdiff(names(summary_row), names(existing_data)), collapse = ", "),
+                 " | unexpected: ",
+                 paste(setdiff(names(existing_data), names(summary_row)), collapse = ", "),
+                 "). This file was written by an older version of the script; delete it and rerun.")
+        }
+
+        updated_data <- rbind(existing_data[, names(summary_row), drop = FALSE], summary_row)
+        dup_key   <- do.call(paste, c(updated_data[, key_cols, drop = FALSE], sep = "\r"))
+        is_stale  <- duplicated(dup_key, fromLast = TRUE)
+        if (any(is_stale)) {
+            cat("  replaced", sum(is_stale), "stale row(s) for the same (trans, norm) combination\n")
+        }
+        updated_data <- updated_data[!is_stale, , drop = FALSE]
         write.csv(updated_data, save_csv_path, row.names = FALSE)
     } else {
         write.csv(summary_row, save_csv_path, row.names = FALSE)
