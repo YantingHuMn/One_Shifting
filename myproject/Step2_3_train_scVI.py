@@ -7,15 +7,15 @@ parser = argparse.ArgumentParser(description='scVI denoising')
 parser.add_argument('--input', type=str, required=True, help='Input feather file path')
 parser.add_argument('--output', type=str, required=True, help='Output feather file path')
 parser.add_argument('--loss', type=str, required=True, help='zinb, nb, poisson')
-parser.add_argument('--max_epochs', type=int, default=60, help='Max training epochs')
-parser.add_argument('--batch_size', type=int, default=32, help='Batch size')
-parser.add_argument('--patience', type=int, default=5, help='Early stopping patience')
+parser.add_argument('--max_epochs', type=int, default=400, help='Max training epochs')
+parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
+parser.add_argument('--patience', type=int, default=45, help='Early stopping patience')
 parser.add_argument('--seed', type=int, default=42, help='Random seed')
 
 args = parser.parse_args()
 scvi.settings.seed = args.seed
 
-# SCVI require gene by cell
+# SCVI require cell by gene
 df = pd.read_feather(args.input)
 cell_ids = df["pos"].astype(str)
 df = df.drop(columns=["pos"])

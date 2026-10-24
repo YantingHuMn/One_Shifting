@@ -4,6 +4,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --time=3-00:00:00
 #SBATCH --mem=128G
+#SBATCH --cpus-per-task=2
 #SBATCH --output=/dcs10/hongkai/data/yhu1/One_Shifting_Results/logs/submit_scVI_DCA_Saver_%a.out
 #SBATCH --error=/dcs10/hongkai/data/yhu1/One_Shifting_Results/logs/submit_scVI_DCA_Saver_%a.err
 #SBATCH --mail-user=yhu157@jh.edu
@@ -48,4 +49,5 @@ echo "Array task $SLURM_ARRAY_TASK_ID: READ_DIR=$READ_DIR, V1=$V1, V2=$V2"
 
 bash ../One_Shifting/inst/scripts/run_scVI_DCA_Saver.sh \
     "$config" \
-    $LOSS
+    $LOSS \
+    "scVI,DCA"

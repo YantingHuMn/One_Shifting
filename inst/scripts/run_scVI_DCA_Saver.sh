@@ -1,13 +1,33 @@
+
 #!/bin/bash
 CONFIG_FILE="$1"
 LOSS="$2"
+STEPS="${3:-scVI,DCA,SAVER,Figure}"
 
 if [ -z "$CONFIG_FILE" ] || [ -z "$LOSS" ]; then
-    echo "Usage: bash run_pipeline.sh <config_file> <LOSS>"
+    echo "Usage: bash run_pipeline.sh <config_file> <LOSS> [STEPS]"
     echo "  config_file: path to config (e.g. configs/pbmc_atac_rna.sh)"
     echo "  LOSS: zinb or other method"
+    echo "  STEPS: scVI,DCA,SAVER,Figure (default: all)"
     exit 1
 fi
+
+# Validate requested steps
+IFS=',' read -ra SELECTED_STEPS <<< "$STEPS"
+for step in "${SELECTED_STEPS[@]}"; do
+    case "$step" in
+        scVI|DCA|SAVER|Figure) ;;
+        *)
+            echo "Error: Unknown step '$step'"
+            echo "Valid steps: scVI,DCA,SAVER,Figure"
+            exit 1
+            ;;
+    esac
+done
+
+run_step() {
+    [[ ",${STEPS}," == *",$1,"* ]]
+}
 
 source "$CONFIG_FILE"
 
@@ -19,6 +39,7 @@ echo "OUTPUT_CATEGORY: $V2"
 echo "V2_norm_factor: $V2_norm_factor"
 echo "V2_trans_factor: $V2_trans_factor"
 echo "dropout_keep_par: $dropout_keep_par"
+echo "STEPS: $STEPS"
 
 CONDITION="given_${V2}_${V2_norm_factor}_${V2_trans_factor}"
 INPUT_PATH="${READ_DIR}/${V1}/Count_Matrix_norm_by_no_norm.feather"
@@ -26,7 +47,7 @@ GROUND_TRUTH_PATH="${READ_DIR}/${V2}/Count_Matrix_norm_by_no_norm.feather"
 
 methods=("scVI" "DCA" "SAVER")
 for method in "${methods[@]}"; do
-    mkdir -p ${READ_DIR}/${method}
+    mkdir -p "${READ_DIR}/${method}"
 done
 
 LOCK_FILE="${READ_DIR}/.count_matrix_done"
@@ -38,107 +59,72 @@ if [ ! -f "$LOCK_FILE" ]; then
 fi
 echo "Count matrix ready, proceeding..."
 
-echo "======Run scVI======"
-source ~/.bashrc
-conda activate scvi_env
-python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
-python ../One_Shifting/myproject/Step2_3_train_scVI.py \
-    --input "${INPUT_PATH}" \
-    --output "${READ_DIR}/scVI/reconstruct_scVI_trans_by_no_trans_norm_by_no_norm.feather" \
-    --loss "$LOSS" 
+if run_step scVI; then
+    echo "======Run scVI======"
+    source ~/.bashrc
+    conda activate scvi_env
+    python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
-python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
-conda deactivate 
+    python ../One_Shifting/myproject/Step2_3_train_scVI.py \
+        --input "${INPUT_PATH}" \
+        --output "${READ_DIR}/scVI/reconstruct_scVI_trans_by_no_trans_norm_by_no_norm.feather" \
+        --loss "$LOSS"
 
-
-echo "======Run DCA======"
-source ~/.bashrc
-conda activate dca_env
-python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
-
-python ../One_Shifting/myproject/Step2_3_train_DCA.py \
-    --input "$INPUT_PATH" \
-    --output "${READ_DIR}/DCA/reconstruct_DCA_trans_by_no_trans_norm_by_no_norm.feather" \
-    --ae_type "${LOSS}-conddisp"
-
-python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
-conda deactivate 
+    python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
+    conda deactivate
+fi
 
 
-echo "======Run SAVER======"
-module load conda_R
+if run_step DCA; then
+    echo "======Run DCA======"
+    source ~/.bashrc
+    conda activate dca_env
+    python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
-Rscript ../One_Shifting/myproject/Step2_3_train_Saver.R \
-    "$INPUT_PATH" \
-    "${READ_DIR}/SAVER/reconstruct_SAVER_trans_by_no_trans_norm_by_no_norm.feather" \
-    "${SLURM_CPUS_PER_TASK:-1}"
+    python ../One_Shifting/myproject/Step2_3_train_DCA.py \
+        --input "$INPUT_PATH" \
+        --output "${READ_DIR}/DCA/reconstruct_DCA_trans_by_no_trans_norm_by_no_norm.feather" \
+        --ae_type "${LOSS}"
+
+    python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
+    conda deactivate
+fi
 
 
-echo "======Figures: Correlation Scatter Plots======"
+if run_step SAVER; then
+    echo "======Run SAVER======"
+    module load conda_R
 
-module load conda_R
+    Rscript ../One_Shifting/myproject/Step2_3_train_Saver.R \
+        "$INPUT_PATH" \
+        "${READ_DIR}/SAVER/reconstruct_SAVER_trans_by_no_trans_norm_by_no_norm.feather" \
+        "${SLURM_CPUS_PER_TASK:-1}"
+fi
 
-methods=("scVI" "DCA" "SAVER")
-for method in "${methods[@]}"; do
-    for corr_dir in col row; do
-        Figure_DIR="${READ_DIR}/${method}/Figures_${corr_dir}"
-        mkdir -p "$Figure_DIR"
 
-        Rscript ../One_Shifting/R/run_correlation_scatter_scVI_DCA_Saver.R \
-            "$GROUND_TRUTH_PATH" \
-            "$INPUT_PATH" \
-            "${READ_DIR}/${method}/reconstruct_${method}_trans_by_no_trans_norm_by_no_norm.feather" \
-            "$Figure_DIR"  \
-            "${READ_DIR}/${method}" \
-            "$corr_dir" \
-            "${V1}" \
-            "${method}"
+if run_step Figure; then
+    echo "======Figures: Correlation Scatter Plots======"
 
-        sleep 2
+    module load conda_R
+
+    methods=("scVI" "DCA" "SAVER")
+    for method in "${methods[@]}"; do
+        for corr_dir in col row; do
+            Figure_DIR="${READ_DIR}/${method}/Figures_${corr_dir}"
+            mkdir -p "$Figure_DIR"
+
+            Rscript ../One_Shifting/R/run_correlation_scatter_scVI_DCA_Saver.R \
+                "$GROUND_TRUTH_PATH" \
+                "$INPUT_PATH" \
+                "${READ_DIR}/${method}/reconstruct_${method}_trans_by_no_trans_norm_by_no_norm.feather" \
+                "$Figure_DIR" \
+                "${READ_DIR}/${method}" \
+                "$corr_dir" \
+                "${V1}" \
+                "${method}"
+
+            sleep 2
+        done
     done
-done
-
-
-
-# echo "======Run Comparison======"
-# module load conda_R
-
-# mse_methods=("VAE" "scVI_mse" "DCA_mse" "Transformer_denoise")
-# methods=("scVI" "DCA" "SAVER")
-
-# # mse vs non-mse
-# for method in "${methods[@]}"; do
-#     for mse_method in "${mse_methods[@]}"; do
-#         for corr_dir in col row; do
-#             x_dir="${READ_DIR}/${mse_method}/given_${V2}_no_norm_no_trans/Figures_col_v1_reverse_v2_no_trans"
-#             y_dir="${READ_DIR}/${method}"
-            
-#             echo $x_dir
-#             echo $y_dir
-#             Rscript ../One_Shifting/R/run_x_mag_compare_scatter.R \
-#                 "${x_dir}" \
-#                 "${y_dir}" \
-#                 $V1 \
-#                 $V2 \
-#                 $corr_dir
-#         done
-#     done
-# done
-
-# # mse vs mse (pairwise)
-# for ((i=0; i<${#mse_methods[@]}; i++)); do
-#     for ((j=i+1; j<${#mse_methods[@]}; j++)); do
-#         for corr_dir in col row; do
-#             x_dir="${READ_DIR}/${mse_methods[$i]}/given_${V2}_no_norm_no_trans"
-#             y_dir="${READ_DIR}/${mse_methods[$j]}/given_${V2}_no_norm_no_trans"
-            
-#             Rscript ../One_Shifting/R/run_x_mag_compare_scatter.R \
-#                 "${x_dir}" \
-#                 "${y_dir}" \
-#                 $V1 \
-#                 $V2 \
-#                 $corr_dir
-#         done
-#     done
-# done
+fi
