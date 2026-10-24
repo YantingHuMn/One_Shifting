@@ -35,8 +35,8 @@ cat("Transposed shape (gene x cell):", dim(mat_t), "\n")
 
 # Run SAVER
 cat("Running SAVER...\n")
-saver_result <- saver(mat_t, ncores = ncores)
-denoised_mat <- saver_result$estimate  # gene x cell
+saver_result <- saver(mat_t, ncores = ncores, size.factor = 1, estimates.only = TRUE)
+denoised_mat <- saver_result  # gene x cell (estimates.only = TRUE returns the matrix directly)
 cat("SAVER output shape (gene x cell):", dim(denoised_mat), "\n")
 
 # Transpose back to cell x gene
