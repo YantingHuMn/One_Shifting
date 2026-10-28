@@ -50,6 +50,10 @@ for method in "${methods[@]}"; do
     mkdir -p "${READ_DIR}/${method}"
 done
 
+export NUMBA_CACHE_DIR="${READ_DIR}/.numba_cache"
+export MPLCONFIGDIR="${READ_DIR}/.mpl_cache"
+mkdir -p "$NUMBA_CACHE_DIR" "$MPLCONFIGDIR"
+
 LOCK_FILE="${READ_DIR}/.count_matrix_done"
 if [ ! -f "$LOCK_FILE" ]; then
     echo "Waiting for count matrix to be built by another job..."
@@ -69,7 +73,7 @@ if run_step scVI; then
     python ../One_Shifting/myproject/Step2_3_train_scVI.py \
         --input "${INPUT_PATH}" \
         --output "${READ_DIR}/scVI/reconstruct_scVI_trans_by_no_trans_norm_by_no_norm.feather" \
-        --loss "$LOSS"
+        --loss "$LOSS" || { echo "[FATAL] scVI failed" >&2; exit 1; }
 
     python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
     conda deactivate
@@ -86,7 +90,7 @@ if run_step DCA; then
     python ../One_Shifting/myproject/Step2_3_train_DCA.py \
         --input "$INPUT_PATH" \
         --output "${READ_DIR}/DCA/reconstruct_DCA_trans_by_no_trans_norm_by_no_norm.feather" \
-        --ae_type "nb-conddisp"
+        --ae_type "nb-conddisp" || { echo "[FATAL] DCA failed" >&2; exit 1; }
 
     python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
     conda deactivate
@@ -100,7 +104,7 @@ if run_step SAVER; then
     Rscript ../One_Shifting/myproject/Step2_3_train_Saver.R \
         "$INPUT_PATH" \
         "${READ_DIR}/SAVER/reconstruct_SAVER_trans_by_no_trans_norm_by_no_norm.feather" \
-        "${SLURM_CPUS_PER_TASK:-1}"
+        "${SLURM_CPUS_PER_TASK:-1}" || { echo "[FATAL] SAVER failed" >&2; exit 1; }
 fi
 
 

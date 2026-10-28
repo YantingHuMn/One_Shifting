@@ -1,28 +1,30 @@
 #!/bin/bash
-dropout_keep_par=""
-tsv="/dcs11/hongkai/data/yhu1/One_Shifting_Results/HCA_input_sample_pairs.tsv"
+dropout_keep_par="" #keep
 # run_first_n_sample=4
 export folder_name="HCA"
+tsv="/dcs11/hongkai/data/yhu1/One_Shifting_Results/${folder_name}_input_sample_pairs.tsv"
 
-worker_script="/dcs10/hongkai/data/yhu1/One_Shifting/sbatch/HCA/run_HCA_one_sample_array.sh"
-plot_script="/dcs10/hongkai/data/yhu1/One_Shifting/sbatch/HCA/run_HCA_one_sample_plot.sh"
+worker_script="/dcs10/hongkai/data/yhu1/One_Shifting/sbatch/${folder_name}/run_${folder_name}_one_sample_array.sh"
+plot_script="/dcs10/hongkai/data/yhu1/One_Shifting/sbatch/${folder_name}/run_${folder_name}_one_sample_plot.sh"
 baseline_worker_script_step1_gpu="/dcs10/hongkai/data/yhu1/One_Shifting/sbatch/run_scVI_DCA_Saver_multi_step1.sh"
 baseline_worker_script_step2_cpu="/dcs10/hongkai/data/yhu1/One_Shifting/sbatch/run_scVI_DCA_Saver_multi_step2.sh"
 
-# train, plot, baseline
-tasks="baseline"
+# train, plot, baseline step2_only
+tasks="step2_only"
 
 has_task () { [[ ",${tasks// /}," == *",$1,"* ]]; }
 
-log_dir="/dcs11/hongkai/data/yhu1/One_Shifting_Results/HCA/AAA_logs"
+log_dir="/dcs11/hongkai/data/yhu1/One_Shifting_Results/${folder_name}/AAA_logs"
 mkdir -p "$log_dir"
+job_id_file="${log_dir}/AAA_step2_job_map.txt"
+touch "$job_id_file"
 
 # tail -n +2 "$tsv" | awk -v n="$run_first_n_sample" 'NR <= n {print $2}' | while read -r sample_name; do
-selected_rows="1,2"
-# selected_rows="8,9"
+selected_rows="1,2,3"
+# selected_rows="4,5,6,7,8,9"
 # selected_rows="10,11,12,13"
 # selected_rows="14,15,16,17,18,19"
-# selected_rows="8,9,10,11,12,13,14,15,16,17,18,19"
+# selected_rows="10,11,12,13,14,15,16,17,18,19"
 
 tail -n +2 "$tsv" | awk -v rows="$selected_rows" '
 BEGIN {
@@ -46,7 +48,7 @@ all || keep[NR] {print $2}
         echo "Submitting training array for sample_name=${sample_name}"
 
         train_job_id=$(sbatch \
-            --job-name="HCA_${dropout_keep_par}_${sample_name}" \
+            --job-name="${folder_name}_${dropout_keep_par}_${sample_name}" \
             --exclude=compute-170 \
             --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}" \
             --output="${log_dir}/submit_${folder_name}_gpu_${dropout_keep_par}_${sample_name}_%a.out" \
@@ -68,12 +70,12 @@ all || keep[NR] {print $2}
         fi
 
         plot_job_id=$(sbatch \
-            --job-name="HCA_plot_${dropout_keep_par}_${sample_name}" \
+            --job-name="${folder_name}_plot_${dropout_keep_par}_${sample_name}" \
             "${plot_dependency[@]}" \
             --exclude=compute-170 \
             --export=ALL,sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}" \
-            --output="${log_dir}/plot_HCA_${dropout_keep_par}_${sample_name}_%A.out" \
-            --error="${log_dir}/plot_HCA_${dropout_keep_par}_${sample_name}_%A.err" \
+            --output="${log_dir}/plot_${folder_name}_${dropout_keep_par}_${sample_name}_%A.out" \
+            --error="${log_dir}/plot_${folder_name}_${dropout_keep_par}_${sample_name}_%A.err" \
             "$plot_script" | awk '{print $4}')
 
         echo "Submitted plot array job: ${plot_job_id}, dependency=${train_job_id:-none}"
@@ -84,7 +86,7 @@ all || keep[NR] {print $2}
         echo "Submitting training baseline array for sample_name=${sample_name}"
 
         baseline_gpu_job_id=$(sbatch \
-            --job-name="HCA_scVI_DCA_Saver_${sample_name}" \
+            --job-name="${folder_name}_${sample_name}" \
             --exclude=compute-170 \
             --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}" \
             --output="${log_dir}/submit_${folder_name}_baseline_gpu_job_${dropout_keep_par}_${sample_name}_%a.out" \
@@ -99,7 +101,7 @@ all || keep[NR] {print $2}
         echo "Submitting training baseline array for sample_name=${sample_name}"
 
         baseline_cpu_job_id=$(sbatch \
-            --job-name="HCA_scVI_DCA_Saver_${sample_name}" \
+            --job-name="${folder_name}_${sample_name}" \
             --exclude=compute-170 \
             --dependency=aftercorr:${baseline_gpu_job_id} \
             --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}" \
@@ -108,5 +110,27 @@ all || keep[NR] {print $2}
             "$baseline_worker_script_step2_cpu" | awk '{print $4}')
 
         echo "Submitted training baseline array job: ${baseline_cpu_job_id}"
+        if [[ -n "$baseline_cpu_job_id" ]]; then
+            echo "$baseline_cpu_job_id" >> "$job_id_file"
+        fi
+    fi
+
+    # Step2 only: SAVER, Figure
+    if has_task step2_only; then
+        echo "Submitting training baseline array for sample_name=${sample_name}"
+
+        baseline_cpu_job_id=$(sbatch \
+            --job-name="${folder_name}_${sample_name}" \
+            --exclude=compute-170 \
+            --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}" \
+            --output="${log_dir}/submit_${folder_name}_baseline_cpu_job_${dropout_keep_par}_${sample_name}_rerun_%a.out" \
+            --error="${log_dir}/submit_${folder_name}_baseline_cpu_job_${dropout_keep_par}_${sample_name}_rerun_%a.err" \
+            "$baseline_worker_script_step2_cpu" | awk '{print $4}')
+
+        echo "Submitted training baseline array job: ${baseline_cpu_job_id}"
+        if [[ -n "$baseline_cpu_job_id" ]]; then
+            echo "$baseline_cpu_job_id" >> "$job_id_file"
+        fi
     fi
 done
+

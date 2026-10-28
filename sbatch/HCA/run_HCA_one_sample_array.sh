@@ -23,6 +23,7 @@ dropout_keep_par="${dropout_keep_par:-}"
 export sample_name
 export folder_name="HCA"
 export dropout_keep_par
+export methods
 
 methods=("VAE" "DCA_mse")
 # "scVI_mse" 

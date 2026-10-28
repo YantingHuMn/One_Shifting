@@ -23,7 +23,7 @@ source("../One_Shifting/R/dropout_multinomial.R")
 #   zero_pct_max : Maximum zero percentage for column cutting. Numeric, percentile string, or NULL. Default NULL.
 #   pearson_min : Minimum Pearson correlation for column cutting. Numeric, percentile string, or NULL. Default NULL.
 #   spearman_min : Minimum Spearman correlation for column cutting. Numeric, percentile string, or NULL. Default NULL.
-#   lib_size_min : Minimum library size for column cutting. Numeric, percentile string, or NULL. Default NULL.
+#   lib_size_min : Minimum library size for column cutting (gene here). Numeric, percentile string, or NULL. Default NULL.
 #   histone_only : Logical. If TRUE, keep only histone-marked CRF pairs. Default FALSE.
 #   transpose : Logical. If TRUE, transpose final output. Default FALSE.
 # Output: A list with v1 and v2, each containing the final count data frame.

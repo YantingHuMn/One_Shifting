@@ -3,21 +3,18 @@ library(readr)
 library(purrr)
 library(stringr)
 
+args <- commandArgs(trailingOnly = TRUE)
+
+read_dir <- args[1] 
+table_name <- args[2]
+
 base_dirs <- c(
-    HCA = "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA",
-    ENCODE = "/dcs07/hongkai/data/yhu1/One_Shifting_Results/ENCODE",
-    `10x` = "/dcs10/hongkai/data/yhu1/One_Shifting_Results/10x"
+    HCA = paste0(read_dir, "/HCA"),
+    ENCODE = paste0(read_dir, "/ENCODE"),
+    `10x` = paste0(read_dir, "/10x")
 )
 
-table_name <- paste0(
-    "bubble_plot_summary_col_gene_",
-    "v1_reverse_v2_no_trans_table_df.csv"
-)
-
-output_file <- file.path(
-    "/dcs07/hongkai/data/yhu1/One_Shifting_Results",
-    "col_reverse_representative_sample_ranking.csv"
-)
+output_file <- file.path(read_dir,"col_reverse_representative_sample_ranking.csv")
 
 # 1. find all *_INPUT_RNA sample folders
 file_info <- imap_dfr(

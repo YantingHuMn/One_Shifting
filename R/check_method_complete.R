@@ -33,14 +33,8 @@ check_modality <- function(sample_name, modality, read_dir) {
   }
 
   expected_csv_names <- c(
-    "bubble_plot_summary_col_gene_v1_reverse_v2_no_trans.csv",
-    "bubble_plot_summary_col_gene_v1_trans_v2_no_trans.csv",
-    "bubble_plot_summary_col_gene_v1_trans_v2_trans_norm_100000.csv",
-    "bubble_plot_summary_col_gene_v1_trans_v2_trans.csv",
-    "bubble_plot_summary_row_cell_v1_reverse_v2_no_trans.csv",
-    "bubble_plot_summary_row_cell_v1_trans_v2_no_trans.csv",
-    "bubble_plot_summary_row_cell_v1_trans_v2_trans_norm_100000.csv",
-    "bubble_plot_summary_row_cell_v1_trans_v2_trans.csv"
+    "bubble_plot_summary_col_gene_v1_normF_trans__v2_normF_trans__recon_asis.csv",
+    "bubble_plot_summary_col_gene_v1_raw__v2_raw__recon_revtrans_revnorm.csv"
   )
 
   csv_files <- file.path(

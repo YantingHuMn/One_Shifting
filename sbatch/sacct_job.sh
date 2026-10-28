@@ -1,7 +1,7 @@
 sacct -j 35510044_1 --format=JobID,JobName%100,State,Elapsed,Start,End
 squeue -j 35820817_0 -o "%.20i %.50j"
 scontrol show job 35510038_1 | grep TimeLimit
-
+sacct -j 36710520_1 --format=JobID,JobName%50,State
 
 export sample_name="ENCSR196JUO"
 export folder_name="ENCODE"

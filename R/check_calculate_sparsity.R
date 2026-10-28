@@ -1,3 +1,4 @@
+
 library(arrow)
 library(dplyr)
 library(readr)
@@ -5,12 +6,13 @@ library(parallel)
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) < 2) {
-    stop("Usage: Rscript calc_sparsity.R file1.tsv file2.tsv file3.tsv output.csv")
+if (length(args) != 3) {
+    stop("Usage: Rscript calc_sparsity.R sample_name read_dir output.csv")
 }
 
-TSV_FILES <- args[-length(args)]
-OUT_FILE <- args[length(args)]
+sample_name <- args[1]
+read_dir <- args[2]
+OUT_FILE <- args[3]
 N_CORES <- as.integer(Sys.getenv("N_CORES", "4"))
 
 calc_sparsity <- function(task) {
@@ -76,78 +78,36 @@ calc_sparsity <- function(task) {
 
 task_list <- list()
 
-for (tsv_file in TSV_FILES) {
+dataset <- basename(normalizePath(read_dir))
+
+for (data_type in c("RNA", "ATAC")) {
     
-    if (!file.exists(tsv_file)) {
-        message("[Missing TSV] ", tsv_file)
-        next
-    }
-    
-    pair_df <- read_tsv(
-        tsv_file,
-        col_types = cols(.default = col_character())
+    input_folder <- paste0(
+        sample_name,
+        "_INPUT_",
+        data_type
     )
     
-    if (!"sample_name" %in% names(pair_df)) {
-        stop("TSV must contain the sample_name column: ", tsv_file)
-    }
-    
-    dataset <- sub(
-        "_input_sample_pairs\\.tsv$",
-        "",
-        basename(tsv_file),
-        ignore.case = TRUE
+    target_folder <- paste0(
+        sample_name,
+        "_",
+        data_type
     )
     
-    result_base_dir <- dirname(normalizePath(tsv_file))
+    feather_path <- file.path(
+        read_dir,
+        input_folder,
+        target_folder,
+        "Count_Matrix_norm_by_no_norm.feather"
+    )
     
-    sample_names <- unique(pair_df$sample_name)
-    sample_names <- sample_names[!is.na(sample_names) & sample_names != ""]
-    
-    for (sample_name in sample_names) {
-        for (data_type in c("RNA", "ATAC")) {
-            
-            input_folder <- paste0(
-                sample_name,
-                "_INPUT_",
-                data_type
-            )
-            
-            target_folder <- paste0(
-                sample_name,
-                "_",
-                data_type
-            )
-            
-            feather_path <- file.path(
-                result_base_dir,
-                dataset,
-                input_folder,
-                target_folder,
-                "Count_Matrix_norm_by_no_norm.feather"
-            )
-            
-            task_list[[length(task_list) + 1]] <- list(
-                dataset = dataset,
-                sample_name = sample_name,
-                data_type = data_type,
-                feather_path = feather_path
-            )
-        }
-    }
+    task_list[[length(task_list) + 1]] <- list(
+        dataset = dataset,
+        sample_name = sample_name,
+        data_type = data_type,
+        feather_path = feather_path
+    )
 }
-
-if (length(task_list) == 0) {
-    stop("No samples were found in the TSV files.")
-}
-
-task_key <- vapply(
-    task_list,
-    function(x) paste(x$dataset, x$feather_path, sep = "__"),
-    character(1)
-)
-
-task_list <- task_list[!duplicated(task_key)]
 
 n_workers <- min(N_CORES, length(task_list))
 
@@ -166,7 +126,21 @@ dir.create(
     showWarnings = FALSE
 )
 
-write_csv(sparsity_df, OUT_FILE)
+if (nrow(sparsity_df) > 0) {
+    if (!file.exists(OUT_FILE)) {
+        write_csv(sparsity_df, OUT_FILE, na = "")
+    } else {
+        write.table(
+            sparsity_df,
+            OUT_FILE,
+            sep = ",",
+            row.names = FALSE,
+            col.names = FALSE,
+            append = TRUE,
+            na = ""
+        )
+    }
+}
 
 message("========================================")
 message("Sparsity results:")
