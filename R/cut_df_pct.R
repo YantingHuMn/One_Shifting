@@ -33,7 +33,7 @@ cut_df_pct <- function(mat_num, mat2_num = NULL, zero_pct_max = NULL, pearson_mi
     if (!is.null(lib_size_min)) {
         lib_sizes <- colSums(mat_num)
         threshold <- resolve_threshold(lib_size_min, lib_sizes)
-        keep <- keep & (lib_sizes >= threshold)
+        keep <- keep & (lib_sizes >= threshold) & (lib_sizes > 0)
         cat(sprintf("Library size filter (>= %.2f): %d / %d columns kept\n",
                     threshold, sum(keep), length(keep)))
     }

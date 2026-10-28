@@ -102,6 +102,16 @@ run_build_norm_filter_pipeline <- function(path1, path2 = NULL, out_dir, norm_fa
         v1_count_data <- v1_init$count_data
     }
 
+    if (!is.null(dropout_keep_par) && dropout_target %in% c("v1", "both")) {
+        cat(sprintf("\n=== Applying multinomial dropout to V1: keep_par = %s ===\n", dropout_keep_par))
+
+        v1_count_data <- dropout_multinomial(
+            v1_count_data,
+            keep_par = dropout_keep_par,
+            cell_axis = if (is_file1) "col" else "row"
+        )
+    }
+
     # Cut columns/rows depending on input mode
     # file input (gene x cell): cut_df_pct works on columns, so transpose first → cut genes as columns
     # dir  input (cell x gene): cut_df_pct works on columns → cut genes as columns (already correct)
@@ -139,15 +149,6 @@ run_build_norm_filter_pipeline <- function(path1, path2 = NULL, out_dir, norm_fa
     }
 
     # V1 final
-    if (!is.null(dropout_keep_par) && dropout_target %in% c("v1", "both")) {
-        cat(sprintf("\n=== Applying multinomial dropout to V1: keep_par = %s ===\n", dropout_keep_par))
-
-        v1_count_data <- dropout_multinomial(
-            v1_count_data,
-            keep_par = dropout_keep_par,
-            cell_axis = if (is_file1) "col" else "row"
-        )
-    }
 
     if (is_file1) {
         # Determine cell filtering from V1 only, using the final retained genes, avoid NA in normalization
