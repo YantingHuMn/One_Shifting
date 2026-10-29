@@ -2,7 +2,7 @@
 cd /dcs10/hongkai/data/yhu1/One_Shifting
 read_dir="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
 
-export folder_name="HCA"
+export folder_name="10x"
 
 # train, baseline step2_only
 tasks="train"
@@ -66,11 +66,11 @@ for dropout_keep_par in ${dropout_keep_par_values//,/ }; do
 
             train_job_id=$(sbatch \
                 --job-name="${folder_name}_${dropout_keep_par}_${sample_name}" \
-                --exclude=compute-170 \
+                --exclude=compute-170,compute-128 \
                 --partition=gpu \
                 --gres=gpu:1 \
                 --time=3-00:00:00 \
-                --mem=80G \
+                --mem=70G \
                 --cpus-per-task=1 \
                 --array=0-1 \
                 --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}",methods_par="${methods_par}" \
@@ -91,7 +91,7 @@ for dropout_keep_par in ${dropout_keep_par_values//,/ }; do
                 --exclude=compute-170 \
                 --partition=shared \
                 --time=7-00:00:00 \
-                --mem=80G \
+                --mem=40G \
                 --cpus-per-task=1 \
                 --array=0 \
                 --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}",methods_par="${methods_par}" \

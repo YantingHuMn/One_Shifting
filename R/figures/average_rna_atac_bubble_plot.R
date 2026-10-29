@@ -42,7 +42,7 @@ corr_object_map <- c(
 data_modes <- c("v1_reverse")
 
 mode_suffix_map <- c(
-    v1_reverse = "v1_reverse_v2_no_trans"
+    v1_reverse = "v1_raw__v2_raw__recon_revtrans_revnorm_no_scVI_mse"
 )
 
 # ============================================================

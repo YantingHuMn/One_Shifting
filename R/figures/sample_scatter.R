@@ -51,8 +51,8 @@ subtitle_text <- paste0(
 
 p <- ggplot(df, aes(x = x, y = y)) +
     geom_hex(bins = 60) +
-    scale_x_continuous(limits = c(-0.1, 0.5)) +
-    scale_y_continuous(limits = c(-0.1, 0.5)) + 
+    scale_x_continuous(limits = c(-0.1, 1.0)) +
+    scale_y_continuous(limits = c(-0.1, 1.0)) + 
     geom_abline(
         slope = 1,
         intercept = 0,
@@ -109,7 +109,7 @@ dir.create(
 ggsave(
     png_file,
     p,
-    width = 6.7,
+    width = 7.2,
     height = 5.8,
     units = "in",
     dpi = 400,
