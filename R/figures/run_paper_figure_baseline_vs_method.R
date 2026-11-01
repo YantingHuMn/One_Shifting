@@ -375,8 +375,8 @@ for (corr_method in corr_methods) {
                   size = 2.4, colour = "grey20") +
         facet_grid(row ~ baseline, switch = "y") +
         coord_cartesian(xlim = c(AXIS_MIN, 1), ylim = c(AXIS_MIN, 1)) +
-        scale_x_continuous(breaks = c(-0.2, 0, 0.5, 1)) +
-        scale_y_continuous(breaks = c(-0.2, 0, 0.5, 1)) +
+        scale_x_continuous(breaks = c(-0.25, 0, 0.5, 1)) +
+        scale_y_continuous(breaks = c(-0.25, 0, 0.5, 1)) +
         labs(
             title = sprintf("%s  |  input modality: %s  |  %s correlation per gene",
                             folder_name, modality, corr_method),
@@ -420,7 +420,7 @@ for (corr_method in corr_methods) {
             geom_point(size = 0.5, colour = "#31688e") +
             facet_grid(row ~ baseline, switch = "y") +
             coord_cartesian(xlim = c(AXIS_MIN, 1), ylim = c(0, 100)) +
-            scale_x_continuous(breaks = c(-0.2, 0, 0.5, 1)) +
+            scale_x_continuous(breaks = c(-0.25, 0, 0.5, 1)) +
             labs(
                 title = sprintf("%s  |  input modality: %s  |  %s correlation per gene",
                                 folder_name, modality, corr_method),

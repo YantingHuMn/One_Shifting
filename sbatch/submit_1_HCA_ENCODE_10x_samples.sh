@@ -2,15 +2,16 @@
 cd /dcs10/hongkai/data/yhu1/One_Shifting
 read_dir="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
 
-export folder_name="10x"
+export folder_name="ENCODE"
 
-# train, baseline step2_only
+# train, train_dropout, baselin, step2_only
 tasks="train"
 has_task () { [[ ",${tasks// /}," == *",$1,"* ]]; }
 
-# Select 5 representative samples from diverse tissues to assess generalizability.
-# 0.3, 0.5, 0.7, 0.9
-dropout_keep_par_values="0.3,0.5,0.7,0.9" #keep
+# Select 5 representative samples from diverse tissues to assess generalizability. dropout_keep_par_values="0.3,0.5,0.7,0.9"
+if [[ "$tasks" == "train_dropout" ]]; then
+    dropout_keep_par_values="0.3,0.5,0.7,0.9" #keep
+fi
 
 worker_script="../One_Shifting/sbatch/task/run_HCA_ENCODE_10x_one_sample_array.sh"
 baseline_worker_script_step1_gpu="../One_Shifting/sbatch/task/run_scVI_DCA_Saver_multi_step1.sh"
@@ -27,7 +28,6 @@ touch "$job_id_file"
 # selected_rows="1,2,3"
 # selected_rows="4,5,6,7,8,9"
 # selected_rows="10,11,12,13"
-# selected_rows="14,15,16,17,18,19"
 # selected_rows="10,11,12,13,14,15,16,17,18,19"
 
 # dropout Samples
@@ -59,7 +59,7 @@ for dropout_keep_par in ${dropout_keep_par_values//,/ }; do
 
         train_job_id=""
 
-        if has_task train; then
+        if has_task train || has_task train_dropout; then
             echo "Submitting training array for sample_name=${sample_name}"
 
             methods_par="VAE DCA_mse"
@@ -70,7 +70,7 @@ for dropout_keep_par in ${dropout_keep_par_values//,/ }; do
                 --partition=gpu \
                 --gres=gpu:1 \
                 --time=3-00:00:00 \
-                --mem=70G \
+                --mem=128G \
                 --cpus-per-task=1 \
                 --array=0-1 \
                 --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}",methods_par="${methods_par}" \
@@ -81,7 +81,7 @@ for dropout_keep_par in ${dropout_keep_par_values//,/ }; do
             echo "Submitted training array job: ${train_job_id}"
         fi
 
-        if has_task train; then
+        if has_task train || has_task train_dropout; then
             echo "Submitting training array for sample_name=${sample_name}"
 
             methods_par="Transformer_denoise"
@@ -91,7 +91,7 @@ for dropout_keep_par in ${dropout_keep_par_values//,/ }; do
                 --exclude=compute-170 \
                 --partition=shared \
                 --time=7-00:00:00 \
-                --mem=40G \
+                --mem=128G \
                 --cpus-per-task=1 \
                 --array=0 \
                 --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}",methods_par="${methods_par}" \

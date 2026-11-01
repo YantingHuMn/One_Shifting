@@ -8,9 +8,9 @@ module load conda_R
 # Plot the method specific scatter plot
 cd /dcs10/hongkai/data/yhu1/One_Shifting 
 BASE_DIR="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
-folder_name="HCA"
 
 # Figure 2
+folder_name="HCA"
 sample_name="MA11_heart"
 norm="1000"
 trans="log2(count+2)"
@@ -75,7 +75,7 @@ done
 
 
 ## Plot with baseline (single sample)
-Rscript /dcs10/hongkai/data/yhu1/One_Shifting/R/figures/sample_scvi_dca_saver.R \
+Rscript ../One_Shifting/R/figures/sample_scvi_dca_saver.R \
     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/VAE/given_KTBpool11_ATAC_no_norm_no_trans/Figures_col_v1_reverse_v2_no_trans/d_pearson_v1_reverse_col_scatter_v1_trans_log2(count+2)_norm_1000000_v2_trans_no_trans_norm_no_norm.csv" \
     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/scVI/Figures_col/d_pearson_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/DCA/Figures_col/d_pearson_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
@@ -85,25 +85,14 @@ Rscript /dcs10/hongkai/data/yhu1/One_Shifting/R/figures/sample_scvi_dca_saver.R 
     "KTBpool11"      
 
 
-Rscript /dcs10/hongkai/data/yhu1/One_Shifting/R/figures/sample_scvi_dca_saver.R \
+Rscript ../One_Shifting/R/figures/sample_scvi_dca_saver.R \
     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/VAE/given_KTBpool11_ATAC_no_norm_no_trans/Figures_col_v1_reverse_v2_no_trans/g_spearman_v1_reverse_col_scatter_v1_trans_log2(count+2)_norm_1000_v2_trans_no_trans_norm_no_norm.csv" \
     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/scVI/Figures_col/g_spearman_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/DCA/Figures_col/g_spearman_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/SAVER/Figures_col/g_spearman_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/Paper_Figures/KTBpool11_baseline_spearman_summary.png" \
     "Spearman" \
-    "KTBpool11"      
-
-
-# Rscript /dcs10/hongkai/data/yhu1/One_Shifting/R/figures/sample_scvi_dca_saver.R \
-#     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/PF_specimen_INPUT_RNA/VAE/given_PF_specimen_ATAC_no_norm_no_trans/Figures_col_v1_reverse_v2_no_trans/d_pearson_v1_reverse_col_scatter_v1_trans_log2(count+2)_norm_1000000_v2_trans_no_trans_norm_no_norm.csv" \
-#     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/scVI/Figures_col/d_pearson_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
-#     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/PF_specimen_INPUT_RNA/DCA/Figures_col/d_pearson_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
-#     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/SAVER/Figures_col/d_pearson_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
-#     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/Paper_Figures/KTBpool11_baseline_pearson_summary.png" \
-#     "Pearson" \
-#     "PF_specimen"      
-
+    "KTBpool11"           
 
 python /dcs10/hongkai/data/yhu1/One_Shifting/myproject/rank_curve_real_data.py \
     --data_path1 "/dcs10/hongkai/data/yhu1/One_Shifting_Results/10x/10k_PBMC_Multiome_nextgem_Chromium_Controller_INPUT_ATAC/10k_PBMC_Multiome_nextgem_Chromium_Controller_ATAC/Count_Matrix_norm_by_no_norm.feather" \

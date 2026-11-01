@@ -60,10 +60,10 @@ if [[ ! -d "$read_dir" ]]; then
 fi
 
 # Each array task has a different output CSV, so there is no cross-task conflict.
-# rm -f "$output_clear_csv"
-# rm -f "$output_na_csv"
-# rm -f ${read_dir}/${folder_name}_check_method_complete.csv
-# rm -f ${read_dir}/${folder_name}_check_baseline_reconstruction.csv
+rm -f "$output_clear_csv"
+rm -f "$output_na_csv"
+rm -f ${read_dir}/${folder_name}_check_method_complete.csv
+rm -f ${read_dir}/${folder_name}_check_baseline_reconstruction.csv
 rm -f ${read_dir}/${folder_name}_data_description.csv
 rm -f ${read_dir}/${folder_name}_sparsity.csv
 
@@ -97,25 +97,25 @@ while read -r sample_name; do
     echo "Start sample: $(date)"
     echo "======================================"
 
-    # Rscript ../One_Shifting/R/check_clear_method_summary.R \
-    #     "$sample_name" \
-    #     "$read_dir" \
-    #     "$output_clear_csv"
+    Rscript ../One_Shifting/R/check_clear_method_summary.R \
+        "$sample_name" \
+        "$read_dir" \
+        "$output_clear_csv"
 
-    # Rscript ../One_Shifting/R/check_count_matrix_na_row.R \
-    #     "$sample_name" \
-    #     "$read_dir" \
-    #     "$output_na_csv"
+    Rscript ../One_Shifting/R/check_count_matrix_na_row.R \
+        "$sample_name" \
+        "$read_dir" \
+        "$output_na_csv"
 
-    # Rscript ../One_Shifting/R/check_method_complete.R \
-    #     "$sample_name" \
-    #     "$read_dir" \
-    #     "${read_dir}/${folder_name}_check_method_complete.csv"
+    Rscript ../One_Shifting/R/check_method_complete.R \
+        "$sample_name" \
+        "$read_dir" \
+        "${read_dir}/${folder_name}_check_method_complete.csv"
 
-    # Rscript ../One_Shifting/R/check_baseline_reconstruction.R \
-    #     "$sample_name" \
-    #     "$read_dir" \
-    #     "${read_dir}/${folder_name}_check_baseline_reconstruction.csv"
+    Rscript ../One_Shifting/R/check_baseline_reconstruction.R \
+        "$sample_name" \
+        "$read_dir" \
+        "${read_dir}/${folder_name}_check_baseline_reconstruction.csv"
 
     Rscript ../One_Shifting/R/record_data_description.R \
         "$sample_name" \

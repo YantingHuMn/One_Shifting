@@ -31,7 +31,7 @@ export folder_name
 export dropout_keep_par
 
 configs=(
-    # "../One_Shifting/inst/config/config_run_multi_RNA_HCA_10x_ENCODE.sh"
+    "../One_Shifting/inst/config/config_run_multi_RNA_HCA_10x_ENCODE.sh"
     "../One_Shifting/inst/config/config_run_multi_ATAC_HCA_10x_ENCODE.sh"
 )
 
