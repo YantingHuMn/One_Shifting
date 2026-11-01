@@ -21,21 +21,38 @@ source "$CONFIG_FILE"
 : "${READ_DIR:?}" "${MODALITY:?}" "${N_HVG:=1000}" "${MIN_CELLS:=3}"
 : "${TEST_FRAC:=0.2}" "${VAL_FRAC:=0.1}" "${SEED:=42}" "${EPOCHS:=100}" "${PATIENCE:=15}"
 : "${HIDDEN1:=256}" "${HIDDEN2:=128}" "${LR:=0.0001}" "${BATCH:=64}" "${DROPOUT:=0.1}"
+# The ReLU output layer changes the model, so results must NOT share a directory (and a
+# compare_combinations CSV) with runs made by the old linear-output model. Set
+# OUTPUT_SUFFIX="" in the config only if you really want the old path.
+: "${OUTPUT_SUFFIX=_relu_rawscale}"
 
-REPO="../One_Shifting"
-OUTPUT_DIR="${READ_DIR}/MLP_within_${MODALITY}"
+OUTPUT_DIR="${READ_DIR}/MLP_within_${MODALITY}${OUTPUT_SUFFIX}"
 LISTS_DIR="${OUTPUT_DIR}/gene_lists"
 COMPARE="${OUTPUT_DIR}/compare_combinations_trans_norm.csv"
 mkdir -p "$LISTS_DIR"
+
+# Labels for the summary figure. MODALITY is "<sample_name>_<RNA|ATAC>", so the sample
+# name is stripped from it rather than added a second time. Checked now, not after training.
+: "${sample_name:?sample_name must be set (exported by the submitter) to label the summary figure}"
+case "$MODALITY" in
+    "${sample_name}_"*) ;;
+    *) echo "MODALITY='${MODALITY}' does not start with '${sample_name}_'; cannot derive the figure label"; exit 1 ;;
+esac
+MOD_LABEL="${MODALITY#"${sample_name}_"}"
 
 trans_factor=("no_trans" "sqrt" "sqrt+1" "log2" "count+1" "log2(count+2)")
 norm_factor=("no_norm" 1000000 100000 10000 1000)
 
 RAW="${READ_DIR}/${MODALITY}/Count_Matrix_norm_by_no_norm.feather"
 
+# fail now, not after hours of training, if the raw-scale inputs are missing
+for f in "$RAW" "${READ_DIR}/${MODALITY}/lib_sizes.csv"; do
+    [ -f "$f" ] || { echo "Missing required file: $f"; exit 1; }
+done
+
 module load conda_R
 echo "=== Fixing the split and the gene lists (training cells only) ==="
-Rscript ${REPO}/R/prep_mlp_data.R \
+Rscript ../One_Shifting/R/prep_mlp_data.R \
     --mode lists --task within \
     --input_matrix  "$RAW" \
     --target_matrix "$RAW" \
@@ -59,7 +76,7 @@ for this_trans in "${trans_factor[@]}"; do
         mkdir -p "$OUT_DIR"
 
         module load conda_R
-        Rscript ${REPO}/R/prep_mlp_data.R \
+        Rscript ../One_Shifting/R/prep_mlp_data.R \
             --mode extract --task within \
             --input_matrix "$MAT" --target_matrix "$MAT" \
             --lists_dir "$LISTS_DIR" --out_dir "$OUT_DIR"
@@ -67,7 +84,7 @@ for this_trans in "${trans_factor[@]}"; do
         source ~/.bashrc
         conda activate vae_env2
 
-        python -u ${REPO}/myproject/Step2_train_MLP.py \
+        python -u ../One_Shifting/myproject/Step2_train_MLP.py \
             --input_train  "${OUT_DIR}/input_train.feather" \
             --input_val    "${OUT_DIR}/input_val.feather" \
             --target_train "${OUT_DIR}/target_train.feather" \
@@ -80,15 +97,27 @@ for this_trans in "${trans_factor[@]}"; do
             --lr_grid "$LR" --batch_size_grid "$BATCH" --dropout "$DROPOUT" \
             --epochs "$EPOCHS" --patience "$PATIENCE" --min_delta 0 --seed "$SEED"
 
-        python -u ${REPO}/myproject/Step3_predict_MLP.py \
+        python -u ../One_Shifting/myproject/Step3_predict_MLP.py \
             --model_dir   "${OUT_DIR}/saved_model" \
             --input_test  "${OUT_DIR}/input_test.feather" \
             --target_test "${OUT_DIR}/target_test.feather" \
             --out_dir     "${OUT_DIR}/predictions" \
+            --target_raw_matrix "${READ_DIR}/${MODALITY}/Count_Matrix_norm_by_no_norm.feather" \
+            --target_lib_sizes  "${READ_DIR}/${MODALITY}/lib_sizes.csv" \
             --compare_path "$COMPARE"
 
         conda deactivate
     done
 done
+
+# one summary figure for the whole sweep, on the fully recovered raw-count scale
+module load conda_R
+Rscript ../One_Shifting/R/run_MLP_summary_scatter_plot.R \
+    --csv "$COMPARE" \
+    --sample "$sample_name" \
+    --task within \
+    --modality "$MOD_LABEL" \
+    --space raw_counts \
+    --out_dir "${OUTPUT_DIR}/figures"
 
 echo "=== Done. Summary: ${COMPARE} ==="

@@ -37,7 +37,7 @@ echo "HOSTNAME=$(hostname)"
 echo "======================================"
 
 if [[ "$mlp_kind" == "within" ]]; then
-    bash ../One_Shifting/inst/scripts/run_MLP_general.sh \
+    bash ../One_Shifting/inst/scripts/run_MLP_within.sh \
         ../One_Shifting/inst/config/config_run_MLP_within_multi.sh
 else
     bash ../One_Shifting/inst/scripts/run_MLP_cross.sh \

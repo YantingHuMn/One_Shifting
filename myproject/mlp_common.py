@@ -35,9 +35,11 @@ ID_COLS = ("pos", "index", "Unnamed: 0", "cell", "cell_id", "barcode")
 class MLP(nn.Module):
     """Multi-output MLP: shared hidden layers, one output unit per target gene.
 
-    The output layer stays linear. Making it ReLU would floor every prediction at zero,
-    which is wrong for transformed targets whose attainable minimum is above zero (under
-    sqrt+1 no target is below 1.0) and unnecessary for a squared-error objective.
+    The output layer is followed by a ReLU, so every prediction is non-negative in target
+    space. Zero is the attainable minimum for count-like targets (no_trans, sqrt, log2,
+    log1p) but lies below the attainable minimum of shifted transforms (under sqrt+1 no
+    target is below 1.0), and it is wrong for targets that can be negative (standardize).
+    An output unit that sits in the negative region receives no gradient.
     """
 
     def __init__(self, input_dim, hidden_dim1, hidden_dim2, output_dim, dropout=0.0):
@@ -52,7 +54,7 @@ class MLP(nn.Module):
         h = self.dropout(h)
         h = F.relu(self.fc2(h))
         h = self.dropout(h)
-        return self.fc3(h)
+        return F.relu(self.fc3(h))
 
 
 # ---------------------------------------------------------------- transforms
@@ -77,10 +79,14 @@ def apply_trans(arr, trans):
 def inverse_trans(arr, trans):
     """Map back to the pre-transformation scale.
 
-    Predictions are unconstrained, so a model output can fall below the range the forward
-    transform can produce (a negative value under sqrt, say). The exponent is clipped so
-    the inverse cannot overflow, and the result is returned as-is rather than floored --
+    The model output is non-negative (final ReLU) but can still fall below the range the
+    forward transform can produce: under sqrt+1 the attainable minimum is 1.0, so an output
+    in [0, 1) inverts to a negative value (a ** 2 - 1). The exponent is clipped so the
+    inverse cannot overflow, and the result is returned as-is rather than floored --
     flooring would hide how far outside the attainable range a prediction landed.
+
+    This undoes the TRANSFORMATION only. Any per-cell library-size normalization is undone
+    separately (see inverse_norm).
     """
     a = np.asarray(arr, dtype=np.float64)
     p2 = lambda z: np.power(2.0, np.clip(z, -60.0, 60.0))
@@ -97,6 +103,130 @@ def inverse_trans(arr, trans):
     if trans == "log2(count+2)":       return p2(a) - 2
     if trans == "log2(count+1)+1":     return p2(a - 1) - 1
     raise ValueError(f"Unknown transformation: {trans}")
+
+
+# ------------------------------------------------------- inverse normalization
+def parse_norm_scale(norm):
+    """None for "no_norm"; the positive scale s for a numeric library-size normalization.
+
+    Forward normalization (R/normalize_and_save.R):  x_norm = count / lib_size * s.
+    Anything else ("standardize", "maximum", a non-numeric string, a non-positive or
+    non-finite number) cannot be undone from lib_sizes.csv alone and raises instead of
+    being treated as no_norm.
+    """
+    if norm == "no_norm":
+        return None
+    try:
+        s = float(norm)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"Cannot invert target normalization '{norm}': only 'no_norm' or a positive "
+            f"numeric library-size scale is supported.")
+    if not np.isfinite(s) or s <= 0:
+        raise ValueError(f"Target normalization scale must be finite and > 0, got '{norm}'")
+    return s
+
+
+def inverse_norm(arr, norm, lib_sizes=None):
+    """Undo per-cell library-size normalization:  count = x_norm * lib_size / s.
+
+    `arr` is cells x genes, already back on the pre-transformation scale (i.e. after
+    inverse_trans). `lib_sizes` is one value per row of `arr`: the library size of the
+    TARGET modality's original matrix, not of the filtered TF/HVG sub-matrix.
+    """
+    s = parse_norm_scale(norm)
+    a = np.asarray(arr, dtype=np.float64)
+    if s is None:
+        return a.copy()
+    if lib_sizes is None:
+        raise ValueError(f"target_norm '{norm}' needs per-cell library sizes (--target_lib_sizes)")
+    L = np.asarray(lib_sizes, dtype=np.float64)
+    if L.shape != (a.shape[0],):
+        raise ValueError(f"lib_sizes has shape {L.shape}, expected ({a.shape[0]},)")
+    return a * L[:, None] / s
+
+
+def read_lib_sizes(path, cell_ids):
+    """Library size per cell, matched to `cell_ids` by NAME, not by row position.
+
+    Expects the file written by normalize_and_save.R: columns `cell` and `lib_size`. Rows
+    may be in any order. Raises on a duplicated id anywhere in the file, on any requested
+    cell that is absent, and on any requested cell whose library size is non-numeric,
+    non-finite or <= 0.
+    """
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"target lib_sizes file not found: {path}")
+    df = pd.read_csv(path, dtype={"cell": str})
+    for col in ("cell", "lib_size"):
+        if col not in df.columns:
+            raise ValueError(f"{path} must have columns 'cell' and 'lib_size'; "
+                             f"found {list(df.columns)}")
+    dup = df.loc[df["cell"].duplicated(keep=False), "cell"].unique()
+    if len(dup):
+        raise ValueError(f"{path} has {len(dup)} duplicated cell id(s) (e.g. {list(dup[:3])})")
+    lib = pd.Series(pd.to_numeric(df["lib_size"], errors="coerce").to_numpy(dtype=np.float64),
+                    index=df["cell"].to_numpy())
+    ids = [str(c) for c in cell_ids]
+    absent = [c for c in ids if c not in lib.index]
+    if absent:
+        raise ValueError(f"{len(absent)} test cell(s) missing from {path} "
+                         f"(e.g. {absent[:3]})")
+    out = lib.loc[ids].to_numpy(dtype=np.float64)
+    bad = ~np.isfinite(out) | (out <= 0)
+    if bad.any():
+        raise ValueError(f"{int(bad.sum())} test cell(s) have a non-finite or non-positive "
+                         f"library size in {path} (e.g. {[ids[i] for i in np.where(bad)[0][:3]]})")
+    return out
+
+
+def read_raw_truth(path, cell_ids, genes):
+    """Raw-count truth for `cell_ids` x `genes`, in exactly that cell and gene order."""
+    rid, R = read_matrix(path, "target raw matrix")
+    ids = [str(c) for c in cell_ids]
+    pos = pd.Series(np.arange(len(rid)), index=rid)
+    absent = [c for c in ids if c not in pos.index]
+    if absent:
+        raise ValueError(f"{len(absent)} test cell(s) missing from the raw target matrix "
+                         f"{path} (e.g. {absent[:3]})")
+    absent_g = [g for g in genes if g not in R.columns]
+    if absent_g:
+        raise ValueError(f"{len(absent_g)} target gene(s) missing from the raw target matrix "
+                         f"{path} (e.g. {absent_g[:3]})")
+    raw = R[list(genes)].to_numpy(dtype=np.float64)[pos.loc[ids].to_numpy()]
+    if not np.isfinite(raw).all():
+        raise ValueError(f"non-finite values in the raw target matrix {path}")
+    return raw
+
+
+def within_raw_counts(args, meta, cell_ids, genes, target_norm_df, pred_target_space):
+    """Within task: (pred_raw, truth_raw), both on the raw-count scale.
+
+    pred_raw = inverse_trans(pred_target_space) * L / s   (no extra scaling for no_norm)
+    truth_raw is read from --target_raw_matrix, not reconstructed from the normalized truth.
+    As a guard against a wrong lib_sizes file or raw matrix, raw truth is pushed forward
+    through the normalization and must reproduce the normalized target the model was
+    trained on.
+    """
+    if not args.target_raw_matrix:
+        raise ValueError("task 'within' requires --target_raw_matrix")
+    s = parse_norm_scale(meta["target_norm"])
+    if s is not None and not args.target_lib_sizes:
+        raise ValueError(f"target_norm '{meta['target_norm']}' requires --target_lib_sizes")
+    truth_raw = read_raw_truth(args.target_raw_matrix, cell_ids, genes)
+    lib = read_lib_sizes(args.target_lib_sizes, cell_ids) if s is not None else None
+
+    expected = truth_raw if s is None else truth_raw / lib[:, None] * s
+    if not np.allclose(expected, target_norm_df.to_numpy(dtype=np.float64),
+                       rtol=1e-4, atol=1e-6):
+        raise ValueError(
+            "raw target matrix and lib_sizes do not reproduce the normalized target "
+            f"(target_norm='{meta['target_norm']}'); refusing to write raw-scale output. "
+            "Check that --target_raw_matrix / --target_lib_sizes belong to the same modality "
+            "and gene filter as the matrix the model was trained on.")
+
+    pred_raw = inverse_norm(inverse_trans(pred_target_space, meta["target_trans"]),
+                            meta["target_norm"], lib)
+    return pred_raw, truth_raw
 
 
 # ------------------------------------------------------------------- loading
@@ -317,7 +447,7 @@ def run_training(args, task):
     os.makedirs(args.model_dir, exist_ok=True)
     torch.save(model.state_dict(), os.path.join(args.model_dir, "final_model.pt"))
     meta = dict(
-        task=task, architecture="MLP", input_dim=len(input_genes),
+        task=task, architecture="MLP", output_activation="relu", input_dim=len(input_genes),
         output_dim=len(target_genes), hidden_dim1=cfg["h1"], hidden_dim2=cfg["h2"],
         dropout=args.dropout, lr=cfg["lr"], batch_size=cfg["bs"],
         best_epoch=int(best_epoch), epoch_cap=int(args.epochs),
@@ -350,6 +480,11 @@ def run_prediction(args, task):
         meta = json.load(fh)
     if meta.get("task") != task:
         raise ValueError(f"model was trained for task '{meta.get('task')}', not '{task}'")
+    if meta.get("output_activation") != "relu":
+        raise ValueError(
+            f"{cfg_path} has no output_activation='relu': this model was trained with the "
+            f"old linear output layer. The weights load without error but the network is a "
+            f"different function now -- retrain into a new output directory.")
 
     te_id, X_df, Y_df = read_pair(args.input_test, args.target_test, "test")
     seen = set(meta["train_cells"]) | set(meta["val_cells"])
@@ -372,29 +507,36 @@ def run_prediction(args, task):
     Xt = apply_trans(X_df.to_numpy(), meta["input_trans"]).astype(np.float32)
     pred_t = predict(model_from(meta, args.model_dir, device), Xt, device)
     truth_t = apply_trans(Y_df.to_numpy(), meta["target_trans"])
-    pred_o = inverse_trans(pred_t, meta["target_trans"])
-    truth_o = Y_df.to_numpy(dtype=np.float64)
+    genes = meta["target_genes"]
+    if task == "within":
+        # raw-count scale: undo the transformation AND the library-size normalization
+        pred_o, truth_o = within_raw_counts(args, meta, te_id, genes, Y_df, pred_t)
+        scale_tag, space_t, space_o = "raw_counts", "target_space", "raw_counts"
+    else:
+        pred_o = inverse_trans(pred_t, meta["target_trans"])
+        truth_o = Y_df.to_numpy(dtype=np.float64)
+        scale_tag, space_t, space_o = ("original_scale",
+                                       f"target_trans:{meta['target_trans']}", "original_scale")
 
     os.makedirs(args.out_dir, exist_ok=True)
-    genes = meta["target_genes"]
     def _write(arr, name):
         d = pd.DataFrame(np.asarray(arr, dtype=np.float64), columns=genes)
         d.insert(0, "pos", te_id)
         d.to_feather(os.path.join(args.out_dir, name))
     _write(pred_t,  "pred_target_space.feather")
     _write(truth_t, "truth_target_space.feather")
-    _write(pred_o,  "pred_original_scale.feather")
-    _write(truth_o, "truth_original_scale.feather")
+    _write(pred_o,  f"pred_{scale_tag}.feather")
+    _write(truth_o, f"truth_{scale_tag}.feather")
 
     m_t = per_gene_metrics(np.asarray(pred_t),  np.asarray(truth_t),  genes)
     m_o = per_gene_metrics(np.asarray(pred_o),  np.asarray(truth_o),  genes)
-    m_t["space"] = f"target_trans:{meta['target_trans']}"
-    m_o["space"] = "original_scale"
+    m_t["space"] = space_t
+    m_o["space"] = space_o
     pd.concat([m_t, m_o], ignore_index=True).to_csv(
         os.path.join(args.out_dir, "per_gene_metrics.csv"), index=False)
 
     rows = []
-    for df_, space in ((m_t, f"target_trans:{meta['target_trans']}"), (m_o, "original_scale")):
+    for df_, space in ((m_t, space_t), (m_o, space_o)):
         r = summarize(df_, space)
         r.update(task=task, method=args.method_label,
                  input_trans=meta["input_trans"], target_trans=meta["target_trans"],
@@ -470,6 +612,10 @@ def add_predict_args(p, default_label):
     p.add_argument("--target_test", required=True)
     p.add_argument("--out_dir", required=True)
     p.add_argument("--compare_path", default=None)
+    # Within task only: raw-count truth and per-cell library sizes of the TARGET modality,
+    # used to bring predictions back to raw counts. Cross does not need them.
+    p.add_argument("--target_raw_matrix", default=None)
+    p.add_argument("--target_lib_sizes", default=None)
     p.add_argument("--method_label", default=default_label)
     p.add_argument("--cpu", action="store_true")
     return p
