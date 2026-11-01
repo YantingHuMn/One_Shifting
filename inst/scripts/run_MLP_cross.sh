@@ -4,12 +4,6 @@
 # Input is every gene-activity feature surviving the training-cell filter (not only TFs);
 # target is the non-TF RNA HVGs. Cells are paired by identifier, so the two gene sets need
 # not match in content or size.
-#
-# Set REUSE_LISTS_DIR to a Task 1 run's gene_lists directory to inherit its cell split and
-# its RNA target gene list; the comparison between the two tasks is then on identical test
-# cells and identical target genes. Leave it empty to build a fresh split.
-#
-# Usage: bash run_MLP_cross.sh <config_file>
 set -euo pipefail
 
 CONFIG_FILE="${1:-}"
@@ -31,7 +25,7 @@ COMPARE="${OUTPUT_DIR}/compare_combinations_trans_norm.csv"
 mkdir -p "$LISTS_DIR"
 
 trans_factor=("no_trans" "sqrt" "sqrt+1" "log2" "count+1" "log2(count+2)")
-norm_factor=("no_norm" 1000000 100000 10000 1000 "standardize")
+norm_factor=("no_norm" 1000000 100000 10000 1000)
 
 RAW_IN="${READ_DIR}/${V1}/Count_Matrix_norm_by_no_norm.feather"
 RAW_TG="${READ_DIR}/${V2}/Count_Matrix_norm_by_no_norm.feather"

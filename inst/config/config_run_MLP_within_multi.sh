@@ -6,7 +6,7 @@
 echo "DEBUG sample_name='$sample_name'  folder_name='$folder_name'  mlp_modality='$mlp_modality'"
 
 OUT_DIR="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
-READ_DIR="${OUT_DIR}/${folder_name}/${sample_name}_INPUT_ATAC"
+READ_DIR="${OUT_DIR}/${folder_name}/${sample_name}_INPUT_${mlp_modality:-RNA}"
 MODALITY="${sample_name}_${mlp_modality:-RNA}"
 
 N_HVG=1000
@@ -17,7 +17,7 @@ SEED=42
 
 EPOCHS=100
 PATIENCE=15
-HIDDEN1=256
+HIDDEN1=512
 HIDDEN2=128
 LR=0.0001
 BATCH=64

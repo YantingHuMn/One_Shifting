@@ -11,10 +11,8 @@ V2="${sample_name}_RNA"
 TARGET_NORM="no_norm"
 TARGET_TRANS="no_trans"
 
-# Inherit the within-RNA run's split and RNA target genes so the two tasks are scored on
-# the same test cells and the same genes. The cross job is submitted with a dependency on
-# the within job, so this directory exists by the time it runs.
-REUSE_LISTS_DIR="${READ_DIR}/MLP_within_${sample_name}_RNA/gene_lists"
+# REUSE_LISTS_DIR="${OUT_DIR}/${folder_name}/${sample_name}_INPUT_RNA/MLP_within_${sample_name}_RNA/gene_lists"
+REUSE_LISTS_DIR=""
 
 N_HVG=1000
 MIN_CELLS=3
@@ -24,7 +22,7 @@ SEED=42
 
 EPOCHS=100
 PATIENCE=15
-HIDDEN1=256
+HIDDEN1=512
 HIDDEN2=128
 LR=0.0001
 BATCH=64

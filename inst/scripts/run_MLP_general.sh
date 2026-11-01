@@ -9,8 +9,6 @@
 # with selection restricted to training cells. Every (transformation, normalization)
 # combination then reuses them, so the combinations stay comparable and the test cells
 # never enter feature selection.
-#
-# Usage: bash run_MLP_general.sh <config_file>
 set -euo pipefail
 
 CONFIG_FILE="${1:-}"
@@ -31,7 +29,7 @@ COMPARE="${OUTPUT_DIR}/compare_combinations_trans_norm.csv"
 mkdir -p "$LISTS_DIR"
 
 trans_factor=("no_trans" "sqrt" "sqrt+1" "log2" "count+1" "log2(count+2)")
-norm_factor=("no_norm" 1000000 100000 10000 1000 "standardize")
+norm_factor=("no_norm" 1000000 100000 10000 1000)
 
 RAW="${READ_DIR}/${MODALITY}/Count_Matrix_norm_by_no_norm.feather"
 
