@@ -2,7 +2,7 @@
 cd /dcs10/hongkai/data/yhu1/One_Shifting
 read_dir="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
 
-export folder_name="ENCODE"
+export folder_name="HCA"
 
 # train, train_dropout, baselin, step2_only
 tasks="train_MLP"
@@ -165,8 +165,9 @@ for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
             mlp_within_job_id=$(sbatch \
                 --job-name="MLP_${folder_name}_${sample_name}" \
                 --exclude=compute-170 \
-                --partition=shared \
-                --time=2-00:00:00 \
+                --partition=gpu \
+                --gres=gpu:1 \
+                --time=3-00:00:00 \
                 --mem=64G \
                 --cpus-per-task=4 \
                 --array=0-1 \
@@ -180,8 +181,9 @@ for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
             mlp_cross_job_id=$(sbatch \
                 --job-name="MLPx_${folder_name}_${sample_name}" \
                 --exclude=compute-170 \
-                --partition=shared \
-                --time=2-00:00:00 \
+                --partition=gpu \
+                --gres=gpu:1 \
+                --time=3-00:00:00 \
                 --mem=64G \
                 --cpus-per-task=4 \
                 --array=2 \

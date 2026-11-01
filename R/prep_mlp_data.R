@@ -20,9 +20,13 @@
 #   --task within   input and target are the same modality. Input genes are the TFs found
 #                   in that matrix; target genes are non-TF HVGs of the same matrix.
 #   --task cross    input is the ATAC gene-activity matrix, target is the RNA matrix of
-#                   the same cells. Input genes default to every input feature surviving
-#                   the training-cell filter (not restricted to TFs); target genes default
-#                   to the non-TF RNA HVGs. Cells are paired by `pos`.
+#                   the same cells, over ONE SHARED gene set: the non-TF RNA HVGs that
+#                   also survive the training-cell filter on the ATAC side, kept in HVG
+#                   order. X is the ATAC activity of those genes and Y is the RNA
+#                   expression of the same genes in the same cells, so the two matrices
+#                   have identical column names in identical order. Cells are paired by
+#                   `pos`. n_hvg is the number of RNA HVG CANDIDATES; the intersection is
+#                   usually smaller and is never padded back up.
 #
 # Parameter (all --key value):
 #   --mode             lists | extract
@@ -175,17 +179,33 @@ if (mode == "lists") {
     cat(sprintf("[INFO] HVGs on training cells: %d requested, %d returned, %d were TFs -> %d non-TF targets\n",
                 n_hvg, length(hvg_all), length(intersect(hvg_all, tf_in_target)), length(hvg_non_tf)))
 
-    input_genes <- if (task == "within") tf_in_input else keep_in
-    target_genes <- hvg_non_tf
     if (task == "within") {
+        input_genes <- tf_in_input
         # a gene must not be both the question and the answer
-        target_genes <- setdiff(target_genes, input_genes)
+        target_genes <- setdiff(hvg_non_tf, input_genes)
+        hvg_written <- hvg_non_tf
+    } else {
+        # cross predicts the RNA expression of the SAME genes whose ATAC activity it is
+        # given, so there is one list, not two. Subsetting hvg_non_tf keeps HVG order;
+        # intersect() would too, but this says so without relying on it. Genes present in
+        # only one modality drop out here and cannot reach either matrix.
+        target_genes <- hvg_non_tf[hvg_non_tf %in% keep_in]
+        input_genes  <- target_genes
+        hvg_written  <- target_genes
+        cat(sprintf("[INFO] shared gene set: %d non-TF RNA HVG candidates, %d of them also pass the ATAC filter -> %d genes used for BOTH input and target\n",
+                    length(hvg_non_tf), length(target_genes), length(target_genes)))
+        if (length(target_genes) == 0) {
+            stop("the non-TF RNA HVGs and the filtered ATAC features do not overlap, so ",
+                 "there is no gene whose ATAC activity could predict its own RNA. ",
+                 "Check that the two matrices use the same gene symbols; --n_hvg is a ",
+                 "candidate count and is deliberately not padded to reach a target size.")
+        }
     }
     if (length(input_genes) == 0)  stop("no input genes survive selection")
     if (length(target_genes) == 0) stop("no target genes survive selection")
 
     writeLines(tf_in_input,  file.path(lists_dir, "tf_names.txt"))
-    writeLines(hvg_non_tf,   file.path(lists_dir, "hvg_target_names.txt"))
+    writeLines(hvg_written,  file.path(lists_dir, "hvg_target_names.txt"))
     writeLines(input_genes,  file.path(lists_dir, "input_genes.txt"))
     writeLines(target_genes, file.path(lists_dir, "target_genes.txt"))
     cat(sprintf("[INFO] gene lists written to %s : %d input, %d target\n",
@@ -194,10 +214,18 @@ if (mode == "lists") {
     writeLines(sprintf(paste0(
         '{\n  "task": "%s",\n  "seed": %d,\n  "test_frac": %s,\n  "val_frac": %s,\n',
         '  "n_hvg": %d,\n  "min_cells": %d,\n  "n_cells_aligned": %d,\n',
+        '  "n_cells_train": %d,\n  "n_cells_val": %d,\n  "n_cells_test": %d,\n',
+        '  "n_hvg_candidates": %d,\n  "n_shared_genes": %s,\n',
         '  "n_input_genes": %d,\n  "n_target_genes": %d,\n',
+        '  "shared_gene_set": %s,\n',
         '  "input_matrix": "%s",\n  "target_matrix": "%s"\n}\n'),
         task, seed, format(test_frac), format(val_frac), n_hvg, min_cells,
-        n, length(input_genes), length(target_genes), input_matrix, target_matrix),
+        n, length(train_i), length(val_i), length(test_i),
+        length(hvg_non_tf),
+        if (task == "cross") as.character(length(target_genes)) else "null",
+        length(input_genes), length(target_genes),
+        if (task == "cross") "true" else "false",
+        input_matrix, target_matrix),
         file.path(lists_dir, "prep_meta.json"))
     quit(save = "no", status = 0)
 }
@@ -221,6 +249,12 @@ read_list <- function(override, default_name) {
 }
 input_genes  <- read_list(input_genes_override,  "input_genes.txt")
 target_genes <- read_list(target_genes_override, "target_genes.txt")
+if (task == "cross" && !identical(input_genes, target_genes)) {
+    stop("for --task cross the input and target gene lists must be the same list in the ",
+         "same order (", length(input_genes), " vs ", length(target_genes), " entries). ",
+         "Re-run --mode lists into a fresh --lists_dir; these files were written by the ",
+         "earlier two-list version of this script.")
+}
 
 miss_in  <- setdiff(input_genes,  colnames(X))
 miss_out <- setdiff(target_genes, colnames(Y))
