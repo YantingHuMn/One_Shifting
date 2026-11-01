@@ -5,15 +5,18 @@ read_dir="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
 export folder_name="ENCODE"
 
 # train, train_dropout, baselin, step2_only
-tasks="train"
+tasks="train_MLP"
 has_task () { [[ ",${tasks// /}," == *",$1,"* ]]; }
+
+dropout_keep_par_values=("")
 
 # Select 5 representative samples from diverse tissues to assess generalizability. dropout_keep_par_values="0.3,0.5,0.7,0.9"
 if [[ "$tasks" == "train_dropout" ]]; then
-    dropout_keep_par_values="0.3,0.5,0.7,0.9" #keep
+    dropout_keep_par_values=(0.3 0.5 0.7 0.9) #keep
 fi
 
 worker_script="../One_Shifting/sbatch/task/run_HCA_ENCODE_10x_one_sample_array.sh"
+mlp_worker_script="../One_Shifting/sbatch/task/run_MLP_one_sample.sh"
 baseline_worker_script_step1_gpu="../One_Shifting/sbatch/task/run_scVI_DCA_Saver_multi_step1.sh"
 baseline_worker_script_step2_cpu="../One_Shifting/sbatch/task/run_scVI_DCA_Saver_multi_step2.sh"
 tsv="${read_dir}/${folder_name}_input_sample_pairs.tsv"
@@ -39,7 +42,7 @@ elif [[ "$folder_name" == "10x" ]]; then
     selected_rows="1"
 fi
 
-for dropout_keep_par in ${dropout_keep_par_values//,/ }; do
+for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
 
     tail -n +2 "$tsv" | awk -v rows="$selected_rows" '
     BEGIN {
@@ -152,6 +155,43 @@ for dropout_keep_par in ${dropout_keep_par_values//,/ }; do
             if [[ -n "$baseline_cpu_job_id" ]]; then
                 echo "$baseline_cpu_job_id" >> "$job_id_file"
             fi
+        fi
+
+        # MLP: within-modality array (0 = RNA, 1 = ATAC), then cross-modality.
+        # Cross reuses the within-RNA split and RNA target gene list, so it waits on the within job instead of running beside it.
+        if has_task train_MLP; then
+            echo "Submitting MLP within-modality array for sample_name=${sample_name}"
+
+            mlp_within_job_id=$(sbatch \
+                --job-name="MLP_${folder_name}_${sample_name}" \
+                --exclude=compute-170 \
+                --partition=shared \
+                --time=2-00:00:00 \
+                --mem=64G \
+                --cpus-per-task=4 \
+                --array=0-1 \
+                --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}" \
+                --output="${log_dir}/submit_${folder_name}_MLP_within_${sample_name}_%a.out" \
+                --error="${log_dir}/submit_${folder_name}_MLP_within_${sample_name}_%a.err" \
+                "$mlp_worker_script" | awk '{print $4}')
+
+            echo "Submitted MLP within-modality job: ${mlp_within_job_id}"
+
+            mlp_cross_job_id=$(sbatch \
+                --job-name="MLPx_${folder_name}_${sample_name}" \
+                --exclude=compute-170 \
+                --partition=shared \
+                --time=2-00:00:00 \
+                --mem=64G \
+                --cpus-per-task=4 \
+                --array=2 \
+                --dependency=afterok:${mlp_within_job_id} \
+                --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}" \
+                --output="${log_dir}/submit_${folder_name}_MLP_cross_${sample_name}_%a.out" \
+                --error="${log_dir}/submit_${folder_name}_MLP_cross_${sample_name}_%a.err" \
+                "$mlp_worker_script" | awk '{print $4}')
+
+            echo "Submitted MLP cross-modality job: ${mlp_cross_job_id}"
         fi
     done
 

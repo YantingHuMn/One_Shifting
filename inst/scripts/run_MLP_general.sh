@@ -1,171 +1,96 @@
 #!/bin/bash
-CONFIG_FILE="$1"
-method="$2"
+# Task 1 -- within one modality: TF features -> non-TF highly variable genes.
+#
+# The modality is a parameter, not a constant: point MODALITY at the RNA folder and this
+# runs RNA TF -> RNA HVG; point it at the ATAC folder and it runs gene-activity TF ->
+# gene-activity HVG. Nothing below assumes RNA.
+#
+# The cell split and the gene lists are built ONCE, from the raw-count (no_norm) matrix,
+# with selection restricted to training cells. Every (transformation, normalization)
+# combination then reuses them, so the combinations stay comparable and the test cells
+# never enter feature selection.
+#
+# Usage: bash run_MLP_general.sh <config_file>
+set -euo pipefail
 
-if [ -z "$CONFIG_FILE" ] || [ -z "$method" ]; then
-    echo "Usage: bash run_pipeline.sh <config_file> <method>"
-    echo "  config_file: path to config (e.g. configs/pbmc_atac_rna.sh)"
-    echo "  method: MLP"
+CONFIG_FILE="${1:-}"
+if [ -z "$CONFIG_FILE" ]; then
+    echo "Usage: bash run_MLP_general.sh <config_file>"
     exit 1
 fi
-
 source "$CONFIG_FILE"
 
-echo "INPUT_FILE: $INPUT_FILE"
-echo "GROUND_TRUTH_FILE: $GROUND_TRUTH_FILE"
-echo "READ_DIR: $READ_DIR"
-echo "INPUT_CATEGORY: $V1"
-echo "OUTPUT_CATEGORY: $V1"
-echo "METHOD: $method"
+: "${READ_DIR:?}" "${MODALITY:?}" "${N_HVG:=1000}" "${MIN_CELLS:=3}"
+: "${TEST_FRAC:=0.2}" "${VAL_FRAC:=0.1}" "${SEED:=42}" "${EPOCHS:=100}" "${PATIENCE:=15}"
+: "${HIDDEN1:=256}" "${HIDDEN2:=128}" "${LR:=0.0001}" "${BATCH:=64}" "${DROPOUT:=0.1}"
 
-N_HVG=1000
-TEST_FRAC=0.2
-VAL_FRAC=0.1
-SEED=42
-
-CONDITION="given_${V2}_${V2_norm_factor}_${V2_trans_factor}"
-OUTPUT_DIR="${READ_DIR}/${method}/${CONDITION}"
-mkdir -p $OUTPUT_DIR
+REPO="../One_Shifting"
+OUTPUT_DIR="${READ_DIR}/MLP_within_${MODALITY}"
+LISTS_DIR="${OUTPUT_DIR}/gene_lists"
+COMPARE="${OUTPUT_DIR}/compare_combinations_trans_norm.csv"
+mkdir -p "$LISTS_DIR"
 
 trans_factor=("no_trans" "sqrt" "sqrt+1" "log2" "count+1" "log2(count+2)")
 norm_factor=("no_norm" 1000000 100000 10000 1000 "standardize")
-norm_factor_string=$(IFS=','; echo "${norm_factor[*]}")
+
+RAW="${READ_DIR}/${MODALITY}/Count_Matrix_norm_by_no_norm.feather"
 
 module load conda_R
+echo "=== Fixing the split and the gene lists (training cells only) ==="
+Rscript ${REPO}/R/prep_mlp_data.R \
+    --mode lists --task within \
+    --input_matrix  "$RAW" \
+    --target_matrix "$RAW" \
+    --lists_dir "$LISTS_DIR" \
+    --n_hvg "$N_HVG" --min_cells "$MIN_CELLS" \
+    --test_frac "$TEST_FRAC" --val_frac "$VAL_FRAC" --seed "$SEED"
 
+for this_trans in "${trans_factor[@]}"; do
+    for this_norm in "${norm_factor[@]}"; do
 
-LOCK_FILE="$READ_DIR/.count_matrix_done"
-if [ ! -f "$LOCK_FILE" ]; then
-    mkdir -p "$(dirname $LOCK_FILE)"
-    if mkdir "$READ_DIR/.count_matrix_lock" 2>/dev/null; then
-        # The job that grabs the lock is executed
-        Rscript ../One_Shifting/R/Step1_build_count_matrix.R \
-          $INPUT_FILE \
-          $GROUND_TRUTH_FILE \
-          "$READ_DIR" \
-          "$norm_factor_string" \
-          "$norm_factor_string" \
-          "TRUE" \
-          "p25"
-        touch "$LOCK_FILE"
-        rmdir "$READ_DIR/.count_matrix_lock"
-    else
-        # waiting for the job that didn't get the lock
-        echo "Waiting for count matrix to be built..."
-        while [ ! -f "$LOCK_FILE" ]; do
-            sleep 10
-        done
-    fi
-fi
-echo "Count matrix ready, proceeding..."
-echo "===Finish build count matrix==="
-
-echo "===Find TF and hvg==="
-
-GENE_LIST_DIR="${OUTPUT_DIR}/gene_lists"
-mkdir -p "$GENE_LIST_DIR"
- 
-Rscript ../One_Shifting/R/run_select_tf_hvg.R \
-    "$READ_DIR/$V1/Count_Matrix_norm_by_no_norm.feather" \
-    $GENE_LIST_DIR \
-    $N_HVG
- 
-TF_NAMES="${GENE_LIST_DIR}/tf_names.txt"
-HVG_NAMES="${GENE_LIST_DIR}/hvg_target_names.txt"
-
-# Ground Truth RNA
-DATA_PATH2="$READ_DIR/$V2/Count_Matrix_norm_by_$V2_norm_factor.feather"
-
-Rscript ../One_Shifting/R/run_MLP_data_pre.R \
-    $DATA_PATH2 \
-    "${OUTPUT_DIR}/${V2}_Ground_TRUTH" \
-    $TF_NAMES \
-    $HVG_NAMES \
-    $TEST_FRAC \
-    $VAL_FRAC \
-    $SEED
-    
-echo "=== Starting ${method} pipeline ==="
-
-
-# train - find par
-echo "=== Step 4: Training VAE on filtered data ==="
-for this_trans_factor in "${trans_factor[@]}"; do
-    for factor in "${norm_factor[@]}"; do
-
-        # Skip incompatible (standardize + sqrt/log) combinations
-        if [ "$factor" = "standardize" ]; then
-            case "$this_trans_factor" in
-                no_trans|count+1) ;;  # allow
-                *) echo "[SKIP] $this_trans_factor incompatible with standardize (negative values)"
-                   continue ;;
+        # standardize yields negative values, which sqrt and log cannot take
+        if [ "$this_norm" = "standardize" ]; then
+            case "$this_trans" in
+                no_trans|count+1) ;;
+                *) echo "[SKIP] ${this_trans} + standardize"; continue ;;
             esac
         fi
 
-        OUT_DIR="$OUTPUT_DIR/${this_trans_factor}/norm_${factor}"
+        OUT_DIR="${OUTPUT_DIR}/${this_trans}/norm_${this_norm}"
+        MAT="${READ_DIR}/${MODALITY}/Count_Matrix_norm_by_${this_norm}.feather"
         mkdir -p "$OUT_DIR"
 
-        DATA_PATH1="$READ_DIR/$V1/Count_Matrix_norm_by_$factor.feather"
-        
         module load conda_R
-        Rscript ../One_Shifting/R/run_MLP_data_pre.R \
-            $DATA_PATH1 \
-            $OUT_DIR \
-            $TF_NAMES \
-            $HVG_NAMES \
-            $TEST_FRAC \
-            $VAL_FRAC \
-            $SEED
+        Rscript ${REPO}/R/prep_mlp_data.R \
+            --mode extract --task within \
+            --input_matrix "$MAT" --target_matrix "$MAT" \
+            --lists_dir "$LISTS_DIR" --out_dir "$OUT_DIR"
 
         source ~/.bashrc
         conda activate vae_env2
-        python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
-        python -u ../One_Shifting/myproject/Step2_train_MLP.py \
-        --tf_train ${OUT_DIR}/tf_train.feather \
-        --tf_val ${OUT_DIR}/tf_val.feather \
-        --target_train ${OUT_DIR}/target_train.feather \
-        --target_val ${OUT_DIR}/target_val.feather \
-        --trans "${this_trans_factor}" \
-        --epochs 60 \
-        --patience 10 \
-        --min_delta 0 \
-        --out_summary ${OUT_DIR}/mlp_results.tsv
-        
+        python -u ${REPO}/myproject/Step2_train_MLP.py \
+            --input_train  "${OUT_DIR}/input_train.feather" \
+            --input_val    "${OUT_DIR}/input_val.feather" \
+            --target_train "${OUT_DIR}/target_train.feather" \
+            --target_val   "${OUT_DIR}/target_val.feather" \
+            --model_dir    "${OUT_DIR}/saved_model" \
+            --out_summary  "${OUT_DIR}/mlp_results.tsv" \
+            --input_trans "${this_trans}" --target_trans "${this_trans}" \
+            --input_norm  "${this_norm}"  --target_norm  "${this_norm}" \
+            --hidden_grid1 "$HIDDEN1" --hidden_grid2 "$HIDDEN2" \
+            --lr_grid "$LR" --batch_size_grid "$BATCH" --dropout "$DROPOUT" \
+            --epochs "$EPOCHS" --patience "$PATIENCE" --min_delta 0 --seed "$SEED"
 
-        # predict
-        SAVED_DIR="${OUT_DIR}/saved_models"
-        OUT_PATH="${OUT_DIR}/input_predicted_trans_by_${this_trans_factor}_norm_by_${factor}.feather" # input predicted
-        OUT_pre="${OUT_DIR}/input_true_trans_by_${this_trans_factor}_norm_by_${factor}.feather" # input
-        OUT_GROUND_TRUTH="${OUT_DIR}/ground_truth_trans_by_${this_trans_factor}_norm_by_${factor}.feather" # ground truth
-        compare_combinations_save_path="${OUTPUT_DIR}/compare_combinations_trans_norm.csv"
+        python -u ${REPO}/myproject/Step3_predict_MLP.py \
+            --model_dir   "${OUT_DIR}/saved_model" \
+            --input_test  "${OUT_DIR}/input_test.feather" \
+            --target_test "${OUT_DIR}/target_test.feather" \
+            --out_dir     "${OUT_DIR}/predictions" \
+            --compare_path "$COMPARE"
 
-        python ../One_Shifting/myproject/Step3_predict_MLP.py \
-        --model_dir ${SAVED_DIR} \
-        --tf_test ${OUT_DIR}/tf_test.feather \
-        --target_test ${OUT_DIR}/target_test.feather \
-        --out_pred ${OUT_PATH} \
-        --out_truth ${OUT_pre} \
-        --norm_factor ${factor} \
-        --this_trans_factor ${this_trans_factor} \
-        --compare_combinations_save_path ${compare_combinations_save_path}
-
-
-        python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
-        conda deactivate 
-
-        sleep 2
-
+        conda deactivate
     done
 done
 
-
-Rscript ../One_Shifting/R/run_summary_scatter_plot.R \
-    "${compare_combinations_save_path}" \
-    "mlp_TF_gene" \
-    "log(count+2)" \
-    "" \
-    "trans" \
-    "norm_factor" \
-    "pearson_corr" \
-    "spearman_corr"
+echo "=== Done. Summary: ${COMPARE} ==="
