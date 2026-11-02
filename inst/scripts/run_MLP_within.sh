@@ -9,8 +9,6 @@
 # with selection restricted to training cells. Every (transformation, normalization)
 # combination then reuses them, so the combinations stay comparable and the test cells
 # never enter feature selection.
-set -euo pipefail
-
 CONFIG_FILE="${1:-}"
 if [ -z "$CONFIG_FILE" ]; then
     echo "Usage: bash run_MLP_general.sh <config_file>"
@@ -21,9 +19,6 @@ source "$CONFIG_FILE"
 : "${READ_DIR:?}" "${MODALITY:?}" "${N_HVG:=1000}" "${MIN_CELLS:=3}"
 : "${TEST_FRAC:=0.2}" "${VAL_FRAC:=0.1}" "${SEED:=42}" "${EPOCHS:=100}" "${PATIENCE:=15}"
 : "${HIDDEN1:=256}" "${HIDDEN2:=128}" "${LR:=0.0001}" "${BATCH:=64}" "${DROPOUT:=0.1}"
-# The ReLU output layer changes the model, so results must NOT share a directory (and a
-# compare_combinations CSV) with runs made by the old linear-output model. Set
-# OUTPUT_SUFFIX="" in the config only if you really want the old path.
 : "${OUTPUT_SUFFIX=_relu_rawscale}"
 
 OUTPUT_DIR="${READ_DIR}/MLP_within_${MODALITY}${OUTPUT_SUFFIX}"
@@ -75,6 +70,7 @@ for this_trans in "${trans_factor[@]}"; do
         MAT="${READ_DIR}/${MODALITY}/Count_Matrix_norm_by_${this_norm}.feather"
         mkdir -p "$OUT_DIR"
 
+        echo "=== Running MLP within ${MODALITY} with ${this_trans} + ${this_norm} ==="
         module load conda_R
         Rscript ../One_Shifting/R/prep_mlp_data.R \
             --mode extract --task within \
@@ -83,8 +79,10 @@ for this_trans in "${trans_factor[@]}"; do
 
         source ~/.bashrc
         conda activate vae_env2
+        python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
-        python -u ../One_Shifting/myproject/Step2_train_MLP.py \
+        echo "=== Training MLP within ${MODALITY} with ${this_trans} + ${this_norm} ==="
+        python ../One_Shifting/myproject/Step2_train_MLP.py \
             --input_train  "${OUT_DIR}/input_train.feather" \
             --input_val    "${OUT_DIR}/input_val.feather" \
             --target_train "${OUT_DIR}/target_train.feather" \
@@ -97,7 +95,8 @@ for this_trans in "${trans_factor[@]}"; do
             --lr_grid "$LR" --batch_size_grid "$BATCH" --dropout "$DROPOUT" \
             --epochs "$EPOCHS" --patience "$PATIENCE" --min_delta 0 --seed "$SEED"
 
-        python -u ../One_Shifting/myproject/Step3_predict_MLP.py \
+        echo "=== Predicting MLP within ${MODALITY} with ${this_trans} + ${this_norm} ==="
+        python ../One_Shifting/myproject/Step3_predict_MLP.py \
             --model_dir   "${OUT_DIR}/saved_model" \
             --input_test  "${OUT_DIR}/input_test.feather" \
             --target_test "${OUT_DIR}/target_test.feather" \
@@ -111,13 +110,14 @@ for this_trans in "${trans_factor[@]}"; do
 done
 
 # one summary figure for the whole sweep, on the fully recovered raw-count scale
+echo "=== Evaluating MLP ==="
 module load conda_R
 Rscript ../One_Shifting/R/run_MLP_summary_scatter_plot.R \
     --csv "$COMPARE" \
     --sample "$sample_name" \
     --task within \
     --modality "$MOD_LABEL" \
-    --space raw_counts \
+    --space raw_counts,target_space \
     --out_dir "${OUTPUT_DIR}/figures"
 
 echo "=== Done. Summary: ${COMPARE} ==="

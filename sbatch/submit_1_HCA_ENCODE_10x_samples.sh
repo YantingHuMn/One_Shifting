@@ -4,7 +4,7 @@ read_dir="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
 
 export folder_name="HCA"
 
-# train, train_dropout, baselin, step2_only
+# train, train_dropout, baseline, step2_only
 tasks="train_MLP"
 has_task () { [[ ",${tasks// /}," == *",$1,"* ]]; }
 
@@ -167,8 +167,8 @@ for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
                 --exclude=compute-170 \
                 --partition=gpu \
                 --gres=gpu:1 \
-                --time=3-00:00:00 \
-                --mem=64G \
+                --time=1-00:00:00 \
+                --mem=16G \
                 --cpus-per-task=4 \
                 --array=0-1 \
                 --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}" \
@@ -183,8 +183,8 @@ for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
                 --exclude=compute-170 \
                 --partition=gpu \
                 --gres=gpu:1 \
-                --time=3-00:00:00 \
-                --mem=64G \
+                --time=1-00:00:00 \
+                --mem=32G \
                 --cpus-per-task=4 \
                 --array=2 \
                 --dependency=afterok:${mlp_within_job_id} \

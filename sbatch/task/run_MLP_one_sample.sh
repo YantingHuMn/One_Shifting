@@ -8,7 +8,6 @@
 #SBATCH --mail-user=yhu157@jh.edu
 #SBATCH --mail-type=END,FAIL
 
-
 cd /dcs10/hongkai/data/yhu1/One_Shifting
 
 if [[ -z "${sample_name}" ]]; then

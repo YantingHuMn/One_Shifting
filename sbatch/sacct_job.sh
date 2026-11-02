@@ -1,7 +1,7 @@
 sacct -j 35510044_1 --format=JobID,JobName%100,State,Elapsed,Start,End
 squeue -j 35820817_0 -o "%.20i %.50j"
 scontrol show job 36744629_0 | grep TimeLimit
-sacct -j 36780361_0 --format=JobID,JobName%50,State
+sacct -j 36780365_1 --format=JobID,JobName%50,State
 
 export sample_name="ENCSR196JUO"
 export folder_name="ENCODE"
@@ -16,3 +16,4 @@ folder_name="10x"
 Rscript /dcs10/hongkai/data/yhu1/One_Shifting/R/check_raw_pair_alignment.R \
     /dcs07/hongkai/data/yhu1/One_Shifting_Results/${folder_name} \
     /dcs07/hongkai/data/yhu1/One_Shifting_Results/${folder_name}_raw_pair_alignment.csv
+

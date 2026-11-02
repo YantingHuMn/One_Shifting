@@ -4,8 +4,6 @@
 # Input is every gene-activity feature surviving the training-cell filter (not only TFs);
 # target is the non-TF RNA HVGs. Cells are paired by identifier, so the two gene sets need
 # not match in content or size.
-set -euo pipefail
-
 CONFIG_FILE="${1:-}"
 if [ -z "$CONFIG_FILE" ]; then
     echo "Usage: bash run_MLP_cross.sh <config_file>"
@@ -76,6 +74,7 @@ for this_trans in "${trans_factor[@]}"; do
         MAT_TG="${READ_DIR}/${V2}/Count_Matrix_norm_by_${TARGET_NORM}.feather"
         mkdir -p "$OUT_DIR"
 
+        echo "=== Running MLP within ${MODALITY} with ${this_trans} + ${this_norm} ==="
         module load conda_R
         Rscript ../One_Shifting/R/prep_mlp_data.R \
             --mode extract --task cross \
@@ -84,7 +83,9 @@ for this_trans in "${trans_factor[@]}"; do
 
         source ~/.bashrc
         conda activate vae_env2
+        python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
+        echo "=== Training MLP within ${MODALITY} with ${this_trans} + ${this_norm} ==="
         python -u ../One_Shifting/myproject/Step2_train_MLP_cross.py \
             --input_train  "${OUT_DIR}/input_train.feather" \
             --input_val    "${OUT_DIR}/input_val.feather" \
@@ -98,6 +99,7 @@ for this_trans in "${trans_factor[@]}"; do
             --lr_grid "$LR" --batch_size_grid "$BATCH" --dropout "$DROPOUT" \
             --epochs "$EPOCHS" --patience "$PATIENCE" --min_delta 0 --seed "$SEED"
 
+        echo "=== Predicting MLP within ${MODALITY} with ${this_trans} + ${this_norm} ==="
         python -u ../One_Shifting/myproject/Step3_predict_MLP_cross.py \
             --model_dir   "${OUT_DIR}/saved_model" \
             --input_test  "${OUT_DIR}/input_test.feather" \
