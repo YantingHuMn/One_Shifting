@@ -217,24 +217,23 @@ for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
                 --cpus-per-task=4 \
                 --array=0-1 \
                 --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",methods_par="${methods_par}" \
-                --output="${log_dir}/submit_${folder_name}_Peak_${sample_name}_%a.out" \
-                --error="${log_dir}/submit_${folder_name}_Peak_${sample_name}_%a.err" \
+                --output="${log_dir}/submit_${folder_name}_Peak_gpu_${sample_name}_%a.out" \
+                --error="${log_dir}/submit_${folder_name}_Peak_gpu_${sample_name}_%a.err" \
                 "$peak_worker_script" | awk '{print $4}')
 
-            methods_par="Transfomer_denoise"
+            methods_par="Transformer_denoise"
 
             peak_job_id2=$(sbatch \
                 --job-name="${folder_name}_${sample_name}" \
                 --exclude=compute-170,compute-128 \
                 --partition=shared \
-                --gres=cpu:1 \
                 --time=7-00:00:00 \
                 --mem=128G \
                 --cpus-per-task=4 \
-                --array=2 \
+                --array=0 \
                 --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",methods_par="${methods_par}" \
-                --output="${log_dir}/submit_${folder_name}_Peak_${sample_name}_%a.out" \
-                --error="${log_dir}/submit_${folder_name}_Peak_${sample_name}_%a.err" \
+                --output="${log_dir}/submit_${folder_name}_Peak_cpu_${sample_name}_%a.out" \
+                --error="${log_dir}/submit_${folder_name}_Peak_cpu_${sample_name}_%a.err" \
                 "$peak_worker_script" | awk '{print $4}')
 
             echo "Submitted Peak training job: ${peak_job_id1} and ${peak_job_id2}"

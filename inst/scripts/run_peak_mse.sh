@@ -39,49 +39,139 @@ trans_factor=("no_trans" "count+1" "sqrt" "sqrt+1" "log2" "log2(count+2)")
 norm_factor=("no_norm" 1000000 100000 10000 1000)
 norm_string=$(IFS=','; echo "${norm_factor[*]}")
 
-echo "=== Step 1: read the h5ad and write the q95 peak counts ==="
-module load conda_R
+PREP_LOCK_DIR="${READ_DIR}/.peak_prep_lock"
+PREP_DONE="${READ_DIR}/.peak_prep_done"
+PREP_MAX_WAIT=3600
 
-if [ ! -f "$INPUT_FILE" ] || [ ! -f "$GROUND_TRUTH_FILE" ]; then
-    echo "[Step 1] extracting from $input_path"
-    Rscript ../One_Shifting/R/load_rna_atac_from_h5ad.R \
-        "$input_path" \
-        "$sample_name" \
-        "${OUT_DIR}/${folder_name}"
-    if [ $? -ne 0 ]; then echo "[FAIL] Step 1: load_rna_atac_from_h5ad.R"; exit 1; fi
-else
-    echo "[Step 1] q95 peaks and RNA already present, not re-extracting"
-fi
+Q95_SHARED="$INPUT_FILE"
+Q95_LOCAL="${READ_DIR}/${V1}/atac_peak_counts_top_q95.feather"
+RAW_PEAK_COUNTS="${OUT_DIR}/${folder_name}/${V1}/atac_peak_counts.feather"
+RAW_PEAK_PATH="${READ_DIR}/${V1}/Count_Matrix_norm_by_no_norm.feather"
+LIB_SIZES_CSV="${READ_DIR}/${V1}/lib_sizes.csv"
 
-# The q95 block inside load_rna_atac_from_h5ad.R is wrapped in a tryCatch that only warns,
-# so its absence has to be checked rather than assumed.
-if [ ! -f "$INPUT_FILE" ]; then
-    echo "[FAIL] Step 1: $INPUT_FILE was not produced (check the log for 'failed to save atac_peak_counts_top_q95')"
-    exit 1
-fi
+# RNA is read-only here and is never rebuilt: the gene-activity experiments already use
+# this file, and regenerating it would mean re-running the full h5ad extraction, which
+# also rewrites activity_counts.feather and atac_peak_counts.feather.
 if [ ! -f "$GROUND_TRUTH_FILE" ]; then
-    echo "[FAIL] Step 1: $GROUND_TRUTH_FILE was not produced"
+    echo "[FAIL] RNA counts not found: $GROUND_TRUTH_FILE"
+    echo "       This flow will not create it. Produce it with the gene-activity"
+    echo "       extraction (R/load_rna_atac_from_h5ad.R) and re-run."
     exit 1
 fi
 
-echo "=== Step 2: build the normalized peak matrices (one fixed peak set) ==="
-if [ ! -f "${READ_DIR}/${V1}/peak_cell_manifest.txt" ]; then
+# Everything the three methods share. Checked as a whole, because a run that died midway
+# can leave some of these behind and a partial set must not count as ready.
+prep_complete () {
+    [ -f "$LIB_SIZES_CSV" ] || return 1
+    [ -f "${READ_DIR}/${V1}/peak_cell_manifest.txt" ] || return 1
+    local nf
+    for nf in "${norm_factor[@]}"; do
+        [ -f "${READ_DIR}/${V1}/Count_Matrix_norm_by_${nf}.feather" ] || return 1
+    done
+    local f
+    for f in peak_gene_map.csv eval_genes.txt eval_cells.txt baseline_activity.feather rna_eval.feather; do
+        [ -f "${CACHE_DIR}/${f}" ] || return 1
+    done
+    return 0
+}
+
+do_prepare () {
+    echo "=== Step 1: q95 peak counts ==="
+    if [ -f "$Q95_SHARED" ]; then
+        Q95_PATH="$Q95_SHARED"
+        echo "[Step 1] reusing existing q95 peaks (read-only): $Q95_PATH"
+    elif [ -f "$Q95_LOCAL" ]; then
+        Q95_PATH="$Q95_LOCAL"
+        echo "[Step 1] reusing q95 peaks built earlier by this flow: $Q95_PATH"
+    else
+        # Peak-only extraction. It writes one file and never produces RNA, activity or
+        # atac_peak_counts, so nothing the gene-activity experiments use is touched. The
+        # new file lands under READ_DIR, not in the shared directory.
+        Q95_PATH="$Q95_LOCAL"
+        echo "[Step 1] building q95 peaks -> $Q95_PATH"
+        Rscript ../One_Shifting/R/extract_peak_counts_q95.R \
+            --out_path "$Q95_PATH" \
+            --peak_counts "$RAW_PEAK_COUNTS" \
+            --h5ad "$input_path"
+        if [ $? -ne 0 ]; then echo "[FAIL] Step 1: extract_peak_counts_q95.R"; return 1; fi
+    fi
+    if [ ! -f "$Q95_PATH" ]; then echo "[FAIL] Step 1: $Q95_PATH was not produced"; return 1; fi
+
+    echo "=== Step 2: build the normalized peak matrices (one fixed peak set) ==="
     Rscript ../One_Shifting/R/prep_peak_q95_matrix.R \
-        "$INPUT_FILE" \
+        "$Q95_PATH" \
         "$READ_DIR" \
         "$V1" \
         "$norm_string" \
         "$GENOME_BUILD"
-    if [ $? -ne 0 ]; then echo "[FAIL] Step 2: prep_peak_q95_matrix.R"; exit 1; fi
-else
-    echo "[Step 2] peak matrices already built, reusing the fixed peak set"
+    if [ $? -ne 0 ]; then echo "[FAIL] Step 2: prep_peak_q95_matrix.R"; return 1; fi
+
+    echo "=== Step 3: build the shared evaluation cache ==="
+    Rscript ../One_Shifting/R/peak_recon_to_gene_activity_eval.R \
+        "PREPARE_ONLY" \
+        "$RAW_PEAK_PATH" \
+        "$LIB_SIZES_CSV" \
+        "$GROUND_TRUTH_FILE" \
+        "no_trans" \
+        "no_norm" \
+        "$CACHE_DIR" \
+        "$CACHE_DIR" \
+        "$method" \
+        "${CACHE_DIR}/prepare_only_unused.csv"
+    if [ $? -ne 0 ]; then echo "[FAIL] Step 3: evaluation cache"; return 1; fi
+    return 0
+}
+
+echo "=== Shared preparation (one process per sample) ==="
+module load conda_R
+
+if [ ! -f "$PREP_DONE" ]; then
+    waited=0
+    while true; do
+        if mkdir "$PREP_LOCK_DIR" 2>/dev/null; then
+            trap 'rmdir "$PREP_LOCK_DIR" 2>/dev/null' EXIT
+            # Re-check under the lock: the check that sent us here was made before another
+            # process may have finished the same work.
+            if prep_complete; then
+                echo "[prep] another process already finished it"
+            else
+                do_prepare
+                if [ $? -ne 0 ]; then
+                    rmdir "$PREP_LOCK_DIR" 2>/dev/null; trap - EXIT
+                    echo "[FAIL] shared preparation failed; no done flag written"
+                    exit 1
+                fi
+                # The flag is written only after every required output is verified.
+                if ! prep_complete; then
+                    rmdir "$PREP_LOCK_DIR" 2>/dev/null; trap - EXIT
+                    echo "[FAIL] shared preparation finished but outputs are incomplete; no done flag written"
+                    exit 1
+                fi
+            fi
+            touch "$PREP_DONE"
+            rmdir "$PREP_LOCK_DIR" 2>/dev/null
+            trap - EXIT
+            break
+        fi
+
+        echo "[prep] another process holds the lock, waiting..."
+        sleep 10
+        waited=$((waited + 10))
+        if [ -f "$PREP_DONE" ]; then break; fi
+        if [ $waited -ge $PREP_MAX_WAIT ]; then
+            # The lock may still be held by a live job, so it is not removed here.
+            echo "[FAIL] timed out after ${PREP_MAX_WAIT}s waiting for $PREP_LOCK_DIR"
+            echo "       If no job is preparing this sample, remove that directory by hand."
+            exit 1
+        fi
+    done
 fi
 
-RAW_PEAK_PATH="${READ_DIR}/${V1}/Count_Matrix_norm_by_no_norm.feather"
-LIB_SIZES_CSV="${READ_DIR}/${V1}/lib_sizes.csv"
-for f in "$RAW_PEAK_PATH" "$LIB_SIZES_CSV"; do
-    if [ ! -f "$f" ]; then echo "[FAIL] Step 2: missing $f"; exit 1; fi
-done
+if ! prep_complete; then
+    echo "[FAIL] shared preparation is marked done but outputs are missing under ${READ_DIR}/${V1} or ${CACHE_DIR}"
+    exit 1
+fi
+echo "[prep] shared preparation ready; training can proceed in parallel"
 
 if [ "$method" = "VAE" ]; then
     METHOD_ARGS="--beta_grid 0 --hidden_grid1 2048 --hidden_grid2 512 --batch_size_grid 16 --epochs_inner 100 --epochs_outer 100"

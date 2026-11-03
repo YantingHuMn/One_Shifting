@@ -27,6 +27,11 @@
 #   method        : method label recorded in the summary row
 #   summary_csv   : summary rows are appended here, de-duplicated on
 #                   (method, REP1_trans, REP1_norm, corr_type)
+#
+# Passing PREPARE_ONLY as <recon_path> builds the shared cache (peak -> gene map, baseline
+# activity, frozen cell/gene lists, RNA on that set) and exits without scoring anything.
+# The runner does that once inside the sample lock, so the three methods cannot race to
+# build the same cache; every later call then only reads it.
 #   upstream      : gene body plus this many bp upstream, default 2000
 # Output: in out_dir, three aligned feathers (ground truth RNA, baseline activity,
 #   reconstructed activity), per_gene_metrics_<trans>_<norm>.csv, and one appended row per
@@ -47,6 +52,7 @@ if (length(args) < 10) {
          "<summary_csv> [upstream]")
 }
 recon_path    <- args[1]
+prepare_only  <- identical(recon_path, "PREPARE_ONLY")
 raw_peak_path <- args[2]
 lib_sizes_csv <- args[3]
 rna_path      <- args[4]
@@ -204,7 +210,20 @@ genes_path <- file.path(cache_dir, "eval_genes.txt")
 cells_path <- file.path(cache_dir, "eval_cells.txt")
 base_path  <- file.path(cache_dir, "baseline_activity.feather")
 
-if (!file.exists(genes_path) || !file.exists(cells_path) || !file.exists(base_path)) {
+rna_eval_path <- file.path(cache_dir, "rna_eval.feather")
+
+# All five pieces, not just the manifest-like ones: a run that died midway can leave some
+# of them behind, and treating that as "cached" would silently score against a partial
+# evaluation set.
+cache_files <- c(map_path, genes_path, cells_path, base_path, rna_eval_path)
+cache_complete <- all(file.exists(cache_files))
+if (!cache_complete) {
+    missing <- basename(cache_files[!file.exists(cache_files)])
+    cat(sprintf("[EVAL] evaluation cache incomplete, missing: %s\n",
+                paste(missing, collapse = ", ")))
+}
+
+if (!cache_complete) {
     cat("[EVAL] freezing the evaluation set from the raw q95 peaks and raw RNA (once)\n")
     rna <- as.data.frame(read_feather(rna_path))
     if (ncol(rna) < 2) stop("RNA file must have a gene-id column and cell columns")
@@ -229,15 +248,24 @@ if (!file.exists(genes_path) || !file.exists(cells_path) || !file.exists(base_pa
     writeLines(eval_genes, genes_path)
     writeLines(eval_cells, cells_path)
     write_with_pos(base_all[eval_cells, eval_genes, drop = FALSE], base_path)
-    write_with_pos(rna_m[eval_cells, eval_genes, drop = FALSE],
-                   file.path(cache_dir, "rna_eval.feather"))
+    write_with_pos(rna_m[eval_cells, eval_genes, drop = FALSE], rna_eval_path)
     cat(sprintf("[EVAL] frozen: %d cells x %d genes\n", length(eval_cells), length(eval_genes)))
+    still_missing <- cache_files[!file.exists(cache_files)]
+    if (length(still_missing) > 0) {
+        stop("cache build finished but these files are absent: ",
+             paste(basename(still_missing), collapse = ", "))
+    }
+}
+
+if (prepare_only) {
+    cat(sprintf("[EVAL] PREPARE_ONLY: cache ready in %s\n", cache_dir))
+    quit(save = "no", status = 0)
 }
 
 eval_genes <- readLines(genes_path)
 eval_cells <- readLines(cells_path)
 base_act <- read_cells_by_features(base_path, "baseline activity")
-rna_act  <- read_cells_by_features(file.path(cache_dir, "rna_eval.feather"), "RNA (evaluation set)")
+rna_act  <- read_cells_by_features(rna_eval_path, "RNA (evaluation set)")
 stopifnot(identical(rownames(base_act), eval_cells), identical(colnames(base_act), eval_genes))
 stopifnot(identical(rownames(rna_act),  eval_cells), identical(colnames(rna_act),  eval_genes))
 
