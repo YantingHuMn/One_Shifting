@@ -4,7 +4,7 @@ read_dir="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
 
 export folder_name="HCA"
 
-# train, train_dropout, baseline, step2_only
+# train, train_dropout, baseline, step2_only, train_MLP, train_peak
 tasks="train_MLP"
 has_task () { [[ ",${tasks// /}," == *",$1,"* ]]; }
 
@@ -19,27 +19,32 @@ worker_script="../One_Shifting/sbatch/task/run_HCA_ENCODE_10x_one_sample_array.s
 mlp_worker_script="../One_Shifting/sbatch/task/run_MLP_one_sample.sh"
 baseline_worker_script_step1_gpu="../One_Shifting/sbatch/task/run_scVI_DCA_Saver_multi_step1.sh"
 baseline_worker_script_step2_cpu="../One_Shifting/sbatch/task/run_scVI_DCA_Saver_multi_step2.sh"
-tsv="${read_dir}/${folder_name}_input_sample_pairs.tsv"
+tsv="../One_Shifting/data/${folder_name}_input_sample_pairs.tsv"
 
 log_dir="${read_dir}/${folder_name}/AAA_logs"
 mkdir -p "$log_dir"
 job_id_file="${log_dir}/AAA_step2_job_map.txt"
 touch "$job_id_file"
 
+# Samples
 # run_first_n_sample=4
 # tail -n +2 "$tsv" | awk -v n="$run_first_n_sample" 'NR <= n {print $2}' | while read -r sample_name; do
-# selected_rows="1,2,3"
-# selected_rows="4,5,6,7,8,9"
-# selected_rows="10,11,12,13"
-# selected_rows="10,11,12,13,14,15,16,17,18,19"
-
-# dropout Samples
-if [[ "$folder_name" == "HCA" ]]; then
-    selected_rows="4,15"
-elif [[ "$folder_name" == "ENCODE" ]]; then
-    selected_rows="1,5"
-elif [[ "$folder_name" == "10x" ]]; then
-    selected_rows="1"
+if [[ "$tasks" == "train" || "$tasks" == "baseline" ]]; then
+    if [[ "$folder_name" == "HCA" ]]; then
+        selected_rows="1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19"
+    elif [[ "$folder_name" == "ENCODE" ]]; then
+        selected_rows="1,2,3,4,5,6,7,8,9,10,11"
+    elif [[ "$folder_name" == "10x" ]]; then
+        selected_rows="1,2"
+    fi
+else
+    if [[ "$folder_name" == "HCA" ]]; then
+        selected_rows="4,15"
+    elif [[ "$folder_name" == "ENCODE" ]]; then
+        selected_rows="1,5"
+    elif [[ "$folder_name" == "10x" ]]; then
+        selected_rows="1"
+    fi
 fi
 
 for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
