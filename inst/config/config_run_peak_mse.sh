@@ -2,8 +2,8 @@
 # folder_name / sample_name / input_path may be exported by an upstream script; the
 # values below are only the fallback for running this by hand.
 
-folder_name="${folder_name:-HCA}"
-sample_name="${sample_name:-Hrv39}"
+folder_name="${folder_name:-}"
+sample_name="${sample_name:-}"
 
 OUT_DIR="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
 READ_DIR="${OUT_DIR}/${folder_name}/${sample_name}_INPUT_ATAC_peak_MSE"

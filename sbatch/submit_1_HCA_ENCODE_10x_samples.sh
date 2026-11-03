@@ -5,7 +5,7 @@ read_dir="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
 export folder_name="HCA"
 
 # train, train_dropout, baseline, step2_only, train_MLP, train_peak
-tasks="train_MLP"
+tasks="train_peak"
 has_task () { [[ ",${tasks// /}," == *",$1,"* ]]; }
 
 dropout_keep_par_values=("")
@@ -15,11 +15,12 @@ if [[ "$tasks" == "train_dropout" ]]; then
     dropout_keep_par_values=(0.3 0.5 0.7 0.9) #keep
 fi
 
-worker_script="../One_Shifting/sbatch/task/run_HCA_ENCODE_10x_one_sample_array.sh"
+train_worker_script="../One_Shifting/sbatch/task/run_HCA_ENCODE_10x_one_sample_array.sh"
 mlp_worker_script="../One_Shifting/sbatch/task/run_MLP_one_sample.sh"
 baseline_worker_script_step1_gpu="../One_Shifting/sbatch/task/run_scVI_DCA_Saver_multi_step1.sh"
 baseline_worker_script_step2_cpu="../One_Shifting/sbatch/task/run_scVI_DCA_Saver_multi_step2.sh"
 tsv="../One_Shifting/data/${folder_name}_input_sample_pairs.tsv"
+peak_worker_script="../One_Shifting/sbatch/task/run_peak_one_sample.sh"
 
 log_dir="${read_dir}/${folder_name}/AAA_logs"
 mkdir -p "$log_dir"
@@ -84,7 +85,7 @@ for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
                 --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}",methods_par="${methods_par}" \
                 --output="${log_dir}/submit_${folder_name}_gpu_${dropout_keep_par}_${sample_name}_%a.out" \
                 --error="${log_dir}/submit_${folder_name}_gpu_${dropout_keep_par}_${sample_name}_%a.err" \
-                "$worker_script" | awk '{print $4}')
+                "$train_worker_script" | awk '{print $4}')
 
             echo "Submitted training array job: ${train_job_id}"
         fi
@@ -105,7 +106,7 @@ for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
                 --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}",methods_par="${methods_par}" \
                 --output="${log_dir}/submit_${folder_name}_cpu_${dropout_keep_par}_${sample_name}_%a.out" \
                 --error="${log_dir}/submit_${folder_name}_cpu_${dropout_keep_par}_${sample_name}_%a.err" \
-                "$worker_script" | awk '{print $4}')
+                "$train_worker_script" | awk '{print $4}')
 
             echo "Submitted training array job: ${train_job_id}"
         fi
@@ -198,6 +199,45 @@ for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
                 "$mlp_worker_script" | awk '{print $4}')
 
             echo "Submitted MLP cross-modality job: ${mlp_cross_job_id}"
+        fi
+       
+        # Peak:
+        if has_task train_peak; then
+            echo "Submitting Peak training job for sample_name=${sample_name}"
+
+            methods_par="VAE DCA_mse"
+
+            peak_job_id1=$(sbatch \
+                --job-name="${folder_name}_${sample_name}" \
+                --exclude=compute-170,compute-128 \
+                --partition=gpu \
+                --gres=gpu:1 \
+                --time=3-00:00:00 \
+                --mem=128G \
+                --cpus-per-task=4 \
+                --array=0-1 \
+                --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",methods_par="${methods_par}" \
+                --output="${log_dir}/submit_${folder_name}_Peak_${sample_name}_%a.out" \
+                --error="${log_dir}/submit_${folder_name}_Peak_${sample_name}_%a.err" \
+                "$peak_worker_script" | awk '{print $4}')
+
+            methods_par="Transfomer_denoise"
+
+            peak_job_id2=$(sbatch \
+                --job-name="${folder_name}_${sample_name}" \
+                --exclude=compute-170,compute-128 \
+                --partition=shared \
+                --gres=cpu:1 \
+                --time=7-00:00:00 \
+                --mem=128G \
+                --cpus-per-task=4 \
+                --array=2 \
+                --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",methods_par="${methods_par}" \
+                --output="${log_dir}/submit_${folder_name}_Peak_${sample_name}_%a.out" \
+                --error="${log_dir}/submit_${folder_name}_Peak_${sample_name}_%a.err" \
+                "$peak_worker_script" | awk '{print $4}')
+
+            echo "Submitted Peak training job: ${peak_job_id1} and ${peak_job_id2}"
         fi
     done
 
