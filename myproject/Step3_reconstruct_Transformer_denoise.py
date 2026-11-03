@@ -22,13 +22,13 @@ def sanitize_norm_name(norm):
     return re.sub(r"[^0-9A-Za-z._+-]", "_", str(norm).strip())
 
 
-def _check_count_matrix(df, name, check_zero=True):
+def _check_count_matrix(df, name, check_zero=True, allow_zero_rows=False):
     values = df.iloc[:, 1:].to_numpy(dtype=np.float64)
     if values.shape[0] == 0 or values.shape[1] == 0:
         raise ValueError(f"{name}: count matrix is empty")
     n_nan = int(np.isnan(values).sum())
     n_inf = int(np.isinf(values).sum())
-    n_zero_rows = int(np.all(values == 0, axis=1).sum()) if check_zero else 0
+    n_zero_rows = int(np.all(values == 0, axis=1).sum()) if check_zero and not allow_zero_rows else 0
     n_zero_cols = int(np.all(values == 0, axis=0).sum()) if check_zero else 0
     if n_nan or n_inf or n_zero_rows or n_zero_cols:
         raise ValueError(
@@ -123,7 +123,8 @@ def apply_transformation(df, trans):
 def filter_and_transform(df1, df2, threshold_value, trans1, trans2,
                          transformed_out_dir=None, data_path1=None, data_path2=None, save=False):
     data_cols = df1.columns[1:]
-    _check_count_matrix(df1, "V1 before filtering")
+    allow_zero_rows = bool(df1.attrs.get("allow_zero_rows", False))
+    _check_count_matrix(df1, "V1 before filtering", allow_zero_rows=allow_zero_rows)
     _check_count_matrix(df2, "V2 before filtering", check_zero=False)
     zero_percentage = (df1[data_cols] == 0).mean()
     keep_cols = zero_percentage < threshold_value
@@ -134,7 +135,7 @@ def filter_and_transform(df1, df2, threshold_value, trans1, trans2,
     filtered_df1 = df1[cols_to_keep].copy()
     filtered_df2 = df2[cols_to_keep].copy()
 
-    _check_count_matrix(filtered_df1, "V1 before transformation")
+    _check_count_matrix(filtered_df1, "V1 before transformation", allow_zero_rows=allow_zero_rows)
     _check_count_matrix(filtered_df2, "V2 before transformation", check_zero=False)
 
     filtered_df1 = apply_transformation(filtered_df1, trans1)
@@ -207,6 +208,8 @@ def main(args):
     print("\n[LOAD DATA]")
     df1_raw = pd.read_feather(args.data_path1)
     df2_raw = pd.read_feather(args.data_path2)
+    if args.allow_zero_rows:
+        df1_raw.attrs["allow_zero_rows"] = True
     print(f"  Original df1: {df1_raw.shape}")
     print(f"  Original df2: {df2_raw.shape}")
 
@@ -305,5 +308,7 @@ if __name__ == "__main__":
                          "final_model_<normalization>.pt")
     ap.add_argument("--out_path", required=True, help="Output path for reconstructed data (.feather)")
     ap.add_argument("--cpu", action="store_true")
+    ap.add_argument("--allow_zero_rows", action="store_true",
+                    help="Allow all-zero cells while retaining the fixed cell set")
     args = ap.parse_args()
     main(args)

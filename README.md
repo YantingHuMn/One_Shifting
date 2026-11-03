@@ -52,4 +52,3 @@ Computes Pearson and Spearman correlations between reconstructed outputs and gro
 - jsonlite
 
 ## Usage
-

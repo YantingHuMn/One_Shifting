@@ -136,8 +136,15 @@ run_mlp_summary_scatter_plot <- function(csv, sample, task, modality, space, out
     panel_counts <- vapply(spaces, function(sp) sum(d$space == sp), integer(1))
     if (any(panel_counts == 0)) stop("No finite points in space(s): ",
                                    paste(spaces[panel_counts == 0], collapse = ", "))
-    d$evaluation_space <- factor(d$space, levels = spaces,
-        labels = paste0(spaces, " (", panel_counts, "/", N_EXPECTED, ")"))
+    d$evaluation_space <- factor(d$space, levels = spaces, labels = paste0(spaces, " (", panel_counts, "/", N_EXPECTED, ")"))
+
+    lists_dir <- file.path(dirname(csv), "gene_lists")
+    input_genes <- readLines(file.path(lists_dir, "input_genes.txt"), warn = FALSE)
+    target_genes <- readLines(file.path(lists_dir, "target_genes.txt"), warn = FALSE)
+    n_input <- sum(nzchar(trimws(input_genes)))
+    n_target <- sum(nzchar(trimws(target_genes)))
+    n_test <- unique(d$n_test_cells)
+    if (length(n_test) != 1) stop("Inconsistent n_test_cells across selected combinations")
 
     task_word <- if (task == "within") "Within-modality" else "Cross-modality"
     p <- ggplot(d, aes(x = x, y = y, color = input_trans, shape = input_norm)) +
@@ -151,7 +158,10 @@ run_mlp_summary_scatter_plot <- function(csv, sample, task, modality, space, out
             x = "Mean gene-wise Pearson correlation",
             y = "Mean gene-wise Spearman correlation",
             title = sprintf("%s: %s MLP, %s", sample, task_word, pretty_modality(modality)),
-            subtitle = paste0("Evaluation scales: ", paste(spaces, collapse = " | ")),
+            subtitle = sprintf(
+                "Input: %d genes | Target: %d genes | Test: %s cells\nEvaluation scales: %s",
+                n_input, n_target, n_test, paste(spaces, collapse = " | ")
+            ),
             caption = "Mean correlations over genes with defined correlations."
         ) +
         theme_bw() +

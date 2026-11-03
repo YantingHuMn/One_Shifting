@@ -167,8 +167,8 @@ for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
                 --exclude=compute-170 \
                 --partition=gpu \
                 --gres=gpu:1 \
-                --time=1-00:00:00 \
-                --mem=16G \
+                --time=3-00:00:00 \
+                --mem=32G \
                 --cpus-per-task=4 \
                 --array=0-1 \
                 --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}" \
@@ -183,11 +183,10 @@ for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
                 --exclude=compute-170 \
                 --partition=gpu \
                 --gres=gpu:1 \
-                --time=1-00:00:00 \
+                --time=3-00:00:00 \
                 --mem=32G \
                 --cpus-per-task=4 \
                 --array=2 \
-                --dependency=afterok:${mlp_within_job_id} \
                 --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}" \
                 --output="${log_dir}/submit_${folder_name}_MLP_cross_${sample_name}_%a.out" \
                 --error="${log_dir}/submit_${folder_name}_MLP_cross_${sample_name}_%a.err" \

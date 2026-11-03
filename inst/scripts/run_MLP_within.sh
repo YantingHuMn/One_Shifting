@@ -35,7 +35,7 @@ case "$MODALITY" in
 esac
 MOD_LABEL="${MODALITY#"${sample_name}_"}"
 
-trans_factor=("no_trans" "sqrt" "sqrt+1" "log2" "count+1" "log2(count+2)")
+trans_factor=("no_trans" "count+1" "sqrt" "sqrt+1" "log2" "log2(count+2)")
 norm_factor=("no_norm" 1000000 100000 10000 1000)
 
 RAW="${READ_DIR}/${MODALITY}/Count_Matrix_norm_by_no_norm.feather"

@@ -17,13 +17,13 @@ import json
 from pathlib import Path
 
 
-def _check_count_matrix(df, name, check_zero=True):
+def _check_count_matrix(df, name, check_zero=True, allow_zero_rows=False):
     values = df.iloc[:, 1:].to_numpy(dtype=np.float64)
     if values.shape[0] == 0 or values.shape[1] == 0:
         raise ValueError(f"{name}: count matrix is empty")
     n_nan = int(np.isnan(values).sum())
     n_inf = int(np.isinf(values).sum())
-    n_zero_rows = int(np.all(values == 0, axis=1).sum()) if check_zero else 0
+    n_zero_rows = int(np.all(values == 0, axis=1).sum()) if check_zero and not allow_zero_rows else 0
     n_zero_cols = int(np.all(values == 0, axis=0).sum()) if check_zero else 0
     if n_nan or n_inf or n_zero_rows or n_zero_cols:
         raise ValueError(
@@ -379,8 +379,9 @@ def _apply_trans(df, trans):
 
 
 def filter_and_transform(df1, df2, threshold_value, trans1, trans2, data_path1=None, data_path2=None, save=False):
+    allow_zero_rows = bool(df1.attrs.get("allow_zero_rows", False))
     data_cols = df1.columns[1:]
-    _check_count_matrix(df1, "V1 before filtering")
+    _check_count_matrix(df1, "V1 before filtering", allow_zero_rows=allow_zero_rows)
     _check_count_matrix(df2, "V2 before filtering", check_zero=False)
     zero_percentage = (df1[data_cols] == 0).mean()
     keep_cols = zero_percentage < threshold_value
@@ -391,7 +392,7 @@ def filter_and_transform(df1, df2, threshold_value, trans1, trans2, data_path1=N
     filtered_df1 = df1[cols_to_keep].copy()
     filtered_df2 = df2[cols_to_keep].copy()
 
-    _check_count_matrix(filtered_df1, "V1 before transformation")
+    _check_count_matrix(filtered_df1, "V1 before transformation", allow_zero_rows=allow_zero_rows)
     _check_count_matrix(filtered_df2, "V2 before transformation", check_zero=False)
 
     _apply_trans(filtered_df1, trans1)
@@ -802,6 +803,8 @@ def main(args):
 
     df1_raw = pd.read_feather(args.data_path1)
     df2_raw = pd.read_feather(args.data_path2)
+    if args.allow_zero_rows:
+        df1_raw.attrs["allow_zero_rows"] = True
 
     n_tokens_grid = parse_grid(args.n_tokens_grid, int)
     d_model_grid = parse_grid(args.d_model_grid, int)
@@ -914,6 +917,8 @@ if __name__ == "__main__":
     parser.add_argument('--inner_val_frac', type=float, default=0.1)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--cpu', action='store_true')
+    parser.add_argument('--allow_zero_rows', action='store_true',
+                        help='Allow all-zero cells while retaining the fixed cell set')
     parser.add_argument('--normalization', type=str, required=True,
                         help='normalization label from the driver; names the final model file')
     parser.add_argument('--out_summary', type=str, required=True)
