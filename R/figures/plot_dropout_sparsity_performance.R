@@ -327,6 +327,60 @@ if (length(summary_rows) == 0) {
 
 # plot
 for (m in metrics) {
+    # Figure A: k-aligned, one panel per sample. Needs a finite performance only; a
+    # missing sparsity does not remove a point here.
+    dA <- long %>% filter(metric == m, is.finite(.data[[performance_column]])) %>%
+        mutate(trans = factor(trans, levels = TRANS_LEVELS),
+               sample_id = factor(paste(folder_name, sample_name, sep = " / "),
+                                  levels = unique(paste(st$folder_name, st$sample_name, sep = " / "))),
+               k_label = factor(as.character(keep_fraction), levels = as.character(KEEPS)))
+    cntA <- data.frame(keep_fraction = KEEPS, n_samples = vapply(KEEPS,
+        function(k) n_distinct(dA$sample_id[dA$keep_fraction == k]), integer(1)))
+    sub_txt_A <- paste0("Samples used: ",
+                        paste(sprintf("k=%s (n=%d)", cntA$keep_fraction, cntA$n_samples),
+                              collapse = "; "))
+    if (nrow(dA) == 0) {
+        cat(sprintf("\n[skip] %s: nothing to plot for the keep-fraction figure. %s\n", m, sub_txt_A))
+    } else {
+        pA <- ggplot(dA, aes(x = k_label, y = .data[[performance_column]],
+                             colour = trans, group = trans)) +
+            geom_line(aes(linetype = trans), linewidth = 0.7, alpha = 0.85, na.rm = TRUE) +
+            geom_point(size = 2.8, alpha = 0.85, na.rm = TRUE) +
+            facet_wrap(~sample_id, ncol = 2) +
+            scale_linetype_manual(values = c("dashed", "solid", "dashed", "solid", "dashed", "solid"),
+                                  breaks = TRANS_LEVELS, drop = FALSE, name = "transformation") +
+            scale_colour_manual(values = TRANS_COLOURS, breaks = TRANS_LEVELS,
+                                drop = FALSE, name = "transformation") +
+            scale_x_discrete(drop = FALSE) +
+            labs(
+                title = sprintf("%s  |  ATAC gene activity  |  %s", method, m),
+                subtitle = sub_txt_A,
+                x = "Keep fraction k",
+                y = if (performance_type == "absolute") "Mean gene-wise reconstruction correlation" else "Mean residual (input - reconstruction; lower is better)",
+                caption = paste0(
+                    "Each panel shows one sample; each point is one sample x keep fraction x transformation result, not averaged across samples.\n",
+                    "Lines connect observed points in increasing k order within each sample and transformation; missing conditions are not imputed, and a line may span a missing k.\n",
+                    "Colors and line types identify transformations; the X axis shows the retained count fraction k.\n",
+                    "Subtitle n counts samples with at least one valid transformation result at each keep fraction.")
+            ) +
+            theme_bw(base_size = 11) +
+            theme(
+                plot.title = element_text(face = "bold"),
+                plot.subtitle = element_text(size = 9, colour = "grey25"),
+                plot.caption = element_text(size = 6.6, colour = "grey35", hjust = 0),
+                panel.grid.minor = element_blank(),
+                legend.position = "right"
+            )
+
+        stemA <- sprintf("dropout_keep_performance_%s_%s_%s", method, m, performance_type)
+        ggsave(file.path(out_dir, paste0(stemA, ".png")), pA, width = 13.5,
+               height = max(6, 4 * ceiling(n_distinct(dA$sample_id) / 2) + 2),
+               dpi = 300, limitsize = FALSE)
+        cat("\n[SAVE] ", file.path(out_dir, paste0(stemA, ".png")), "\n", sep = "")
+    }
+
+    # Figure B: measured sparsity, all samples in one panel. Needs finite performance
+    # AND finite sparsity.
     d <- long %>% filter(metric == m, is.finite(sparsity), is.finite(.data[[performance_column]])) %>%
         mutate(mean_sparsity = sparsity, trans = factor(trans, levels = TRANS_LEVELS),
                sample_id = factor(paste(folder_name, sample_name, sep = " / "),
@@ -352,15 +406,11 @@ for (m in metrics) {
                   y = max(.data[[performance_column]], na.rm = TRUE), .groups = "drop")
 
     p <- ggplot(d, aes(x = mean_sparsity, y = .data[[performance_column]],
-                       colour = trans, group = trans)) +
-        geom_line(aes(linetype = trans), linewidth = 0.7, alpha = 0.85, na.rm = TRUE) +
-        geom_point(aes(size = k_label), alpha = 0.85, na.rm = TRUE, show.legend = TRUE) +
-        facet_wrap(~sample_id, ncol = 2) +
-        scale_linetype_manual(values = c("dashed", "solid", "dashed", "solid", "dashed", "solid"),
-                              breaks = TRANS_LEVELS, drop = FALSE, name = "transformation") +
-        scale_size_manual(values = setNames(c(2.2, 2.8, 3.4, 4.0, 4.6), as.character(KEEPS)),
-                          breaks = as.character(KEEPS), labels = paste0("k = ", KEEPS),
-                          drop = FALSE, name = "Keep fraction") +
+                       colour = trans, shape = k_label)) +
+        geom_point(size = 2.8, alpha = 0.85, na.rm = TRUE) +
+        scale_shape_manual(values = setNames(c(16, 17, 15, 18, 8), as.character(KEEPS)),
+                           breaks = as.character(KEEPS), labels = paste0("k = ", KEEPS),
+                           drop = FALSE, name = "Keep fraction") +
         scale_colour_manual(values = TRANS_COLOURS, breaks = TRANS_LEVELS,
                             drop = FALSE, name = "transformation") +
         scale_x_continuous(labels = function(v) sprintf("%.0f%%", 100 * v)) +
@@ -371,11 +421,10 @@ for (m in metrics) {
             x = "Input sparsity",
             y = if (performance_type == "absolute") "Mean gene-wise reconstruction correlation" else "Mean residual (input - reconstruction; lower is better)",
             caption = paste0(
-                "Each panel shows one sample; points are not averaged across samples. Point size identifies the retained count fraction k.\n",
-                "Lines connect observed points in increasing sparsity order; missing conditions are not imputed. No SD bars are plotted.\n",
+                "Each point is one sample x keep fraction x transformation result; all samples share one panel and nothing is averaged across samples.\n",
+                "Colors identify transformations and shapes identify the retained count fraction k. Points are not connected and not jittered.\n",
                 "Sparsity is measured on the preprocessed, untransformed, unnormalized ATAC input. Retained genes and cells can differ by k.\n",
-                "Subtitle n counts samples with at least one valid transformation result at each keep fraction.\n",
-                "Colors and line types identify transformations.")
+                "Subtitle n counts samples with a valid transformation result and a valid sparsity at each keep fraction.")
         ) +
         theme_bw(base_size = 11) +
         theme(
@@ -386,10 +435,9 @@ for (m in metrics) {
             legend.position = "right"
         )
 
-    stem <- sprintf("dropout_sparsity_performance_%s_%s", method, m)
-    if (performance_type == "relative") stem <- paste0(stem, "_", performance_type)
-    ggsave(file.path(out_dir, paste0(stem, ".png")), p, width = 13.5,
-           height = max(6, 4 * ceiling(n_distinct(d$sample_id) / 2) + 2),
+    stem <- sprintf("dropout_sparsity_performance_%s_%s_%s", method, m, performance_type)
+    ggsave(file.path(out_dir, paste0(stem, ".png")), p, width = 10,
+           height = 7,
            dpi = 300, limitsize = FALSE)
     cat("\n[SAVE] ", file.path(out_dir, paste0(stem, ".png")), "\n", sep = "")
 }

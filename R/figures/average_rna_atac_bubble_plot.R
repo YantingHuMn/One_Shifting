@@ -65,11 +65,10 @@ sample_info <- bind_rows(lapply(TSV_FILES, function(TSV_FILE) {
         ]
     }
 
-    if (length(TSV_FILES) == 1) {
-        sample_base_dir <- BASE_DIR
-    } else {
-        sample_base_dir <- str_remove(TSV_FILE, "_input_sample_pairs\\.tsv$")
-    }
+    sample_base_dir <- file.path(
+        BASE_DIR,
+        str_remove(basename(TSV_FILE), "_input_sample_pairs\\.tsv$")
+    )
 
     tibble(
         sample_name = sample_table[[2]][sample_indices],
@@ -208,15 +207,16 @@ make_x_order <- function(avg_df) {
     return(x_order)
 }
 
-# Function: plot performance bubble plot
-plot_performance_bubble <- function(avg_df, title_text, out_png) {
+# Function: plot bubble plot for one correlation metric
+# left block: mean r_recon - r_input (bigger = better), right block: mean performance
+plot_metric_bubble <- function(avg_df, metric_name, title_text, out_png) {
 
     # Average rank across all x groups for each transformation
     # smaller avg_rank = better
     avg_rank_perf <- avg_df %>%
         group_by(trans) %>%
         summarise(
-            avg_rank = mean(avg_rank_perf, na.rm = TRUE),
+            avg_rank = mean(avg_combined_rank, na.rm = TRUE),
             .groups = "drop"
         )
 
@@ -233,32 +233,56 @@ plot_performance_bubble <- function(avg_df, title_text, out_png) {
             bar_len = max(avg_rank, na.rm = TRUE) - avg_rank + min(avg_rank, na.rm = TRUE)
         )
 
+    avg_df <- avg_df %>%
+        filter(tolower(metric) == metric_name)
+
     x_order <- make_x_order(avg_df)
 
     x_labels <- avg_df %>%
         distinct(x_group, method) %>%
         { setNames(.$method, .$x_group) }
 
+    block_levels <- c("Mean r_recon - r_input", "Mean performance")
+
     plot_df <- avg_df %>%
         mutate(
             trans = factor(trans, levels = rev(perf_order)),
             x_group = factor(x_group, levels = x_order),
-            metric = factor(tolower(metric), levels = c("pearson", "spearman"), labels = c("Pearson", "Spearman"))
+            avg_mean_r_diff = -avg_mean_residual
         )
 
+    plot_df_diff <- plot_df %>%
+        mutate(block = factor(block_levels[1], levels = block_levels))
+
+    plot_df_perf <- plot_df %>%
+        mutate(block = factor(block_levels[2], levels = block_levels))
+
     p_main <- ggplot(
-        plot_df,
+        NULL,
         aes(
             x = x_group,
             y = trans
         )
     ) + geom_point(
+            data = plot_df_diff,
             aes(
-                size = avg_rank_perf,
-                color = avg_mean_performance
+                size = avg_rank_residual,
+                color = avg_mean_r_diff
             ),
             alpha = 0.9
+        ) + geom_point(
+            data = plot_df_perf,
+            aes(
+                size = avg_rank_perf,
+                fill = avg_mean_performance
+            ),
+            shape = 21,
+            color = "transparent",
+            alpha = 0.9
         ) + scale_color_gradient(
+                low = "#E6F0FF",
+                high = "#4E79B7"
+            ) + scale_fill_gradient(
                 low = "#FAD7B1",
                 high = "#E76F51"
             ) + scale_size_continuous(
@@ -270,7 +294,7 @@ plot_performance_bubble <- function(avg_df, title_text, out_png) {
                 labels = x_labels,
                 expand = expansion(add = 0.5)
             ) + facet_grid(
-                . ~ metric,
+                . ~ block,
                 scales = "free_x",
                 space = "free_x"
             ) + guides(
@@ -280,8 +304,14 @@ plot_performance_bubble <- function(avg_df, title_text, out_png) {
                     barwidth = unit(0.18, "in"),
                     title.position = "top"
                 ),
-                size = guide_legend(
+                fill = guide_colorbar(
                     order = 2,
+                    barheight = unit(0.7, "in"),
+                    barwidth = unit(0.18, "in"),
+                    title.position = "top"
+                ),
+                size = guide_legend(
+                    order = 3,
                     keyheight = unit(0.18, "in"),
                     keywidth = unit(0.18, "in"),
                     override.aes = list(size = c(5, 4, 3, 2, 1))
@@ -290,7 +320,8 @@ plot_performance_bubble <- function(avg_df, title_text, out_png) {
                 title = title_text,
                 x = NULL,
                 y = NULL,
-                color = "Average mean\nperformance"
+                color = "Average mean\nr_recon - r_input",
+                fill = "Average mean\nperformance"
             ) + theme_minimal(base_size = 12) +
                 theme(
                     axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
@@ -310,175 +341,6 @@ plot_performance_bubble <- function(avg_df, title_text, out_png) {
 
     p_bar <- ggplot(
         avg_rank_perf %>% mutate(
-            section = "Transformation",
-            shift_group = if_else(
-                as.character(trans) %in% c("log2(count+2)", "sqrt+1", "count+1"),
-                "One-shifting",
-                "Original"
-            )
-        ),
-        aes(x = bar_len, y = trans, fill = shift_group)
-    ) +
-        geom_bar(stat = "identity", width = 0.7) +
-        scale_fill_manual(
-            values = c("One-shifting" = "#F6B3B3", "Original" = "#A7D7A1"),
-            breaks = c("One-shifting", "Original"),
-            labels = c("One-shifting", "Original"),
-            name = NULL,
-            guide = guide_legend(
-                ncol = 1,
-                keywidth = unit(0.18, "in"),
-                keyheight = unit(0.18, "in")
-            )
-        ) +
-        scale_x_reverse() +
-        facet_grid(. ~ section) +
-        theme_minimal() +
-        theme(
-            axis.text.y = element_blank(),
-            axis.title.y = element_blank(),
-            axis.ticks.y = element_blank(),
-            axis.text.x = element_blank(),
-            axis.title.x = element_blank(),
-            axis.ticks.x = element_blank(),
-            panel.grid = element_blank(),
-            strip.background = element_rect(fill = "grey20", color = "black"),
-            strip.text = element_text(color = "white", face = "bold", size = 10),
-            legend.position = "bottom",
-            legend.direction = "vertical",
-            legend.justification = "left",
-            legend.text = element_text(size = 7),
-            legend.margin = margin(0, 0, 0, 0)
-        )
-
-    p <- plot_grid(
-        p_bar,
-        p_main,
-        nrow = 1,
-        rel_widths = c(0.15, 0.85),
-        align = "h",
-        axis = "tb"
-    )
-
-    # wider plot because x-axis can have 24 columns
-    n_x_group <- n_distinct(plot_df$x_group)
-    plot_width <- max(10, 4 + 0.5 * n_x_group)
-
-    n_x_group <- n_distinct(plot_df$x_group)
-    plot_width <- max(8, 3 + 0.4 * n_x_group)
-
-    ggsave(out_png, p, width = plot_width, height = 4, dpi = 300)
-}
-
-
-# Function: plot residual bubble plot
-plot_residual_bubble <- function(avg_df, title_text, out_png) {
-
-    # Average rank across all x groups for each transformation
-    # smaller avg_rank = better
-    avg_rank_resid <- avg_df %>%
-        group_by(trans) %>%
-        summarise(
-            avg_rank = mean(avg_rank_residual, na.rm = TRUE),
-            .groups = "drop"
-        )
-
-    # Transformation order: best average rank first
-    resid_order <- avg_rank_resid %>%
-        arrange(avg_rank) %>%
-        pull(trans) %>%
-        as.character()
-
-    # Put best transformation on top of y-axis
-    avg_rank_resid <- avg_rank_resid %>%
-        mutate(
-            trans = factor(trans, levels = rev(resid_order)),
-            bar_len = max(avg_rank, na.rm = TRUE) - avg_rank + min(avg_rank, na.rm = TRUE)
-        )
-
-    x_order <- make_x_order(avg_df)
-
-    x_labels <- avg_df %>%
-        distinct(x_group, method) %>%
-        { setNames(.$method, .$x_group) }
-
-    plot_df <- avg_df %>%
-        mutate(
-            trans = factor(trans, levels = rev(resid_order)),
-            x_group = factor(x_group, levels = x_order),
-            metric = factor(tolower(metric), levels = c("pearson", "spearman"), labels = c("Pearson", "Spearman"))
-        )
-
-    p_main <- ggplot(
-        plot_df,
-        aes(
-            x = x_group,
-            y = trans
-        )
-    ) +
-        geom_point(
-            aes(
-                size = avg_rank_residual,
-                color = avg_mean_residual
-            ),
-            alpha = 0.9
-        ) + scale_color_gradient(
-            low = "#4E79B7",
-            high = "#E6F0FF"
-        ) + scale_size_continuous(
-            name = "Average rank",
-            range = c(12, 1.5),
-            breaks = function(x) seq(min(x), max(x), length.out = 5),
-            labels = function(x) rep("", length(x))
-        ) +
-        scale_x_discrete(
-            labels = x_labels,
-            expand = expansion(add = 0.5)
-        ) +
-        facet_grid(
-            . ~ metric,
-            scales = "free_x",
-            space = "free_x"
-        ) +
-        guides(
-            color = guide_colorbar(
-                order = 1,
-                barheight = unit(0.7, "in"),
-                barwidth = unit(0.18, "in"),
-                title.position = "top"
-            ),
-            size = guide_legend(
-                order = 2,
-                keyheight = unit(0.18, "in"),
-                keywidth = unit(0.18, "in"),
-                override.aes = list(size = c(5, 4, 3, 2, 1))
-            )
-        ) +
-        labs(
-            title = title_text,
-            x = NULL,
-            y = NULL,
-            color = "Average mean\nresidual"
-        ) +
-        theme_minimal(base_size = 12) +
-        theme(
-            axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
-            axis.text.y = element_text(size = 10),
-            panel.grid = element_blank(),
-            panel.spacing.x = unit(0, "lines"),
-            strip.background = element_rect(fill = "grey20", color = "black"),
-            strip.text = element_text(color = "white", face = "bold", size = 10),
-            legend.position = "right",
-            legend.box = "vertical",
-            legend.title = element_text(size = 8),
-            legend.text = element_text(size = 7),
-            legend.spacing.y = unit(0.05, "lines"),
-            legend.box.spacing = unit(0.1, "lines"),
-            plot.title = element_text(hjust = 0.5, face = "bold")
-        )
-
-    p_bar <- ggplot(
-        avg_rank_resid %>% mutate(
             section = "Transformation",
             shift_group = if_else(
                 as.character(trans) %in% c("log2(count+2)", "sqrt+1", "count+1"),
@@ -597,49 +459,51 @@ for (input_type in input_types) {
             )
         )
 
-        perf_out_png <- file.path(
+        pearson_out_png <- file.path(
             OUT_DIR,
             paste0(
                 "bubble_plot_summary_", input_type, "_col_row_",
                 mode_suffix,
-                "_across_samples_avg_rank_performance.png"
+                "_across_samples_avg_rank_pearson.png"
             )
         )
 
-        resid_out_png <- file.path(
+        spearman_out_png <- file.path(
             OUT_DIR,
             paste0(
                 "bubble_plot_summary_", input_type, "_col_row_",
                 mode_suffix,
-                "_across_samples_avg_rank_residual.png"
+                "_across_samples_avg_rank_spearman.png"
             )
         )
 
         write_csv(all_df, raw_out_csv)
         write_csv(avg_df, avg_out_csv)
 
-        plot_performance_bubble(
+        plot_metric_bubble(
             avg_df,
+            metric_name = "pearson",
             title_text = paste0(
-                "Average Performance across Samples: ", input_type
+                "Average Pearson across Samples: ", input_type
             ),
-            out_png = perf_out_png
+            out_png = pearson_out_png
         )
 
-        plot_residual_bubble(
+        plot_metric_bubble(
             avg_df,
+            metric_name = "spearman",
             title_text = paste0(
-                "Average Residual across Samples: ", input_type
+                "Average Spearman across Samples: ", input_type
             ),
-            out_png = resid_out_png
+            out_png = spearman_out_png
         )
 
         all_aggregated[[paste(input_type, mode_suffix, sep = "__")]] <- avg_df
 
         message("[Saved] ", raw_out_csv)
         message("[Saved] ", avg_out_csv)
-        message("[Saved] ", perf_out_png)
-        message("[Saved] ", resid_out_png)
+        message("[Saved] ", pearson_out_png)
+        message("[Saved] ", spearman_out_png)
     }
 }
 

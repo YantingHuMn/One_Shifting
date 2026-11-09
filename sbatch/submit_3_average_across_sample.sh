@@ -15,7 +15,7 @@ BASE_DIR="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
 log_dir="${BASE_DIR}/logs"
 
 # tsv="${BASE_DIR}/${folder_name}_input_sample_pairs.tsv"
-tsv="${BASE_DIR}/HCA_input_sample_pairs.tsv,${BASE_DIR}/ENCODE_input_sample_pairs.tsv,${BASE_DIR}/10x_input_sample_pairs.tsv"
+tsv="../One_Shifting/data/HCA_input_sample_pairs.tsv,../One_Shifting/data/ENCODE_input_sample_pairs.tsv,../One_Shifting/data/10x_input_sample_pairs.tsv"
 
 log_file="${log_dir}/AAA_HCA_ENCODE_10x_run_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee -a "$log_file") 2>&1

@@ -22,12 +22,16 @@
 #
 # Parameter:
 #   base_dir     : One_Shifting_Results root, e.g. /dcs11/hongkai/data/yhu1/One_Shifting_Results
-#   folder_name  : HCA, ENCODE or 10x
+#   folder_name  : HCA, ENCODE or 10x; a comma separated list such as HCA,ENCODE,10x is only the
+#                  set of folders searched for each sample's result directory
 #   method       : the MSE arm to compare against, e.g. VAE, DCA_mse, Transformer_denoise
 #   modality     : RNA or ATAC -- which modality is the model input
 #   out_dir      : where the figures are written, e.g. <base_dir>/Paper_Figures
 #   corr_methods : comma separated, default "pearson,spearman"
 #   tsv_path     : sample table override; defaults to <base_dir>/<folder_name>_input_sample_pairs.tsv
+#                  (one merged table is fine, and so is a comma separated list of per-folder tables,
+#                  which are read in order: only the sample_name column is read, else column 2,
+#                  else the only column)
 #   panel_in     : panel side length in inches, default 2.0
 #   min_n        : the curve is truncated once fewer than this many genes remain above the
 #                  threshold, since the percentage becomes noise. Default 20.
@@ -58,11 +62,12 @@ modality     <- toupper(args[4])
 out_dir      <- args[5]
 corr_methods <- if (length(args) >= 6 && nzchar(args[6])) strsplit(args[6], ",")[[1]] else c("pearson", "spearman")
 # tsv_path may be a single path or the comma separated list of every folder's table; in
-# the latter case the entry whose file name starts with folder_name is used.
+# the latter case the entry whose file name starts with folder_name is used, unless
+# folder_name is itself a comma separated list, when every listed table is read in order.
 tsv_path <- if (length(args) >= 7 && nzchar(args[7])) {
     cand <- trimws(strsplit(args[7], ",")[[1]])
     cand <- cand[nzchar(cand)]
-    if (length(cand) == 1) {
+    if (length(cand) == 1 || grepl(",", folder_name)) {
         cand
     } else {
         hit <- cand[startsWith(basename(cand), paste0(folder_name, "_"))]
@@ -99,15 +104,47 @@ prefix_for <- function(corr_method) {
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 # ------------------------------------------------------------------ sample table
-if (!file.exists(tsv_path)) stop("Sample table not found: ", tsv_path)
-tsv <- read.delim(tsv_path, stringsAsFactors = FALSE)
-if (ncol(tsv) < 2) stop("Sample table needs at least two columns; column 2 holds sample_name: ", tsv_path)
-samples <- as.character(tsv[[2]])
-samples <- samples[nzchar(samples)]
-if (length(samples) == 0) stop("No sample names in column 2 of ", tsv_path)
-cat(sprintf("Samples from %s: %d\n", basename(tsv_path), length(samples)))
+samples <- character(0)
+for (tsv_file in tsv_path) {
+    if (!file.exists(tsv_file)) stop("Sample table not found: ", tsv_file)
+    tsv <- read.delim(tsv_file, stringsAsFactors = FALSE)
+    if (ncol(tsv) < 1) stop("Sample table has no columns: ", tsv_file)
+    sample_col <- if ("sample_name" %in% names(tsv)) "sample_name" else if (ncol(tsv) >= 2) 2 else 1
+    samples <- c(samples, trimws(as.character(tsv[[sample_col]])))
+}
+samples <- unique(samples[!is.na(samples) & nzchar(samples)])
+if (length(samples) == 0) stop("No sample names in ", paste(tsv_path, collapse = ", "))
+cat(sprintf("Samples from %s: %d\n", paste(basename(tsv_path), collapse = ", "), length(samples)))
 
 other_modality <- if (modality == "ATAC") "RNA" else "ATAC"
+
+# ------------------------------------------------------------------ locate each sample
+# folder_name may be a comma separated search scope. A sample lives in the folder whose
+# <folder>/<sample>_INPUT_<modality> directory actually exists; the sample table is never
+# used to infer the folder. A sample found in no folder, or in more than one, is reported
+# and left out rather than guessed.
+folder_scope <- trimws(strsplit(folder_name, ",")[[1]])
+folder_scope <- unique(folder_scope[nzchar(folder_scope)])
+folder_of <- setNames(rep(NA_character_, length(samples)), samples)
+loc_notes <- character(0)
+for (s in samples) {
+    cand_dirs <- file.path(base_dir, folder_scope, paste0(s, "_INPUT_", modality))
+    found <- dir.exists(cand_dirs)
+    if (sum(found) == 1) {
+        folder_of[[s]] <- folder_scope[found]
+    } else if (sum(found) == 0) {
+        loc_notes <- c(loc_notes, sprintf("%s: sample directory not found; searched: %s",
+                                          s, paste(cand_dirs, collapse = " | ")))
+    } else {
+        loc_notes <- c(loc_notes, sprintf("%s: ambiguous, the sample directory exists in more than one folder (%s); not used: %s",
+                                          s, paste(folder_scope[found], collapse = ", "),
+                                          paste(cand_dirs[found], collapse = " | ")))
+    }
+}
+for (msg in loc_notes) cat(sprintf("[warn] %s\n", msg))
+samples <- samples[!is.na(folder_of[samples])]
+if (length(samples) == 0) stop("No sample directory was found for any sample under: ", paste(folder_scope, collapse = ", "))
+cat(sprintf("Samples located: %d\n", length(samples)))
 
 # ------------------------------------------------------------------ sparsity (optional)
 # <folder>_sparsity.csv carries one row per (dataset, sample_name, data_type). The row for
@@ -115,6 +152,8 @@ other_modality <- if (modality == "ATAC") "RNA" else "ATAC"
 # and never by assuming the input modality comes first. An absent file, an absent sample,
 # or an unusable table costs the label only; the figures are still produced.
 sparsity_of <- setNames(numeric(0), character(0))
+folder_name_all <- folder_name
+for (folder_name in unique(folder_of[samples])) {
 sparsity_csv <- file.path(base_dir, folder_name, paste0(folder_name, "_sparsity.csv"))
 KEY_COLS <- c("dataset", "sample_name", "data_type", "sparsity")
 
@@ -161,10 +200,10 @@ if (!file.exists(sparsity_csv)) {
                                 paste(unique(dup), collapse = ", ")))
                     hit <- hit[!duplicated(sn[hit])]
                 }
-                sparsity_of <- setNames(as.numeric(sp$sparsity[hit]), sn[hit])
+                sparsity_of <- c(sparsity_of, setNames(as.numeric(sp$sparsity[hit]), sn[hit]))
                 cat(sprintf("Sparsity table: %d rows matched dataset == %s and data_type == %s in %s\n",
-                            length(sparsity_of), folder_name, modality, basename(sparsity_csv)))
-                missing_sp <- setdiff(samples, names(sparsity_of))
+                            length(hit), folder_name, modality, basename(sparsity_csv)))
+                missing_sp <- setdiff(samples[folder_of[samples] == folder_name], names(sparsity_of))
                 if (length(missing_sp) > 0) {
                     cat(sprintf("[warn] no %s sparsity row for: %s\n",
                                 modality, paste(missing_sp, collapse = ", ")))
@@ -173,8 +212,10 @@ if (!file.exists(sparsity_csv)) {
         }
     }
 }
+}
+folder_name <- folder_name_all
 
-sample_dir_of <- function(s) file.path(base_dir, folder_name, paste0(s, "_INPUT_", modality))
+sample_dir_of <- function(s) file.path(base_dir, folder_of[[s]], paste0(s, "_INPUT_", modality))
 method_fig_dir_of <- function(s) {
     v2 <- paste0(s, "_", other_modality)
     file.path(sample_dir_of(s), method,
@@ -210,7 +251,7 @@ pick_best <- function(best_norm_csv) {
 }
 
 # ------------------------------------------------------------------ gather
-notes <- character(0)
+notes <- loc_notes
 panel_rows <- list()
 stat_rows  <- list()
 
@@ -359,6 +400,25 @@ for (corr_method in corr_methods) {
     cv <- cv %>% mutate(row = factor(unname(lab_of[sample]), levels = unname(lab_of[ord])),
                         baseline = factor(baseline, levels = BASELINES))
 
+    column_stats <- st %>%
+        filter(n_genes > 0, is.finite(frac_method_higher)) %>%
+        group_by(baseline) %>%
+        summarise(
+            n_above = sum(frac_method_higher > 0.5),
+            n_valid = n(),
+            .groups = "drop"
+        )
+
+    baseline_labels <- setNames(
+        sprintf(
+            "%s\n%d/%d samples\n>50%% above y=x",
+            column_stats$baseline,
+            column_stats$n_above,
+            column_stats$n_valid
+        ),
+        as.character(column_stats$baseline)
+    )
+
     p <- ggplot(d, aes(x = x, y = y))
     if (use_hexbin) p <- p + geom_hex(bins = 45) else p <- p + geom_bin_2d(bins = 45)
 
@@ -373,14 +433,18 @@ for (corr_method in corr_methods) {
                                       100 * frac_method_higher, mean_diff)),
                   inherit.aes = FALSE, hjust = -0.06, vjust = 1.12,
                   size = 2.4, colour = "grey20") +
-        facet_grid(row ~ baseline, switch = "y") +
+        facet_grid(
+            row ~ baseline,
+            switch = "y",
+            labeller = labeller(baseline = as_labeller(baseline_labels))
+        ) +
         coord_cartesian(xlim = c(AXIS_MIN, 1), ylim = c(AXIS_MIN, 1)) +
         scale_x_continuous(breaks = c(-0.25, 0, 0.5, 1)) +
         scale_y_continuous(breaks = c(-0.25, 0, 0.5, 1)) +
         labs(
             title = sprintf("%s  |  input modality: %s  |  %s correlation per gene",
                             folder_name, modality, corr_method),
-            subtitle = sprintf("x: published baseline    y: %s at its best transformation and normalization per sample    above the dashed line favours %s",
+            subtitle = sprintf("x: published baseline    y: %s at its best transformation and normalization per sample  \n  above the dashed line favours %s",
                                method, method),
             x = "baseline correlation with ground truth",
             y = sprintf("%s correlation with ground truth", method)
@@ -388,7 +452,7 @@ for (corr_method in corr_methods) {
         theme_bw(base_size = 9) +
         theme(
             strip.text.y.left = element_text(angle = 0, size = 6.5, lineheight = 1.1),
-            strip.text.x = element_text(size = 10, face = "bold"),
+            strip.text.x = element_text(size = 8, face = "bold", lineheight = 1.05),
             strip.placement = "outside",
             panel.grid.minor = element_blank(),
             plot.title = element_text(face = "bold"),
@@ -449,6 +513,158 @@ for (corr_method in corr_methods) {
         write.csv(cv %>% select(-row), curve_csv, row.names = FALSE)
         cat(sprintf("[SAVE] %s  (%d rows x 3)\n[SAVE] %s\n", curve_png, n_rows, curve_csv))
     }
+
+    # ---- one square 6 x 6 grid per baseline, same data and styling as the long scatter ----
+    # Every panel is one sample, in the row order of the long scatter. Fewer than 36
+    # samples leaves the remaining cells blank; more than 36 is split into pages in the
+    # same order, so no sample is dropped.
+    PANELS_PER_PAGE <- 36L
+    for (bl in BASELINES) {
+        d_bl  <- d  %>% filter(baseline == bl)
+        st_bl <- st %>% filter(baseline == bl)
+        if (nrow(d_bl) == 0) {
+            cat(sprintf("[skip] 6x6 grid for %s / %s: no panels\n", corr_method, bl))
+            next
+        }
+        ord_bl <- ord[ord %in% unique(st_bl$sample)]
+        cs <- column_stats %>% filter(baseline == bl)
+        n_above_bl <- if (nrow(cs) == 1) cs$n_above[1] else 0L
+        n_valid_bl <- if (nrow(cs) == 1) cs$n_valid[1] else 0L
+        pages <- split(ord_bl, ceiling(seq_along(ord_bl) / PANELS_PER_PAGE))
+
+        for (pg in seq_along(pages)) {
+            keep <- pages[[pg]]
+            # facet_wrap ignores nrow once the panels fit in fewer rows, so the unused
+            # cells of the 6 x 6 page are held open by empty factor levels. They are
+            # distinct blank strings, which keeps them unique and leaves the strip blank.
+            lev  <- unname(lab_of[keep])
+            if (length(lev) < PANELS_PER_PAGE) {
+                lev <- c(lev, vapply(seq_len(PANELS_PER_PAGE - length(lev)),
+                                     function(k) strrep(" ", k), character(1)))
+            }
+            dp  <- d_bl  %>% filter(sample %in% keep) %>%
+                mutate(row = factor(unname(lab_of[sample]), levels = lev))
+            stp <- st_bl %>% filter(sample %in% keep) %>%
+                mutate(row = factor(unname(lab_of[sample]), levels = lev))
+
+            g <- ggplot(dp, aes(x = x, y = y))
+            if (use_hexbin) g <- g + geom_hex(bins = 45) else g <- g + geom_bin_2d(bins = 45)
+
+            # the diagonal is drawn only in the occupied cells, so a padding cell stays
+            # empty instead of looking like a sample whose panel happens to have no points
+            ab <- data.frame(row = factor(unname(lab_of[keep]), levels = lev),
+                             slope = 1, intercept = 0)
+
+            g <- g +
+                scale_fill_gradientn(colours = c("#440154", "#31688e", "#35b779", "#fde725"),
+                                     trans = "log10", name = "genes") +
+                geom_abline(data = ab, aes(slope = slope, intercept = intercept),
+                            inherit.aes = FALSE, linetype = "dashed",
+                            colour = "red", linewidth = 0.4) +
+                geom_text(data = stp,
+                          aes(x = -Inf, y = Inf,
+                              label = sprintf("above y=x: %.1f%%\nmean diff: %+.3f",
+                                              100 * frac_method_higher, mean_diff)),
+                          inherit.aes = FALSE, hjust = -0.06, vjust = 1.12,
+                          size = 2.4, colour = "grey20") +
+                facet_wrap(~ row, ncol = 6, drop = FALSE) +
+                coord_cartesian(xlim = c(AXIS_MIN, 1), ylim = c(AXIS_MIN, 1)) +
+                scale_x_continuous(breaks = c(-0.25, 0, 0.5, 1)) +
+                scale_y_continuous(breaks = c(-0.25, 0, 0.5, 1)) +
+                labs(
+                    title = sprintf("%s  |  input modality: %s  |  baseline: %s  |  %s correlation per gene%s",
+                                    folder_name, modality, bl, corr_method,
+                                    if (length(pages) > 1) sprintf("  |  page %d of %d", pg, length(pages)) else ""),
+                    subtitle = sprintf("%d/%d samples >50%% above y=x    x: %s    y: %s at its best transformation and normalization per sample",
+                                       n_above_bl, n_valid_bl, bl, method),
+                    x = "baseline correlation with ground truth",
+                    y = sprintf("%s correlation with ground truth", method)
+                ) +
+                theme_bw(base_size = 9) +
+                theme(
+                    aspect.ratio = 1,
+                    strip.text = element_text(size = 6, lineheight = 1.1),
+                    # six columns leave little room per panel, so the shared tick labels
+                    # are shrunk rather than the breaks changed
+                    axis.text = element_text(size = 5.5),
+                    panel.grid.minor = element_blank(),
+                    plot.title = element_text(face = "bold"),
+                    plot.subtitle = element_text(size = 7.5, colour = "grey30"),
+                    legend.position = "right"
+                )
+
+            sq_png <- file.path(out_dir, sprintf("%s_%s_square_6x6%s.png", stem, bl,
+                                                 if (length(pages) > 1) sprintf("_page%d", pg) else ""))
+            ggsave(sq_png, g,
+                   width  = 6 * panel_in + 1.8,
+                   height = 6 * panel_in + 2.2,
+                   dpi = 200, limitsize = FALSE)
+            cat(sprintf("[SAVE] %s  (%d panels)\n", sq_png, length(keep)))
+        }
+    }
+}
+
+# ------------------------------------------------------------------ sample wins bar
+# One figure, six bars: each correlation x baseline, counting SAMPLES rather than genes.
+# Built from the same `stats` rows and the same validity filter as the scatter column
+# titles, so the two always agree; the threshold-sweep curves are not used here. A sample
+# with no usable result for a baseline is absent from `stats` and is therefore not counted
+# in either colour rather than counted as a loss.
+win_rows <- stats %>%
+    filter(n_genes > 0, is.finite(frac_method_higher))
+
+if (nrow(win_rows) == 0) {
+    cat("\n[skip] sample wins bar: no (sample, baseline) pair had a usable result\n")
+} else {
+    OUT_LEVELS <- c(sprintf("%s above y=x in >50%% of genes", method),
+                    sprintf("%s at or below 50%%", method))
+    win_stats <- win_rows %>%
+        mutate(outcome = ifelse(frac_method_higher > 0.5, OUT_LEVELS[1], OUT_LEVELS[2])) %>%
+        count(corr_method, baseline, outcome, name = "n_samples") %>%
+        mutate(corr_method = factor(corr_method, levels = corr_methods),
+               baseline    = factor(baseline, levels = BASELINES),
+               outcome     = factor(outcome, levels = OUT_LEVELS))
+    bar_totals <- win_stats %>%
+        group_by(corr_method, baseline) %>%
+        summarise(n_valid = sum(n_samples), .groups = "drop")
+
+    # facet_wrap leaves scales fixed, so both correlations share one sample-count axis.
+    bar <- ggplot(win_stats, aes(x = baseline, y = n_samples, fill = outcome)) +
+        geom_col(width = 0.68) +
+        geom_text(aes(label = n_samples), position = position_stack(vjust = 0.5),
+                  size = 3, colour = "white", fontface = "bold") +
+        geom_text(data = bar_totals, aes(x = baseline, y = n_valid, label = n_valid),
+                  inherit.aes = FALSE, vjust = -0.6, size = 3, colour = "grey20") +
+        scale_fill_manual(values = setNames(c("#8AA6CE", "#E3AEBE"), OUT_LEVELS), name = NULL) +
+        scale_y_continuous(expand = expansion(mult = c(0, 0.12))) +
+        facet_wrap(~ corr_method, nrow = 1) +
+        labs(
+            title = sprintf("%s  |  input modality: %s  |  samples where %s beats each baseline",
+                            folder_name, modality, method),
+            subtitle = sprintf("one bar per baseline and correlation; a sample counts as a win when %s is above y = x for more than half of its genes\nbar height is the number of samples with a usable result for that baseline, printed above each bar",
+                               method),
+            x = NULL,
+            y = "samples"
+        ) +
+        theme_bw(base_size = 9) +
+        theme(
+            strip.text = element_text(size = 10, face = "bold"),
+            panel.grid.minor = element_blank(),
+            panel.grid.major.x = element_blank(),
+            plot.title = element_text(face = "bold"),
+            plot.subtitle = element_text(size = 7.5, colour = "grey30"),
+            legend.position = "bottom"
+        )
+
+    bar_stem <- sprintf("%s_%s_%s_sample_wins_bar", folder_name, method, modality)
+    bar_png  <- file.path(out_dir, paste0(bar_stem, ".png"))
+    bar_csv  <- file.path(out_dir, paste0(bar_stem, ".csv"))
+    ggsave(bar_png, bar, width = 7.6, height = 4.6, dpi = 200, limitsize = FALSE)
+    write.csv(win_stats %>%
+                  left_join(bar_totals, by = c("corr_method", "baseline")) %>%
+                  arrange(corr_method, baseline, outcome),
+              bar_csv, row.names = FALSE)
+    cat(sprintf("\n[SAVE] %s\n[SAVE] %s\n", bar_png, bar_csv))
 }
 
 # ------------------------------------------------------------------ report

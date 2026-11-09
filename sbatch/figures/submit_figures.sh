@@ -34,7 +34,7 @@ Rscript ../One_Shifting/R/figures/sample_scatter.R \
 # Plot the scatter combination summary
 Rscript ../One_Shifting/R/figures/sample_trans_norm_combination.R \
     "${BASE_DIR}/${folder_name}/${sample_name}_INPUT_RNA/VAE/given_${sample_name}_ATAC_no_norm_no_trans/Figures_col_v1_raw__v2_raw__recon_revtrans_revnorm/plots_summary_pearson_col_gene_v1_recon_reverse_trans_norm.csv" \
-    "${BASE_DIR}/Paper_FiguresOne_shifting_sample_eg/${sample_name}_VAE_pearson_summary.png" \
+    "${BASE_DIR}/Paper_Figures/One_shifting_sample_eg/${sample_name}_VAE_pearson_summary.png" \
     "Pearson" \
     "${sample_name}"    
 
@@ -46,7 +46,7 @@ Rscript ../One_Shifting/R/figures/sample_trans_norm_combination.R \
 
 
 # Average bubble plot
-tsv="${BASE_DIR}/HCA_input_sample_pairs.tsv,${BASE_DIR}/ENCODE_input_sample_pairs.tsv,${BASE_DIR}/10x_input_sample_pairs.tsv"
+tsv="../One_Shifting/data/HCA_input_sample_pairs.tsv,../One_Shifting/data/ENCODE_input_sample_pairs.tsv,../One_Shifting/data/10x_input_sample_pairs.tsv"
 Rscript ../One_Shifting/R/figures/average_rna_atac_bubble_plot.R \
     "$BASE_DIR" \
     "$tsv" \
@@ -55,23 +55,31 @@ Rscript ../One_Shifting/R/figures/average_rna_atac_bubble_plot.R \
     "${BASE_DIR}/Paper_Figures/One_shifting_sample_eg"
 
 
+
 # Figure -- baseline
 BASE_DIR="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
+tsv="../One_Shifting/data/HCA_input_sample_pairs.tsv,../One_Shifting/data/ENCODE_input_sample_pairs.tsv,../One_Shifting/data/10x_input_sample_pairs.tsv"
 for modality in RNA ATAC; do
     for method in VAE DCA_mse Transformer_denoise; do
-        for folder_name in HCA ENCODE 10x; do
-            Rscript ../One_Shifting/R/figures/run_paper_figure_baseline_vs_method.R \
-                "$BASE_DIR" \
-                "$folder_name" \
-                "$method" \
-                "$modality" \
-                "${BASE_DIR}/Paper_Figures/baseline_compare/${modality}/${method}" \
-                "pearson,spearman" \
-                "${BASE_DIR}/${folder_name}_input_sample_pairs.tsv" \
-                || break
-        done
+        Rscript ../One_Shifting/R/figures/run_paper_figure_baseline_vs_method.R \
+            "$BASE_DIR" \
+            "HCA,ENCODE,10x" \
+            "$method" \
+            "$modality" \
+            "${BASE_DIR}/Paper_Figures/baseline_compare/${modality}/${method}" \
+            "pearson,spearman" \
+            "$tsv" \
+            || break
     done
 done
+
+
+
+
+
+
+
+
 
 
 ## Plot with baseline (single sample)

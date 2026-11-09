@@ -2,7 +2,7 @@
 cd /dcs10/hongkai/data/yhu1/One_Shifting
 read_dir="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
 
-export folder_name="HCA"
+export folder_name="ENCODE"
 
 # train, train_dropout, baseline, step2_only, train_MLP, train_peak
 tasks="train_peak"
@@ -213,7 +213,7 @@ for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
                 --partition=gpu \
                 --gres=gpu:1 \
                 --time=3-00:00:00 \
-                --mem=128G \
+                --mem=512G \
                 --cpus-per-task=4 \
                 --array=0-1 \
                 --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",methods_par="${methods_par}" \
@@ -228,7 +228,7 @@ for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
                 --exclude=compute-170,compute-128 \
                 --partition=shared \
                 --time=7-00:00:00 \
-                --mem=128G \
+                --mem=512G \
                 --cpus-per-task=4 \
                 --array=0 \
                 --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",methods_par="${methods_par}" \

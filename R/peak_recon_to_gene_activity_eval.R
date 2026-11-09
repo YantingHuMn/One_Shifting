@@ -141,9 +141,9 @@ build_peak_gene_map <- function(peak_names) {
                           strand = as.character(strand(annotations)),
                           gene_name = annotations$gene_name)
     gene_summary <- gene_df %>%
-        filter(!is.na(gene_name), gene_name != "") %>%
-        group_by(gene_name) %>%
-        summarise(chr = names(sort(table(chr), decreasing = TRUE))[1],
+        dplyr::filter(!is.na(gene_name), gene_name != "") %>%
+        dplyr::group_by(gene_name) %>%
+        dplyr::summarise(chr = names(sort(table(chr), decreasing = TRUE))[1],
                   start = min(start), end = max(end),
                   strand = names(sort(table(strand), decreasing = TRUE))[1],
                   .groups = "drop")
@@ -239,8 +239,8 @@ if (!cache_complete) {
     # A gene is evaluable when the BASELINE gives it nonzero activity. This depends only on
     # the raw q95 peaks, never on a reconstruction.
     keep_g <- colSums(base_all) > 0
-    eval_genes <- intersect(cand_genes[keep_g], colnames(rna_m))
-    eval_cells <- intersect(rownames(raw_mat), rownames(rna_m))
+    eval_genes <- base::intersect(cand_genes[keep_g], colnames(rna_m))
+    eval_cells <- base::intersect(rownames(raw_mat), rownames(rna_m))
     if (length(eval_genes) == 0) stop("no gene is both nonzero in the baseline activity and present in RNA")
     if (length(eval_cells) == 0) stop("ATAC and RNA share no cell ids")
     eval_genes <- eval_genes[order(match(eval_genes, cand_genes))]

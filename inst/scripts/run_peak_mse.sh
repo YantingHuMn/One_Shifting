@@ -39,9 +39,9 @@ trans_factor=("no_trans" "count+1" "sqrt" "sqrt+1" "log2" "log2(count+2)")
 norm_factor=("no_norm" 1000000 100000 10000 1000)
 norm_string=$(IFS=','; echo "${norm_factor[*]}")
 
-PREP_LOCK_DIR="${READ_DIR}/.peak_prep_lock"
-PREP_DONE="${READ_DIR}/.peak_prep_done"
-PREP_MAX_WAIT=3600
+LOCK_FILE="${READ_DIR}/.peak_prep_done"
+LOCK_DIR="${READ_DIR}/.peak_prep_lock"
+MAX_WAIT=360
 
 Q95_SHARED="$INPUT_FILE"
 Q95_LOCAL="${READ_DIR}/${V1}/atac_peak_counts_top_q95.feather"
@@ -60,14 +60,20 @@ if [ ! -f "$GROUND_TRUTH_FILE" ]; then
 fi
 
 # Everything the three methods share. Checked as a whole, because a run that died midway
-# can leave some of these behind and a partial set must not count as ready.
-prep_complete () {
+# can leave some of these behind and a partial set must not count as ready. The three
+# groups are checked separately so that a gap in one does not cause the others to be
+# rebuilt.
+peak_matrices_complete () {
     [ -f "$LIB_SIZES_CSV" ] || return 1
     [ -f "${READ_DIR}/${V1}/peak_cell_manifest.txt" ] || return 1
     local nf
     for nf in "${norm_factor[@]}"; do
         [ -f "${READ_DIR}/${V1}/Count_Matrix_norm_by_${nf}.feather" ] || return 1
     done
+    return 0
+}
+
+eval_cache_complete () {
     local f
     for f in peak_gene_map.csv eval_genes.txt eval_cells.txt baseline_activity.feather rna_eval.feather; do
         [ -f "${CACHE_DIR}/${f}" ] || return 1
@@ -75,28 +81,64 @@ prep_complete () {
     return 0
 }
 
+prep_complete () {
+    # The shared q95 file is part of readiness: an existing done flag from a version that
+    # wrote q95 into the experiment directory must not hide its absence here.
+    [ -f "$Q95_SHARED" ] || return 1
+    peak_matrices_complete || return 1
+    eval_cache_complete || return 1
+    return 0
+}
+
+prep_ready () {
+    [ -f "$LOCK_FILE" ] || return 1
+    [ -d "$LOCK_DIR" ] && return 1
+    prep_complete || return 1
+    return 0
+}
+
 do_prepare () {
     echo "=== Step 1: q95 peak counts ==="
+    Q95_PATH="$Q95_SHARED"
     if [ -f "$Q95_SHARED" ]; then
-        Q95_PATH="$Q95_SHARED"
-        echo "[Step 1] reusing existing q95 peaks (read-only): $Q95_PATH"
+        echo "[Step 1] reusing existing q95 peaks (read-only): $Q95_SHARED"
     elif [ -f "$Q95_LOCAL" ]; then
-        Q95_PATH="$Q95_LOCAL"
-        echo "[Step 1] reusing q95 peaks built earlier by this flow: $Q95_PATH"
+        echo "[Step 1] copying q95 peaks from $Q95_LOCAL to $Q95_SHARED"
+        mkdir -p "$(dirname "$Q95_SHARED")"
+        cp "$Q95_LOCAL" "${Q95_SHARED}.tmp"
+        if [ $? -ne 0 ]; then echo "[FAIL] Step 1: could not copy $Q95_LOCAL"; return 1; fi
+        if ! cmp -s "$Q95_LOCAL" "${Q95_SHARED}.tmp"; then
+            rm -f "${Q95_SHARED}.tmp"
+            echo "[FAIL] Step 1: copy of $Q95_LOCAL does not match the original"
+            return 1
+        fi
+        mv "${Q95_SHARED}.tmp" "$Q95_SHARED"
+        if [ $? -ne 0 ]; then
+            rm -f "${Q95_SHARED}.tmp"
+            echo "[FAIL] Step 1: could not move the copy into place at $Q95_SHARED"
+            return 1
+        fi
+        if [ ! -f "$Q95_LOCAL" ]; then
+            echo "[FAIL] Step 1: the original $Q95_LOCAL is gone; it must be kept"
+            return 1
+        fi
+        echo "[Step 1] copied; the original is left in place"
     else
         # Peak-only extraction. It writes one file and never produces RNA, activity or
-        # atac_peak_counts, so nothing the gene-activity experiments use is touched. The
-        # new file lands under READ_DIR, not in the shared directory.
-        Q95_PATH="$Q95_LOCAL"
-        echo "[Step 1] building q95 peaks -> $Q95_PATH"
+        # atac_peak_counts, so nothing the gene-activity experiments use is touched. It
+        # writes to a temporary name and renames, so a reader never sees a partial file.
+        echo "[Step 1] building q95 peaks -> $Q95_SHARED"
         Rscript ../One_Shifting/R/extract_peak_counts_q95.R \
-            --out_path "$Q95_PATH" \
+            --out_path "$Q95_SHARED" \
             --peak_counts "$RAW_PEAK_COUNTS" \
             --h5ad "$input_path"
         if [ $? -ne 0 ]; then echo "[FAIL] Step 1: extract_peak_counts_q95.R"; return 1; fi
     fi
     if [ ! -f "$Q95_PATH" ]; then echo "[FAIL] Step 1: $Q95_PATH was not produced"; return 1; fi
 
+    if peak_matrices_complete; then
+        echo "=== Step 2: normalized peak matrices already complete, not rebuilding ==="
+    else
     echo "=== Step 2: build the normalized peak matrices (one fixed peak set) ==="
     Rscript ../One_Shifting/R/prep_peak_q95_matrix.R \
         "$Q95_PATH" \
@@ -105,7 +147,12 @@ do_prepare () {
         "$norm_string" \
         "$GENOME_BUILD"
     if [ $? -ne 0 ]; then echo "[FAIL] Step 2: prep_peak_q95_matrix.R"; return 1; fi
+    fi
 
+    if eval_cache_complete; then
+        echo "=== Step 3: evaluation cache already complete, not rebuilding ==="
+        return 0
+    fi
     echo "=== Step 3: build the shared evaluation cache ==="
     Rscript ../One_Shifting/R/peak_recon_to_gene_activity_eval.R \
         "PREPARE_ONLY" \
@@ -124,51 +171,60 @@ do_prepare () {
 
 echo "=== Shared preparation (one process per sample) ==="
 module load conda_R
+export RETICULATE_PYTHON="/users/yhu1/miniforge3/envs/vae_env2/bin/python"
 
-if [ ! -f "$PREP_DONE" ]; then
-    waited=0
+# Gated on readiness, not on the flag alone: a done flag left by a version that wrote q95
+# into the experiment directory must not hide a missing shared q95.
+if ! prep_ready; then
+    mkdir -p "$READ_DIR"
+
     while true; do
-        if mkdir "$PREP_LOCK_DIR" 2>/dev/null; then
-            trap 'rmdir "$PREP_LOCK_DIR" 2>/dev/null' EXIT
-            # Re-check under the lock: the check that sent us here was made before another
-            # process may have finished the same work.
+        if mkdir "$LOCK_DIR" 2>/dev/null; then
+            trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
+
+            # Re-check under the lock: the check that sent us here was made before another process may have finished the same work.
             if prep_complete; then
                 echo "[prep] another process already finished it"
             else
                 do_prepare
                 if [ $? -ne 0 ]; then
-                    rmdir "$PREP_LOCK_DIR" 2>/dev/null; trap - EXIT
+                    rmdir "$LOCK_DIR" 2>/dev/null
+                    trap - EXIT
                     echo "[FAIL] shared preparation failed; no done flag written"
                     exit 1
                 fi
-                # The flag is written only after every required output is verified.
                 if ! prep_complete; then
-                    rmdir "$PREP_LOCK_DIR" 2>/dev/null; trap - EXIT
+                    rmdir "$LOCK_DIR" 2>/dev/null
+                    trap - EXIT
                     echo "[FAIL] shared preparation finished but outputs are incomplete; no done flag written"
                     exit 1
                 fi
             fi
-            touch "$PREP_DONE"
-            rmdir "$PREP_LOCK_DIR" 2>/dev/null
+
+            touch "$LOCK_FILE"
+            rmdir "$LOCK_DIR" 2>/dev/null
             trap - EXIT
             break
-        fi
-
-        echo "[prep] another process holds the lock, waiting..."
-        sleep 10
-        waited=$((waited + 10))
-        if [ -f "$PREP_DONE" ]; then break; fi
-        if [ $waited -ge $PREP_MAX_WAIT ]; then
-            # The lock may still be held by a live job, so it is not removed here.
-            echo "[FAIL] timed out after ${PREP_MAX_WAIT}s waiting for $PREP_LOCK_DIR"
-            echo "       If no job is preparing this sample, remove that directory by hand."
-            exit 1
+        else
+            echo "Lock exists, waiting..."
+            WAIT_COUNT=0
+            while ! prep_ready && [ -d "$LOCK_DIR" ]; do
+                sleep 10
+                WAIT_COUNT=$((WAIT_COUNT + 1))
+                if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+                    # The lock may still be held by a live job, so it is not removed here.
+                    echo "[FAIL] timed out after $((MAX_WAIT * 10))s waiting for $LOCK_DIR"
+                    echo "       If no job is preparing this sample, remove that directory by hand."
+                    exit 1
+                fi
+            done
+            prep_ready && break
         fi
     done
 fi
 
-if ! prep_complete; then
-    echo "[FAIL] shared preparation is marked done but outputs are missing under ${READ_DIR}/${V1} or ${CACHE_DIR}"
+if ! prep_ready; then
+    echo "[FAIL] shared preparation is not ready: check ${READ_DIR}/${V1}, ${CACHE_DIR} and $LOCK_DIR"
     exit 1
 fi
 echo "[prep] shared preparation ready; training can proceed in parallel"
