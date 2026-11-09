@@ -31,7 +31,7 @@ def _check_count_matrix(df, name, check_zero=True, allow_zero_rows=False):
         )
 
 class VAE(nn.Module):
-    def __init__(self, input_dim, hidden_dim1, hidden_dim2, latent_dim):
+    def __init__(self, input_dim, hidden_dim1, hidden_dim2, latent_dim, activation='relu'):
         super(VAE, self).__init__()
         # Encode
         self.fc1 = nn.Linear(input_dim, hidden_dim1)
@@ -43,9 +43,14 @@ class VAE(nn.Module):
         self.fc4 = nn.Linear(hidden_dim2, hidden_dim1)
         self.fc5 = nn.Linear(hidden_dim1, input_dim)
 
+        _ACT = {'relu': F.relu, 'gelu': F.gelu, 'leaky_relu': F.leaky_relu}
+        if activation not in _ACT:
+            raise ValueError(f"Unknown activation: {activation}. Choose from {list(_ACT)}")
+        self.act = _ACT[activation]
+
     def encode(self, x):
-        h1 = F.relu(self.fc1(x))
-        h2 = F.relu(self.fc2(h1))
+        h1 = self.act(self.fc1(x))
+        h2 = self.act(self.fc2(h1))
         return self.fc_mu(h2), self.fc_logvar(h2)
 
     def reparameterize(self, mu, logvar):
@@ -55,8 +60,8 @@ class VAE(nn.Module):
         return mu + eps * std
 
     def decode(self, z):
-        h3 = F.relu(self.fc3(z))
-        h4 = F.relu(self.fc4(h3))
+        h3 = self.act(self.fc3(z))
+        h4 = self.act(self.fc4(h3))
         return F.relu(self.fc5(h4))
 
     def forward(self, x):
@@ -440,7 +445,7 @@ def outer10_inner_holdout(
     epochs_inner, epochs_outer, inner_val_frac, seed,
     early_stop=False, patience=10, min_delta=0.0, check_every=1, outer_es_val_frac=0.1,
     n_splits=10, weight_strategy='fixed', zero_weight_grid=[1.0], nonzero_weight_grid=[5.0],
-    save_dir=None, eval_metric='val_loss', normalization=None):
+    save_dir=None, eval_metric='val_loss', normalization=None, activation='relu'):
 
     if save_dir is None:
         raise ValueError("save_dir must be provided")
@@ -570,7 +575,7 @@ def outer10_inner_holdout(
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
         model = VAE(input_dim, cfg["hidden_dim1"], cfg["hidden_dim2"],
-                    cfg["latent_dim"]).to(device)
+                    cfg["latent_dim"], activation=activation).to(device)
         optimizer = optim.Adam(model.parameters(), lr=cfg["lr"])
         # DCA and scVI carry BatchNorm1d, which raises in train mode on a batch of one.
         # should_drop_last_train() drops a trailing batch only when it is smaller than
@@ -879,7 +884,8 @@ def main(args):
         nonzero_weight_grid=nonzero_weight_grid,
         save_dir=save_dir,
         normalization=args.normalization,
-        eval_metric=args.eval_metric
+        eval_metric=args.eval_metric,
+        activation=args.activation
     )
 
     if args.out_summary:
@@ -940,6 +946,9 @@ if __name__ == "__main__":
     parser.add_argument('--check_every', type=int, default=1)
     parser.add_argument('--outer_es_val_frac', type=float, default=0.1)
     parser.add_argument('--n_splits', type=int, default=5)
+    parser.add_argument('--activation', type=str, default='relu',
+                        choices=['relu', 'gelu', 'leaky_relu'],
+                        help='Hidden-layer activation function (output layer always uses relu)')
 
     args = parser.parse_args()
     main(args)

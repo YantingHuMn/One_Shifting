@@ -1,6 +1,7 @@
 echo "DEBUG sample_name='$sample_name'"
 echo "Folder name='$folder_name'"
 echo "dropout_keep_par='$dropout_keep_par'"
+echo "activation='$activation'"
 
 OUT_DIR="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
 RAW_READ_DIR="${OUT_DIR}/${folder_name}/${sample_name}_INPUT_RNA"

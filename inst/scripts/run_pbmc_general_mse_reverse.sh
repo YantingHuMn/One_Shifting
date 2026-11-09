@@ -2,6 +2,7 @@
 CONFIG_FILE="$1"
 method="$2"
 dropout_keep_par="$3"
+activation="${4:-relu}"
 
 if [ -z "$CONFIG_FILE" ] || [ -z "$method" ]; then
     echo "Usage: bash run_pipeline.sh <config_file> <method>"
@@ -21,14 +22,20 @@ echo "V2_norm_factor: $V2_norm_factor"
 echo "V2_trans_factor: $V2_trans_factor"
 echo "METHOD: $method"
 echo "dropout_keep_par: $dropout_keep_par"
+echo "activation='$activation'"
+
 
 
 CONDITION="given_${V2}_${V2_norm_factor}_${V2_trans_factor}"
-OUTPUT_DIR="${READ_DIR}/${method}/${CONDITION}"
+if [ "$activation" = "relu" ]; then
+    OUTPUT_DIR="${READ_DIR}/${method}/${CONDITION}"
+else
+    OUTPUT_DIR="${READ_DIR}/${method}_${activation}/${CONDITION}"
+fi
 mkdir -p $OUTPUT_DIR
 
 trans_factor=("no_trans" "count+1" "sqrt" "sqrt+1" "log2" "log2(count+2)")
-# norm_factor=("no_norm" 1000000 100000 10000 1000 "standardize") 
+# norm_factor=("no_norm" 1000000 100000 10000 1000 "standardize")
 norm_factor=("no_norm" 1000000 100000 10000 1000) # ReLU not allow standardize
 norm_factor_string=$(IFS=','; echo "${norm_factor[*]}")
 
@@ -90,7 +97,7 @@ echo "===Finish build count matrix==="
 #   /dcs10/hongkai/data/yhu1/Autoencoder/artificial_ground_truth_compare_km/final_model_2_0/seurat_all_genes/ATAC/activity_counts_75per.feather \
 #   "${OUTPUT_DIR}" \
 #   "atac"
-  
+
 echo "=== Starting ${method} pipeline ==="
 
 # Single source of truth for directory naming. data_mode is bound to the R script
@@ -136,10 +143,10 @@ BUBBLE_DONE_FLAG="$READ_DIR/.bubble_reset_done"
 if [ ! -f "$BUBBLE_DONE_FLAG" ]; then
     if mkdir "$BUBBLE_LOCK_DIR" 2>/dev/null; then
         trap 'rmdir "$BUBBLE_LOCK_DIR" 2>/dev/null' EXIT
-        
+
         echo "First method ($method) - clearing old bubble summaries..."
         rm -f "${READ_DIR}"/bubble_plot_summary_*.csv
-        
+
         touch "$BUBBLE_DONE_FLAG"
         rmdir "$BUBBLE_LOCK_DIR"
         trap - EXIT
@@ -163,11 +170,16 @@ elif [ "$method" = "scVI_mse" ]; then
 elif [ "$method" = "Transformer_denoise" ]; then
     METHOD_ARGS="--n_tokens_grid 32 --d_model_grid 64 --nhead_grid 4 --num_layers_grid 1 --dim_feedforward_grid 128 --dropout_grid 0.1 --epochs_inner 100 --epochs_outer 100"
 fi
-        
+
+ACT_ARGS=""
+if [ "$method" = "VAE" ] || [ "$method" = "DCA_mse" ]; then
+    ACT_ARGS="--activation $activation"
+fi
+
 # train - find par
 echo "=== Step 4: Training ${method} on filtered data ==="
 for this_trans_factor in "${trans_factor[@]}"; do
-    OUT_DIR="$OUTPUT_DIR/$this_trans_factor" 
+    OUT_DIR="$OUTPUT_DIR/$this_trans_factor"
 
     mkdir -p "$OUT_DIR"
 
@@ -200,8 +212,8 @@ for this_trans_factor in "${trans_factor[@]}"; do
         --trans2_grid "$V2_trans_factor" \
         --normalization "$this_norm_factor" \
         --nonzero_weight_grid 1.0 \
-        $METHOD_ARGS
-        
+        $METHOD_ARGS $ACT_ARGS
+
         # reconstruct
         SAVED_DIR="${OUT_DIR}/saved_models"
         OUT_PATH="${OUT_DIR}/reconstruct_trans_by_${this_trans_factor}_norm_by_${this_norm_factor}.feather"
@@ -212,10 +224,11 @@ for this_trans_factor in "${trans_factor[@]}"; do
         --transformed_out_dir "$OUT_DIR" \
         --saved_models_dir "$SAVED_DIR" \
         --out_path "$OUT_PATH" \
-        --normalization "$this_norm_factor"
+        --normalization "$this_norm_factor" \
+        $ACT_ARGS
 
         python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared')"
-        conda deactivate 
+        conda deactivate
 
         # correlation
         echo "=== Step 7: Correlation analysis ==="

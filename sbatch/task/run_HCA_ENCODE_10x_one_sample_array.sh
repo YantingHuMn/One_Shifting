@@ -26,6 +26,7 @@ if (( ${#methods[@]} == 0 )); then
     exit 1
 fi
 
+export activation="${activation:-relu}"
 export sample_name
 export folder_name
 export dropout_keep_par
@@ -70,4 +71,5 @@ nvidia-smi
 bash ../One_Shifting/inst/scripts/run_pbmc_general_mse_reverse.sh \
     "$config" \
     "$method" \
-    "$dropout_keep_par"
+    "$dropout_keep_par" \
+    "$activation"

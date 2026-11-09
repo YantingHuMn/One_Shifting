@@ -32,7 +32,7 @@ def _check_count_matrix(df, name, check_zero=True, allow_zero_rows=False):
         )
 
 class VAE(nn.Module):
-    def __init__(self, input_dim, hidden_dim1, hidden_dim2, latent_dim):
+    def __init__(self, input_dim, hidden_dim1, hidden_dim2, latent_dim, activation='relu'):
         super(VAE, self).__init__()
         self.fc1 = nn.Linear(input_dim, hidden_dim1)
         self.fc2 = nn.Linear(hidden_dim1, hidden_dim2)
@@ -41,15 +41,19 @@ class VAE(nn.Module):
         self.fc3 = nn.Linear(latent_dim, hidden_dim2)
         self.fc4 = nn.Linear(hidden_dim2, hidden_dim1)
         self.fc5 = nn.Linear(hidden_dim1, input_dim)
+        _ACT = {'relu': F.relu, 'gelu': F.gelu, 'leaky_relu': F.leaky_relu}
+        if activation not in _ACT:
+            raise ValueError(f"Unknown activation: {activation}. Choose from {list(_ACT)}")
+        self.act = _ACT[activation]
 
     def encode(self, x):
-        h1 = F.relu(self.fc1(x))
-        h2 = F.relu(self.fc2(h1))
+        h1 = self.act(self.fc1(x))
+        h2 = self.act(self.fc2(h1))
         return self.fc_mu(h2), self.fc_logvar(h2)
 
     def decode(self, z):
-        h3 = F.relu(self.fc3(z))
-        h4 = F.relu(self.fc4(h3))
+        h3 = self.act(self.fc3(z))
+        h4 = self.act(self.fc4(h3))
         return F.relu(self.fc5(h4))
 
 def apply_transformation(df, trans):
@@ -198,7 +202,7 @@ def main(args):
         raise ValueError(f"Dimension mismatch! Expected {input_dim}, got {X.shape[1]}")
     
     print("\n[MODEL] Loading VAE...")
-    model = VAE(input_dim, cfg["hidden_dim1"], cfg["hidden_dim2"], cfg["latent_dim"]).to(device)
+    model = VAE(input_dim, cfg["hidden_dim1"], cfg["hidden_dim2"], cfg["latent_dim"], activation=args.activation).to(device)
     state = torch.load(model_path, map_location=device)
     model.load_state_dict(state)
     model.eval()
@@ -238,5 +242,8 @@ if __name__ == "__main__":
     ap.add_argument("--cpu", action="store_true")
     ap.add_argument("--allow_zero_rows", action="store_true",
                     help="Allow all-zero cells while retaining the fixed cell set")
+    ap.add_argument("--activation", type=str, default="relu",
+                    choices=["relu", "gelu", "leaky_relu"],
+                    help="Must match the activation used in Step2 training")
     args = ap.parse_args()
     main(args)

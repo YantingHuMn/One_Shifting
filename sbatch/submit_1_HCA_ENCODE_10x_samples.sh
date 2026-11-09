@@ -4,8 +4,8 @@ read_dir="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
 
 export folder_name="ENCODE"
 
-# train, train_dropout, baseline, step2_only, train_MLP, train_peak
-tasks="train_peak"
+# train, train_dropout, baseline, step2_only, train_MLP, train_peak, train_gelu, train_leakyrelu
+tasks="train_gelu"
 has_task () { [[ ",${tasks// /}," == *",$1,"* ]]; }
 
 dropout_keep_par_values=("")
@@ -237,6 +237,35 @@ for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
                 "$peak_worker_script" | awk '{print $4}')
 
             echo "Submitted Peak training job: ${peak_job_id1} and ${peak_job_id2}"
+        fi
+
+        # Train gelu
+        if has_task train_gelu || has_task train_leakyrelu; then
+            echo "Submitting training array for sample_name=${sample_name}"
+
+            if has_task train_gelu; then
+                activation="gelu"
+            elif has_task train_leakyrelu; then
+                activation="leakyrelu"
+            fi
+
+            methods_par="VAE DCA_mse"
+
+            train_job_id=$(sbatch \
+                --job-name="${folder_name}_${dropout_keep_par}_${sample_name}" \
+                --exclude=compute-170,compute-128 \
+                --partition=gpu \
+                --gres=gpu:1 \
+                --time=3-00:00:00 \
+                --mem=128G \
+                --cpus-per-task=1 \
+                --array=0-1 \
+                --export=ALL,activation="${activation}",folder_name="${folder_name}",sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}",methods_par="${methods_par}" \
+                --output="${log_dir}/submit_${folder_name}_gpu_${dropout_keep_par}_${sample_name}_%a.out" \
+                --error="${log_dir}/submit_${folder_name}_gpu_${dropout_keep_par}_${sample_name}_%a.err" \
+                "$train_worker_script" | awk '{print $4}')
+
+            echo "Submitted training array job: ${train_job_id}"
         fi
     done
 

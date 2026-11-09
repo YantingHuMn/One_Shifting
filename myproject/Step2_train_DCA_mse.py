@@ -31,9 +31,9 @@ def _check_count_matrix(df, name, check_zero=True, allow_zero_rows=False):
         )
 
 class DCA(nn.Module):
-    def __init__(self, input_dim, hidden_dim1, hidden_dim2, latent_dim, dropout_rate=0.0):
+    def __init__(self, input_dim, hidden_dim1, hidden_dim2, latent_dim, dropout_rate=0.0, activation='relu'):
         super(DCA, self).__init__()
-        # Encoder: Linear → BN(center=True, scale=False) → ReLU → Dropout
+        # Encoder: Linear → BN(center=True, scale=False) → activation → Dropout
         self.enc1 = nn.Linear(input_dim, hidden_dim1)
         self.bn_enc1 = nn.BatchNorm1d(hidden_dim1)
         self.bn_enc1.weight.requires_grad = False  # scale=False
@@ -46,7 +46,7 @@ class DCA(nn.Module):
         self.bn_bottleneck = nn.BatchNorm1d(latent_dim)
         self.bn_bottleneck.weight.requires_grad = False
 
-        # Decoder: Linear → BN(center=True, scale=False) → ReLU → Dropout
+        # Decoder: Linear → BN(center=True, scale=False) → activation → Dropout
         self.dec1 = nn.Linear(latent_dim, hidden_dim2)
         self.bn_dec1 = nn.BatchNorm1d(hidden_dim2)
         self.bn_dec1.weight.requires_grad = False
@@ -59,20 +59,25 @@ class DCA(nn.Module):
 
         self.dropout = nn.Dropout(dropout_rate) if dropout_rate > 0 else nn.Identity()
 
+        _ACT = {'relu': F.relu, 'gelu': F.gelu, 'leaky_relu': F.leaky_relu}
+        if activation not in _ACT:
+            raise ValueError(f"Unknown activation: {activation}. Choose from {list(_ACT)}")
+        self.act = _ACT[activation]
+
     def encode(self, x):
-        h = F.relu(self.bn_enc1(self.enc1(x)))
+        h = self.act(self.bn_enc1(self.enc1(x)))
         h = self.dropout(h)
-        h = F.relu(self.bn_enc2(self.enc2(h)))
+        h = self.act(self.bn_enc2(self.enc2(h)))
         h = self.dropout(h)
-        z = F.relu(self.bn_bottleneck(self.bottleneck(h)))
+        z = self.act(self.bn_bottleneck(self.bottleneck(h)))
         return z
 
     def decode(self, z):
-        h = F.relu(self.bn_dec1(self.dec1(z)))
+        h = self.act(self.bn_dec1(self.dec1(z)))
         h = self.dropout(h)
-        h = F.relu(self.bn_dec2(self.dec2(h)))
+        h = self.act(self.bn_dec2(self.dec2(h)))
         h = self.dropout(h)
-        return F.relu(self.output(h))
+        return F.relu(self.output(h))  # output constraint kept
         # return torch.clamp(torch.exp(self.output(h)), 1e-5, 1e6) for NB
 
     def forward(self, x):
@@ -477,7 +482,7 @@ def outer10_inner_holdout(
     epochs_inner, epochs_outer, inner_val_frac, seed,
     early_stop=False, patience=10, min_delta=0.0, check_every=1, outer_es_val_frac=0.0,
     n_splits=10, weight_strategy='fixed', zero_weight_grid=[1.0], nonzero_weight_grid=[5.0],
-    save_dir=None, eval_metric='val_loss', normalization=None):
+    save_dir=None, eval_metric='val_loss', normalization=None, activation='relu'):
 
     if save_dir is None:
         raise ValueError("save_dir must be provided")
@@ -558,7 +563,7 @@ def outer10_inner_holdout(
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
         model = DCA(input_dim, cfg["hidden_dim1"], cfg["hidden_dim2"], cfg["latent_dim"],
-                    dropout_rate=cfg["dropout"]).to(device)
+                    dropout_rate=cfg["dropout"], activation=activation).to(device)
         optimizer = optim.Adam(model.parameters(), lr=cfg["lr"])
         # DCA and scVI carry BatchNorm1d, which raises in train mode on a batch of one.
         # should_drop_last_train() drops a trailing batch only when it is smaller than
@@ -866,7 +871,8 @@ def main(args):
         nonzero_weight_grid=nonzero_weight_grid,
         save_dir=save_dir,
         normalization=args.normalization,
-        eval_metric=args.eval_metric
+        eval_metric=args.eval_metric,
+        activation=args.activation
     )
 
     if args.out_summary:
@@ -929,6 +935,9 @@ if __name__ == "__main__":
     parser.add_argument('--check_every', type=int, default=1)
     parser.add_argument('--outer_es_val_frac', type=float, default=0.1)
     parser.add_argument('--n_splits', type=int, default=5)
+    parser.add_argument('--activation', type=str, default='relu',
+                        choices=['relu', 'gelu', 'leaky_relu'],
+                        help='Hidden-layer activation function (output layer always uses relu)')
 
     args = parser.parse_args()
     main(args)

@@ -33,7 +33,7 @@ def _check_count_matrix(df, name, check_zero=True, allow_zero_rows=False):
         )
 
 class DCA(nn.Module):
-    def __init__(self, input_dim, hidden_dim1, hidden_dim2, latent_dim, dropout_rate=0.0):
+    def __init__(self, input_dim, hidden_dim1, hidden_dim2, latent_dim, dropout_rate=0.0, activation='relu'):
         super(DCA, self).__init__()
         self.enc1 = nn.Linear(input_dim, hidden_dim1)
         self.bn_enc1 = nn.BatchNorm1d(hidden_dim1)
@@ -57,19 +57,23 @@ class DCA(nn.Module):
 
         self.output = nn.Linear(hidden_dim1, input_dim)
         self.dropout = nn.Dropout(dropout_rate) if dropout_rate > 0 else nn.Identity()
+        _ACT = {'relu': F.relu, 'gelu': F.gelu, 'leaky_relu': F.leaky_relu}
+        if activation not in _ACT:
+            raise ValueError(f"Unknown activation: {activation}. Choose from {list(_ACT)}")
+        self.act = _ACT[activation]
 
     def encode(self, x):
-        h = F.relu(self.bn_enc1(self.enc1(x)))
+        h = self.act(self.bn_enc1(self.enc1(x)))
         h = self.dropout(h)
-        h = F.relu(self.bn_enc2(self.enc2(h)))
+        h = self.act(self.bn_enc2(self.enc2(h)))
         h = self.dropout(h)
-        z = F.relu(self.bn_bottleneck(self.bottleneck(h)))
+        z = self.act(self.bn_bottleneck(self.bottleneck(h)))
         return z
 
     def decode(self, z):
-        h = F.relu(self.bn_dec1(self.dec1(z)))
+        h = self.act(self.bn_dec1(self.dec1(z)))
         h = self.dropout(h)
-        h = F.relu(self.bn_dec2(self.dec2(h)))
+        h = self.act(self.bn_dec2(self.dec2(h)))
         h = self.dropout(h)
         return F.relu(self.output(h))
         # return torch.clamp(torch.exp(self.output(h)), 1e-5, 1e6)
@@ -211,7 +215,7 @@ def main(args):
     # 6) Load model
     print("\n[MODEL] Loading DCA...")
     model = DCA(input_dim, cfg["hidden_dim1"], cfg["hidden_dim2"], cfg["latent_dim"],
-                dropout_rate=dropout).to(device)
+                dropout_rate=dropout, activation=args.activation).to(device)
     state = torch.load(model_path, map_location=device)
     model.load_state_dict(state)
     model.eval()
@@ -250,5 +254,8 @@ if __name__ == "__main__":
     ap.add_argument("--cpu", action="store_true")
     ap.add_argument("--allow_zero_rows", action="store_true",
                     help="Allow all-zero cells while retaining the fixed cell set")
+    ap.add_argument("--activation", type=str, default="relu",
+                    choices=["relu", "gelu", "leaky_relu"],
+                    help="Must match the activation used in Step2 training")
     args = ap.parse_args()
     main(args)
