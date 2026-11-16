@@ -15,8 +15,11 @@ source "$CONFIG_FILE"
 : "${TEST_FRAC:=0.2}" "${VAL_FRAC:=0.1}" "${SEED:=42}" "${EPOCHS:=100}" "${PATIENCE:=15}"
 : "${HIDDEN1:=256}" "${HIDDEN2:=128}" "${LR:=0.0001}" "${BATCH:=64}" "${DROPOUT:=0.1}"
 : "${REUSE_LISTS_DIR:=}" "${TARGET_NORM:=no_norm}" "${TARGET_TRANS:=no_trans}"
+# PREP_TASK picks the gene selection in prep_mlp_data.R: cross (Task 2, shared gene list),
+# within (Tasks 3/4, input TFs -> target non-TF HVGs), hvg_to_hvg (Task 5).
+: "${PREP_TASK:=cross}" "${OUTPUT_SUFFIX=}"
 
-OUTPUT_DIR="${READ_DIR}/MLP_cross_${V1}_to_${V2}"
+OUTPUT_DIR="${READ_DIR}/MLP_cross_${V1}_to_${V2}${OUTPUT_SUFFIX}"
 LISTS_DIR="${OUTPUT_DIR}/gene_lists"
 COMPARE="${OUTPUT_DIR}/compare_combinations_trans_norm.csv"
 mkdir -p "$LISTS_DIR"
@@ -26,7 +29,7 @@ mkdir -p "$LISTS_DIR"
 : "${sample_name:?sample_name must be set (exported by the submitter) to label the summary figure}"
 case "$V1" in "${sample_name}_"*) ;; *) echo "V1='${V1}' does not start with '${sample_name}_'"; exit 1 ;; esac
 case "$V2" in "${sample_name}_"*) ;; *) echo "V2='${V2}' does not start with '${sample_name}_'"; exit 1 ;; esac
-MOD_LABEL="${V1#"${sample_name}_"}_to_${V2#"${sample_name}_"}"
+MOD_LABEL="${V1#"${sample_name}_"}_to_${V2#"${sample_name}_"}${OUTPUT_SUFFIX}"
 
 trans_factor=("no_trans" "count+1" "sqrt" "sqrt+1" "log2" "log2(count+2)")
 norm_factor=("no_norm" 1000000 100000 10000 1000)
@@ -52,7 +55,7 @@ if [ -n "$REUSE_LISTS_DIR" ]; then
 else
     echo "=== Fixing the split and the gene lists (training cells only) ==="
     Rscript ../One_Shifting/R/prep_mlp_data.R \
-        --mode lists --task cross \
+        --mode lists --task "$PREP_TASK" \
         --input_matrix "$RAW_IN" --target_matrix "$RAW_TG" \
         --lists_dir "$LISTS_DIR" \
         --n_hvg "$N_HVG" --min_cells "$MIN_CELLS" \
@@ -77,7 +80,7 @@ for this_trans in "${trans_factor[@]}"; do
         echo "=== Running MLP within ${MODALITY} with ${this_trans} + ${this_norm} ==="
         module load conda_R
         Rscript ../One_Shifting/R/prep_mlp_data.R \
-            --mode extract --task cross \
+            --mode extract --task "$PREP_TASK" \
             --input_matrix "$MAT_IN" --target_matrix "$MAT_TG" \
             --lists_dir "$LISTS_DIR" --out_dir "$OUT_DIR"
 

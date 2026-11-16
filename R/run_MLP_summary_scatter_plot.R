@@ -27,7 +27,7 @@ all_shapes <- c(16, 17, 15, 18, 25, 21)
 TRANS_COLORS <- setNames(all_colors[seq_along(TRANS_LEVELS)], TRANS_LEVELS)
 NORM_SHAPES  <- setNames(all_shapes[seq_along(NORM_LEVELS)], NORM_LEVELS)
 
-ALLOWED_SPACE <- list(within = "raw_counts", cross = "original_scale")
+ALLOWED_SPACE <- list(within = "raw_counts", cross = "original_scale", within_raw = "raw_counts")
 REQUIRED_COLS <- c("task", "space", "input_trans", "input_norm", "target_trans",
                    "target_norm", "mean_pearson_defined", "mean_spearman_defined")
 X_COL <- "mean_pearson_defined"
@@ -65,7 +65,7 @@ pretty_modality <- function(m) gsub("ATAC", "ATAC gene activity", gsub("_to_", "
 
 run_mlp_summary_scatter_plot <- function(csv, sample, task, modality, space, out_dir) {
     if (!(task %in% names(ALLOWED_SPACE)))
-        stop("--task must be 'within' or 'cross', got '", task, "'")
+        stop("--task must be 'within', 'cross' or 'within_raw', got '", task, "'")
     spaces <- strsplit(space, ",", fixed = TRUE)[[1]]
     allowed <- if (task == "within") c("raw_counts", "target_space") else ALLOWED_SPACE[[task]]
     if (anyDuplicated(spaces) || !length(spaces) || any(!spaces %in% allowed))
@@ -107,9 +107,9 @@ run_mlp_summary_scatter_plot <- function(csv, sample, task, modality, space, out
              paste(dup, collapse = "; "),
              ". Refusing to average or pick one; clean the CSV or use a fresh output directory.")
 
-    if (task == "cross") {
+    if (task %in% c("cross", "within_raw")) {
         if (!all(d$target_norm == "no_norm") || !all(d$target_trans == "no_trans"))
-            stop("Cross is defined with a fixed target (no_norm + no_trans), but the selected rows ",
+            stop(task, " is defined with a fixed target (no_norm + no_trans), but the selected rows ",
                  "have target_norm = {", paste(unique(d$target_norm), collapse = ", "),
                  "} and target_trans = {", paste(unique(d$target_trans), collapse = ", "), "}")
     }
@@ -146,7 +146,7 @@ run_mlp_summary_scatter_plot <- function(csv, sample, task, modality, space, out
     n_test <- unique(d$n_test_cells)
     if (length(n_test) != 1) stop("Inconsistent n_test_cells across selected combinations")
 
-    task_word <- if (task == "within") "Within-modality" else "Cross-modality"
+    task_word <- if (task == "within") "Within-modality" else if (task == "within_raw") "Within-modality (raw-count target)" else "Cross-modality"
     p <- ggplot(d, aes(x = x, y = y, color = input_trans, shape = input_norm)) +
         geom_abline(slope = 1, intercept = 0, color = "grey35", linewidth = 0.7, linetype = "dashed") +
         geom_point(size = 3.6, stroke = 1, alpha = 0.85) +

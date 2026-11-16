@@ -2,9 +2,13 @@
 echo "DEBUG sample_name='$sample_name'  folder_name='$folder_name'"
 
 OUT_DIR="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
-READ_DIR="${OUT_DIR}/${folder_name}/${sample_name}_INPUT_ATAC"
-V1="${sample_name}_ATAC"
-V2="${sample_name}_RNA"
+# mlp_in / mlp_out come from the worker (unset -> Task 2: ATAC -> RNA). Both modalities are
+# read from the input modality's own <sample>_INPUT_<mlp_in> folder, so cells stay paired.
+READ_DIR="${OUT_DIR}/${folder_name}/${sample_name}_INPUT_${mlp_in:-ATAC}"
+V1="${sample_name}_${mlp_in:-ATAC}"
+V2="${sample_name}_${mlp_out:-RNA}"
+PREP_TASK="${mlp_prep:-cross}"
+OUTPUT_SUFFIX="${mlp_tag:-}"
 
 # Held fixed while the input transformation sweeps, so the sweep measures the effect on
 # the input representation alone.

@@ -512,6 +512,14 @@ def run_prediction(args, task):
         # raw-count scale: undo the transformation AND the library-size normalization
         pred_o, truth_o = within_raw_counts(args, meta, te_id, genes, Y_df, pred_t)
         scale_tag, space_t, space_o = "raw_counts", "target_space", "raw_counts"
+    elif task == "within_raw":
+        # the target was raw counts (no_norm + no_trans), so the prediction already is on the
+        # raw-count scale; nothing is reversed
+        if meta["target_trans"] != "no_trans" or meta["target_norm"] != "no_norm":
+            raise ValueError("task 'within_raw' requires target_trans=no_trans and target_norm=no_norm")
+        pred_o = np.asarray(pred_t, dtype=np.float64)
+        truth_o = Y_df.to_numpy(dtype=np.float64)
+        scale_tag, space_t, space_o = "raw_counts", "target_space", "raw_counts"
     else:
         pred_o = inverse_trans(pred_t, meta["target_trans"])
         truth_o = Y_df.to_numpy(dtype=np.float64)
@@ -618,4 +626,3 @@ def add_predict_args(p, default_label):
     p.add_argument("--target_lib_sizes", default=None)
     p.add_argument("--method_label", default=default_label)
     p.add_argument("--cpu", action="store_true")
-    return p

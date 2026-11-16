@@ -25,13 +25,17 @@ case "$task_id" in
     0) mlp_kind="within"; export mlp_modality="RNA"  ;;
     1) mlp_kind="within"; export mlp_modality="ATAC" ;;
     2) mlp_kind="cross";  export mlp_modality=""     ;;
-    *) echo "ERROR: SLURM_ARRAY_TASK_ID=${task_id} is not one of 0,1,2"; exit 1 ;;
+    3) mlp_kind="cross";  export mlp_in="RNA"  mlp_out="ATAC" mlp_prep="within"     mlp_tag="_TF_to_HVG"  ;;
+    4) mlp_kind="cross";  export mlp_in="ATAC" mlp_out="RNA"  mlp_prep="within"     mlp_tag="_TF_to_HVG"  ;;
+    5) mlp_kind="cross";  export mlp_in="RNA"  mlp_out="ATAC" mlp_prep="hvg_to_hvg" mlp_tag="_HVG_to_HVG" ;;
+    *) echo "ERROR: SLURM_ARRAY_TASK_ID=${task_id} is not one of 0-5"; exit 1 ;;
 esac
 
 echo "======================================"
 echo "SLURM_JOB_ID=${SLURM_JOB_ID}  ARRAY_TASK_ID=${task_id}"
 echo "sample_name=${sample_name}  folder_name=${folder_name}"
-echo "mlp_kind=${mlp_kind}  mlp_modality=${mlp_modality}"
+echo "mlp_kind=${mlp_kind}  mlp_modality=${mlp_modality}  TARGET_SPACE=${TARGET_SPACE:-transformed}"
+echo "mlp_in=${mlp_in:-}  mlp_out=${mlp_out:-}  mlp_prep=${mlp_prep:-}  mlp_tag=${mlp_tag:-}"
 echo "HOSTNAME=$(hostname)"
 echo "======================================"
 

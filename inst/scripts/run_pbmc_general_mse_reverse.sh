@@ -25,7 +25,6 @@ echo "dropout_keep_par: $dropout_keep_par"
 echo "activation='$activation'"
 
 
-
 CONDITION="given_${V2}_${V2_norm_factor}_${V2_trans_factor}"
 if [ "$activation" = "relu" ]; then
     OUTPUT_DIR="${READ_DIR}/${method}/${CONDITION}"
@@ -34,7 +33,9 @@ else
 fi
 mkdir -p $OUTPUT_DIR
 
-trans_factor=("no_trans" "count+1" "sqrt" "sqrt+1" "log2" "log2(count+2)")
+all_trans_factor=("no_trans" "count+1" "sqrt" "sqrt+1" "log2" "log2(count+2)")
+trans_factor=("${all_trans_factor[@]}") # full run
+# trans_factor=("sqrt+1" "log2" "log2(count+2)") # resume
 # norm_factor=("no_norm" 1000000 100000 10000 1000 "standardize")
 norm_factor=("no_norm" 1000000 100000 10000 1000) # ReLU not allow standardize
 norm_factor_string=$(IFS=','; echo "${norm_factor[*]}")
@@ -126,26 +127,38 @@ has_corr_dir() {
     return 1
 }
 
-for data_mode in "${DATA_MODES[@]}"; do
-    mode_suffix=$(get_mode_suffix "$data_mode")
+if [ ${#trans_factor[@]} -eq ${#all_trans_factor[@]} ]; then
+    echo "Full run - clearing plots_summary"
+    for data_mode in "${DATA_MODES[@]}"; do
+        mode_suffix=$(get_mode_suffix "$data_mode")
 
-    for corr_dir in "${CORR_DIRS[@]}"; do
-        Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
-        rm -f "${Figure_DIR}"/plots_summary_*.csv
+        for corr_dir in "${CORR_DIRS[@]}"; do
+            Figure_DIR="$OUTPUT_DIR/Figures_${corr_dir}_${mode_suffix}"
+            rm -f "${Figure_DIR}"/plots_summary_*.csv
+        done
     done
-done
+else
+    echo "Resume run (${trans_factor[*]}) - keeping existing plots_summary"
+fi
 
 
 # === delete bubble summary===
-BUBBLE_LOCK_DIR="$READ_DIR/.bubble_reset_lock"
-BUBBLE_DONE_FLAG="$READ_DIR/.bubble_reset_done"
+if [ "$activation" = "relu" ]; then
+    BUBBLE_PREFIX="bubble_plot_summary"
+    BUBBLE_TAG=""
+else
+    BUBBLE_PREFIX="${activation}_bubble_plot_summary"
+    BUBBLE_TAG="_${activation}"
+fi
+BUBBLE_LOCK_DIR="$READ_DIR/.bubble_reset_lock${BUBBLE_TAG}"
+BUBBLE_DONE_FLAG="$READ_DIR/.bubble_reset_done${BUBBLE_TAG}"
 
 if [ ! -f "$BUBBLE_DONE_FLAG" ]; then
     if mkdir "$BUBBLE_LOCK_DIR" 2>/dev/null; then
         trap 'rmdir "$BUBBLE_LOCK_DIR" 2>/dev/null' EXIT
 
         echo "First method ($method) - clearing old bubble summaries..."
-        rm -f "${READ_DIR}"/bubble_plot_summary_*.csv
+        rm -f "${READ_DIR}"/${BUBBLE_PREFIX}_*.csv
 
         touch "$BUBBLE_DONE_FLAG"
         rmdir "$BUBBLE_LOCK_DIR"
@@ -319,11 +332,11 @@ for data_mode in "${DATA_MODES[@]}"; do
             "$OUTPUT_DIR" \
             "TRUE" \
             "${COL_Figure_DIR}/plots_summary_${corr_method}_col_gene${mode_tag}.csv" \
-            "${READ_DIR}/bubble_plot_summary_col_gene_${mode_suffix}.csv" \
+            "${READ_DIR}/${BUBBLE_PREFIX}_col_gene_${mode_suffix}.csv" \
             "$corr_method" \
             "$V2_trans_factor" \
             "$V2_norm_factor" \
-            "${trans_factor[@]}"
+            "${all_trans_factor[@]}"
 
         if has_corr_dir row && { [[ "$V1" == *RNA* && "$V2" == *ATAC* ]] || [[ "$V1" == *ATAC* && "$V2" == *RNA* ]]; }; then
             Rscript ../One_Shifting/R/Step_post_summary_bubble_table.R \
@@ -332,11 +345,11 @@ for data_mode in "${DATA_MODES[@]}"; do
                 "$OUTPUT_DIR" \
                 "FALSE" \
                 "${ROW_Figure_DIR}/plots_summary_${corr_method}_row_cell${mode_tag}.csv" \
-                "${READ_DIR}/bubble_plot_summary_row_cell_${mode_suffix}.csv" \
+                "${READ_DIR}/${BUBBLE_PREFIX}_row_cell_${mode_suffix}.csv" \
                 "$corr_method" \
                 "$V2_trans_factor" \
                 "$V2_norm_factor" \
-                "${trans_factor[@]}"
+                "${all_trans_factor[@]}"
         fi
     done
 done

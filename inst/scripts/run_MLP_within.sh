@@ -19,7 +19,18 @@ source "$CONFIG_FILE"
 : "${READ_DIR:?}" "${MODALITY:?}" "${N_HVG:=1000}" "${MIN_CELLS:=3}"
 : "${TEST_FRAC:=0.2}" "${VAL_FRAC:=0.1}" "${SEED:=42}" "${EPOCHS:=100}" "${PATIENCE:=15}"
 : "${HIDDEN1:=256}" "${HIDDEN2:=128}" "${LR:=0.0001}" "${BATCH:=64}" "${DROPOUT:=0.1}"
-: "${OUTPUT_SUFFIX=_relu_rawscale}"
+: "${TARGET_SPACE:=transformed}"
+# transformed: target follows the input trans/norm and is reversed to raw counts (original).
+# raw_counts : target is always the no_norm + no_trans matrix; nothing is reversed.
+case "$TARGET_SPACE" in
+    transformed) : "${OUTPUT_SUFFIX=_relu_rawscale}"
+                 TRAIN_PY="Step2_train_MLP.py"; PRED_PY="Step3_predict_MLP.py"
+                 PLOT_TASK="within"; PLOT_SPACE="raw_counts,target_space" ;;
+    raw_counts)  : "${OUTPUT_SUFFIX=_raw_target}"
+                 TRAIN_PY="Step2_train_MLP_raw.py"; PRED_PY="Step3_predict_MLP_raw.py"
+                 PLOT_TASK="within_raw"; PLOT_SPACE="raw_counts" ;;
+    *) echo "TARGET_SPACE='${TARGET_SPACE}' must be transformed or raw_counts"; exit 1 ;;
+esac
 
 OUTPUT_DIR="${READ_DIR}/MLP_within_${MODALITY}${OUTPUT_SUFFIX}"
 LISTS_DIR="${OUTPUT_DIR}/gene_lists"
@@ -68,13 +79,18 @@ for this_trans in "${trans_factor[@]}"; do
 
         OUT_DIR="${OUTPUT_DIR}/${this_trans}/norm_${this_norm}"
         MAT="${READ_DIR}/${MODALITY}/Count_Matrix_norm_by_${this_norm}.feather"
+        if [ "$TARGET_SPACE" = "raw_counts" ]; then
+            MAT_TG="$RAW"; T_TRANS="no_trans"; T_NORM="no_norm"
+        else
+            MAT_TG="$MAT"; T_TRANS="$this_trans"; T_NORM="$this_norm"
+        fi
         mkdir -p "$OUT_DIR"
 
         echo "=== Running MLP within ${MODALITY} with ${this_trans} + ${this_norm} ==="
         module load conda_R
         Rscript ../One_Shifting/R/prep_mlp_data.R \
             --mode extract --task within \
-            --input_matrix "$MAT" --target_matrix "$MAT" \
+            --input_matrix "$MAT" --target_matrix "$MAT_TG" \
             --lists_dir "$LISTS_DIR" --out_dir "$OUT_DIR"
 
         source ~/.bashrc
@@ -82,21 +98,21 @@ for this_trans in "${trans_factor[@]}"; do
         python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
         echo "=== Training MLP within ${MODALITY} with ${this_trans} + ${this_norm} ==="
-        python ../One_Shifting/myproject/Step2_train_MLP.py \
+        python ../One_Shifting/myproject/${TRAIN_PY} \
             --input_train  "${OUT_DIR}/input_train.feather" \
             --input_val    "${OUT_DIR}/input_val.feather" \
             --target_train "${OUT_DIR}/target_train.feather" \
             --target_val   "${OUT_DIR}/target_val.feather" \
             --model_dir    "${OUT_DIR}/saved_model" \
             --out_summary  "${OUT_DIR}/mlp_results.tsv" \
-            --input_trans "${this_trans}" --target_trans "${this_trans}" \
-            --input_norm  "${this_norm}"  --target_norm  "${this_norm}" \
+            --input_trans "${this_trans}" --target_trans "${T_TRANS}" \
+            --input_norm  "${this_norm}"  --target_norm  "${T_NORM}" \
             --hidden_grid1 "$HIDDEN1" --hidden_grid2 "$HIDDEN2" \
             --lr_grid "$LR" --batch_size_grid "$BATCH" --dropout "$DROPOUT" \
             --epochs "$EPOCHS" --patience "$PATIENCE" --min_delta 0 --seed "$SEED"
 
         echo "=== Predicting MLP within ${MODALITY} with ${this_trans} + ${this_norm} ==="
-        python ../One_Shifting/myproject/Step3_predict_MLP.py \
+        python ../One_Shifting/myproject/${PRED_PY} \
             --model_dir   "${OUT_DIR}/saved_model" \
             --input_test  "${OUT_DIR}/input_test.feather" \
             --target_test "${OUT_DIR}/target_test.feather" \
@@ -115,9 +131,9 @@ module load conda_R
 Rscript ../One_Shifting/R/run_MLP_summary_scatter_plot.R \
     --csv "$COMPARE" \
     --sample "$sample_name" \
-    --task within \
+    --task "$PLOT_TASK" \
     --modality "$MOD_LABEL" \
-    --space raw_counts,target_space \
+    --space "$PLOT_SPACE" \
     --out_dir "${OUTPUT_DIR}/figures"
 
 echo "=== Done. Summary: ${COMPARE} ==="
