@@ -34,7 +34,7 @@ esac
 echo "======================================"
 echo "SLURM_JOB_ID=${SLURM_JOB_ID}  ARRAY_TASK_ID=${task_id}"
 echo "sample_name=${sample_name}  folder_name=${folder_name}"
-echo "mlp_kind=${mlp_kind}  mlp_modality=${mlp_modality}  TARGET_SPACE=${TARGET_SPACE:-transformed}"
+echo "mlp_kind=${mlp_kind}  mlp_modality=${mlp_modality}  TARGET_SPACE=${TARGET_SPACE:-transformed}  MODEL_NAME=${MODEL_NAME:-MLP}"
 echo "mlp_in=${mlp_in:-}  mlp_out=${mlp_out:-}  mlp_prep=${mlp_prep:-}  mlp_tag=${mlp_tag:-}  mlp_label=${mlp_label:-}"
 echo "HOSTNAME=$(hostname)"
 echo "======================================"

@@ -2,10 +2,10 @@
 cd /dcs10/hongkai/data/yhu1/One_Shifting
 read_dir="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
 
-export folder_name="ENCODE"
+export folder_name="HCA"
 
-# train, train_dropout, baseline, step2_only, train_MLP, train_peak, train_gelu, train_leaky_relu
-tasks="train_MLP"
+# train, train_dropout, baseline, step2_only, train_MLP, train_Transformer_predict, train_peak, train_gelu, train_leaky_relu
+tasks="train_Transformer_predict"
 has_task () { [[ ",${tasks// /}," == *",$1,"* ]]; }
 
 dropout_keep_par_values=("")
@@ -194,13 +194,52 @@ for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
                 --time=3-00:00:00 \
                 --mem=32G \
                 --cpus-per-task=4 \
-                --array=3-5 \
+                --array=2-5 \
                 --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}" \
                 --output="${log_dir}/submit_${folder_name}_MLP_cross_${sample_name}_%a.out" \
                 --error="${log_dir}/submit_${folder_name}_MLP_cross_${sample_name}_%a.err" \
                 "$mlp_worker_script" | awk '{print $4}')
 
             echo "Submitted MLP cross-modality job: ${mlp_cross_job_id}"
+        fi
+
+
+        # Transformer on the same six MLP tasks (same worker, same split/gene-list rules);
+        # MODEL_NAME=Transformer writes to Transformer_within_* / Transformer_cross_* folders.
+        if has_task train_Transformer_predict; then
+            echo "Submitting Transformer prediction arrays for sample_name=${sample_name}"
+
+            tfp_within_job_id=$(sbatch \
+                --job-name="TFP_${folder_name}_${sample_name}" \
+                --exclude=compute-170 \
+                --partition=gpu \
+                --gres=gpu:1 \
+                --time=3-00:00:00 \
+                --mem=32G \
+                --cpus-per-task=4 \
+                --array=0-1 \
+                --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",TARGET_SPACE="raw_counts",MODEL_NAME="Transformer" \
+                --output="${log_dir}/submit_${folder_name}_Transformer_within_raw_${sample_name}_%a.out" \
+                --error="${log_dir}/submit_${folder_name}_Transformer_within_raw_${sample_name}_%a.err" \
+                "$mlp_worker_script" | awk '{print $4}')
+
+            echo "Submitted Transformer within-modality job: ${tfp_within_job_id}"
+
+            tfp_cross_job_id=$(sbatch \
+                --job-name="TFPx_${folder_name}_${sample_name}" \
+                --exclude=compute-170 \
+                --partition=gpu \
+                --gres=gpu:1 \
+                --time=3-00:00:00 \
+                --mem=32G \
+                --cpus-per-task=4 \
+                --array=2-5 \
+                --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",MODEL_NAME="Transformer" \
+                --output="${log_dir}/submit_${folder_name}_Transformer_cross_${sample_name}_%a.out" \
+                --error="${log_dir}/submit_${folder_name}_Transformer_cross_${sample_name}_%a.err" \
+                "$mlp_worker_script" | awk '{print $4}')
+
+            echo "Submitted Transformer cross-modality job: ${tfp_cross_job_id}"
         fi
        
         # Peak:

@@ -31,8 +31,17 @@ case "$TARGET_SPACE" in
                  PLOT_TASK="within_raw"; PLOT_SPACE="raw_counts" ;;
     *) echo "TARGET_SPACE='${TARGET_SPACE}' must be transformed or raw_counts"; exit 1 ;;
 esac
+# MODEL_NAME=Transformer runs the same task with the Transformer in place of the MLP,
+# into its own Transformer_within_* folder.
+: "${MODEL_NAME:=MLP}"
+case "$MODEL_NAME" in
+    MLP) ;;
+    Transformer) TRAIN_PY="Step2_train_Transformer_predict.py --task ${PLOT_TASK}"
+                 PRED_PY="Step3_predict_Transformer_predict.py --task ${PLOT_TASK}" ;;
+    *) echo "MODEL_NAME='${MODEL_NAME}' must be MLP or Transformer"; exit 1 ;;
+esac
 
-OUTPUT_DIR="${READ_DIR}/MLP_within_${MODALITY}${OUTPUT_SUFFIX}"
+OUTPUT_DIR="${READ_DIR}/${MODEL_NAME}_within_${MODALITY}${OUTPUT_SUFFIX}"
 LISTS_DIR="${OUTPUT_DIR}/gene_lists"
 COMPARE="${OUTPUT_DIR}/compare_combinations_trans_norm.csv"
 mkdir -p "$LISTS_DIR"
@@ -132,6 +141,7 @@ Rscript ../One_Shifting/R/run_MLP_summary_scatter_plot.R \
     --csv "$COMPARE" \
     --sample "$sample_name" \
     --task "$PLOT_TASK" \
+    --model "$MODEL_NAME" \
     --modality "$MOD_LABEL" \
     --space "$PLOT_SPACE" \
     --out_dir "${OUTPUT_DIR}/figures"

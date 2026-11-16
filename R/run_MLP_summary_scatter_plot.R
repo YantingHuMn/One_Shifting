@@ -35,14 +35,14 @@ Y_COL <- "mean_spearman_defined"
 
 parse_args <- function(argv) {
     keys <- c("csv", "sample", "task", "modality", "space", "out_dir")
-    out <- list()
+    out <- list(model = "MLP")   # optional --model; MLP when absent
     i <- 1
     while (i <= length(argv)) {
         a <- argv[i]
         if (!grepl("^--", a)) stop("Unexpected argument '", a, "'; expected --name value pairs")
         k <- sub("^--", "", a)
-        if (!(k %in% keys)) stop("Unknown argument --", k, "; supported: ",
-                                 paste0("--", keys, collapse = ", "))
+        if (!(k %in% c(keys, "model"))) stop("Unknown argument --", k, "; supported: ",
+                                 paste0("--", c(keys, "model"), collapse = ", "))
         if (i == length(argv)) stop("Argument --", k, " has no value")
         out[[k]] <- argv[i + 1]
         i <- i + 2
@@ -63,7 +63,7 @@ check_label <- function(value, name) {
 
 pretty_modality <- function(m) gsub("ATAC", "ATAC gene activity", gsub("_to_", " to ", m))
 
-run_mlp_summary_scatter_plot <- function(csv, sample, task, modality, space, out_dir) {
+run_mlp_summary_scatter_plot <- function(csv, sample, task, modality, space, out_dir, model = "MLP") {
     if (!(task %in% names(ALLOWED_SPACE)))
         stop("--task must be 'within', 'cross' or 'within_raw', got '", task, "'")
     spaces <- strsplit(space, ",", fixed = TRUE)[[1]]
@@ -157,7 +157,7 @@ run_mlp_summary_scatter_plot <- function(csv, sample, task, modality, space, out
         labs(
             x = "Mean gene-wise Pearson correlation",
             y = "Mean gene-wise Spearman correlation",
-            title = sprintf("%s: %s MLP, %s", sample, task_word, pretty_modality(modality)),
+            title = sprintf("%s: %s %s, %s", sample, task_word, model, pretty_modality(modality)),
             subtitle = sprintf(
                 "Input: %d genes | Target: %d genes | Test: %s cells\nEvaluation scales: %s",
                 n_input, n_target, n_test, paste(spaces, collapse = " | ")
@@ -189,4 +189,4 @@ run_mlp_summary_scatter_plot <- function(csv, sample, task, modality, space, out
 }
 
 a <- parse_args(commandArgs(trailingOnly = TRUE))
-run_mlp_summary_scatter_plot(a$csv, a$sample, a$task, a$modality, a$space, a$out_dir)
+run_mlp_summary_scatter_plot(a$csv, a$sample, a$task, a$modality, a$space, a$out_dir, a$model)

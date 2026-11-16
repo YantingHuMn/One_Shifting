@@ -57,6 +57,16 @@ class MLP(nn.Module):
         return F.relu(self.fc3(h))
 
 
+# Model hook. Another architecture's entry point (Step2/Step3_*_Transformer_predict.py)
+# replaces ARCH_NAME, MODEL_SPEC and build_model; the pipeline below is shared unchanged.
+ARCH_NAME = "MLP"
+MODEL_SPEC = {}
+
+
+def build_model(cfg, input_dim, output_dim, dropout):
+    return MLP(input_dim, cfg["h1"], cfg["h2"], output_dim, dropout)
+
+
 # ---------------------------------------------------------------- transforms
 def apply_trans(arr, trans):
     a = np.asarray(arr, dtype=np.float64)
@@ -325,7 +335,7 @@ def _fit(cfg, Xtr, Ytr, device, epochs, seed, dropout, Xva=None, Yva=None,
     no early stopping; this is the pass that produces the model actually kept.
     """
     torch.manual_seed(seed); np.random.seed(seed)
-    model = MLP(Xtr.shape[1], cfg["h1"], cfg["h2"], Ytr.shape[1], dropout).to(device)
+    model = build_model(cfg, Xtr.shape[1], Ytr.shape[1], dropout).to(device)
     opt = optim.Adam(model.parameters(), lr=cfg["lr"])
     tl = DataLoader(TensorDataset(torch.tensor(Xtr, dtype=torch.float32),
                                   torch.tensor(Ytr, dtype=torch.float32)),
@@ -414,7 +424,7 @@ def run_training(args, task):
         if not np.isfinite(a).all():
             raise ValueError(f"non-finite values in the transformed {nm} training matrix")
 
-    grid = [dict(h1=h1, h2=h2, lr=lr, bs=bs) for h1, h2, lr, bs in product(
+    grid = [dict(h1=h1, h2=h2, lr=lr, bs=bs, **MODEL_SPEC) for h1, h2, lr, bs in product(
         [int(v) for v in args.hidden_grid1.split(",") if v.strip()],
         [int(v) for v in args.hidden_grid2.split(",") if v.strip()],
         [float(v) for v in args.lr_grid.split(",") if v.strip()],
@@ -447,7 +457,8 @@ def run_training(args, task):
     os.makedirs(args.model_dir, exist_ok=True)
     torch.save(model.state_dict(), os.path.join(args.model_dir, "final_model.pt"))
     meta = dict(
-        task=task, architecture="MLP", output_activation="relu", input_dim=len(input_genes),
+        task=task, architecture=ARCH_NAME, model_spec=MODEL_SPEC,
+        output_activation="relu", input_dim=len(input_genes),
         output_dim=len(target_genes), hidden_dim1=cfg["h1"], hidden_dim2=cfg["h2"],
         dropout=args.dropout, lr=cfg["lr"], batch_size=cfg["bs"],
         best_epoch=int(best_epoch), epoch_cap=int(args.epochs),
@@ -463,7 +474,7 @@ def run_training(args, task):
     if args.out_summary:
         os.makedirs(os.path.dirname(args.out_summary) or ".", exist_ok=True)
         pd.DataFrame([{k: v for k, v in meta.items()
-                       if not isinstance(v, list)}]).to_csv(args.out_summary,
+                       if not isinstance(v, (list, dict))}]).to_csv(args.out_summary,
                                                             sep="\t", index=False)
     print(f"[SAVE] {os.path.join(args.model_dir, 'final_model.pt')}")
     print(f"[SAVE] {os.path.join(args.model_dir, 'final_config.json')}")
@@ -480,6 +491,9 @@ def run_prediction(args, task):
         meta = json.load(fh)
     if meta.get("task") != task:
         raise ValueError(f"model was trained for task '{meta.get('task')}', not '{task}'")
+    if meta.get("architecture", "MLP") != ARCH_NAME:
+        raise ValueError(f"model is a '{meta.get('architecture')}', not '{ARCH_NAME}'; "
+                         f"use the matching Step3 entry point")
     if meta.get("output_activation") != "relu":
         raise ValueError(
             f"{cfg_path} has no output_activation='relu': this model was trained with the "
@@ -581,8 +595,8 @@ def run_prediction(args, task):
 
 
 def model_from(meta, model_dir, device):
-    m = MLP(meta["input_dim"], meta["hidden_dim1"], meta["hidden_dim2"],
-            meta["output_dim"], dropout=0.0).to(device)
+    cfg = dict(h1=meta["hidden_dim1"], h2=meta["hidden_dim2"], **meta.get("model_spec", {}))
+    m = build_model(cfg, meta["input_dim"], meta["output_dim"], 0.0).to(device)
     m.load_state_dict(torch.load(os.path.join(model_dir, "final_model.pt"),
                                  map_location=device, weights_only=True))
     m.eval()

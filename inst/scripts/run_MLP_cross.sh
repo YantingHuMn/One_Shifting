@@ -18,8 +18,18 @@ source "$CONFIG_FILE"
 # PREP_TASK picks the gene selection in prep_mlp_data.R: cross (Task 2, shared gene list),
 # within (Tasks 3/4, input TFs -> target non-TF HVGs); Task 5 reuses cross in reverse.
 : "${PREP_TASK:=cross}" "${OUTPUT_SUFFIX=}" "${METHOD_LABEL:=mlp_atac_to_rna}"
+# MODEL_NAME=Transformer runs the same task with the Transformer in place of the MLP,
+# into its own Transformer_cross_* folder, with the label prefix mlp_ -> transformer_.
+: "${MODEL_NAME:=MLP}"
+case "$MODEL_NAME" in
+    MLP) TRAIN_PY="Step2_train_MLP_cross.py"; PRED_PY="Step3_predict_MLP_cross.py" ;;
+    Transformer) TRAIN_PY="Step2_train_Transformer_predict.py --task cross"
+                 PRED_PY="Step3_predict_Transformer_predict.py --task cross"
+                 METHOD_LABEL="transformer_${METHOD_LABEL#mlp_}" ;;
+    *) echo "MODEL_NAME='${MODEL_NAME}' must be MLP or Transformer"; exit 1 ;;
+esac
 
-OUTPUT_DIR="${READ_DIR}/MLP_cross_${V1}_to_${V2}${OUTPUT_SUFFIX}"
+OUTPUT_DIR="${READ_DIR}/${MODEL_NAME}_cross_${V1}_to_${V2}${OUTPUT_SUFFIX}"
 LISTS_DIR="${OUTPUT_DIR}/gene_lists"
 COMPARE="${OUTPUT_DIR}/compare_combinations_trans_norm.csv"
 mkdir -p "$LISTS_DIR"
@@ -89,7 +99,7 @@ for this_trans in "${trans_factor[@]}"; do
         python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count())"
 
         echo "=== Training MLP within ${MODALITY} with ${this_trans} + ${this_norm} ==="
-        python -u ../One_Shifting/myproject/Step2_train_MLP_cross.py \
+        python -u ../One_Shifting/myproject/${TRAIN_PY} \
             --input_train  "${OUT_DIR}/input_train.feather" \
             --input_val    "${OUT_DIR}/input_val.feather" \
             --target_train "${OUT_DIR}/target_train.feather" \
@@ -103,7 +113,7 @@ for this_trans in "${trans_factor[@]}"; do
             --epochs "$EPOCHS" --patience "$PATIENCE" --min_delta 0 --seed "$SEED"
 
         echo "=== Predicting MLP within ${MODALITY} with ${this_trans} + ${this_norm} ==="
-        python -u ../One_Shifting/myproject/Step3_predict_MLP_cross.py \
+        python -u ../One_Shifting/myproject/${PRED_PY} \
             --model_dir   "${OUT_DIR}/saved_model" \
             --input_test  "${OUT_DIR}/input_test.feather" \
             --target_test "${OUT_DIR}/target_test.feather" \
@@ -122,6 +132,7 @@ Rscript ../One_Shifting/R/run_MLP_summary_scatter_plot.R \
     --csv "$COMPARE" \
     --sample "$sample_name" \
     --task cross \
+    --model "$MODEL_NAME" \
     --modality "$MOD_LABEL" \
     --space original_scale \
     --out_dir "${OUTPUT_DIR}/figures"
