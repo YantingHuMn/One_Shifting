@@ -23,7 +23,7 @@ source "$CONFIG_FILE"
 # transformed: target follows the input trans/norm and is reversed to raw counts (original).
 # raw_counts : target is always the no_norm + no_trans matrix; nothing is reversed.
 case "$TARGET_SPACE" in
-    transformed) : "${OUTPUT_SUFFIX=_relu_rawscale}"
+    transformed) : "${OUTPUT_SUFFIX=_transformed_target}"
                  TRAIN_PY="Step2_train_MLP.py"; PRED_PY="Step3_predict_MLP.py"
                  PLOT_TASK="within"; PLOT_SPACE="raw_counts,target_space" ;;
     raw_counts)  : "${OUTPUT_SUFFIX=_raw_target}"

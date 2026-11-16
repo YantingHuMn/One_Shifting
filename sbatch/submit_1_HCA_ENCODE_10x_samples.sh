@@ -164,7 +164,7 @@ for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
         fi
 
         # MLP: within-modality array (0 = RNA, 1 = ATAC), then cross-modality array
-        # (2 = ATAC->RNA same genes, 3 = RNA TF->ATAC HVG, 4 = ATAC TF->RNA HVG, 5 = RNA HVG->ATAC HVG).
+        # (2 = ATAC->RNA same genes, 3 = RNA TF->ATAC HVG, 4 = ATAC TF->RNA HVG, 5 = RNA->ATAC same genes).
         # Each task builds its own split and gene lists, so there is no dependency between them.
         # TARGET_SPACE=raw_counts writes Task 0/1 to MLP_within_*_raw_target; the transformed results stay untouched.
         if has_task train_MLP; then

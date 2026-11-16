@@ -80,7 +80,7 @@ input_genes_override  <- get_arg("input_genes")
 target_genes_override <- get_arg("target_genes")
 
 if (!mode %in% c("lists", "extract")) stop("--mode must be lists or extract")
-if (!task %in% c("within", "cross", "hvg_to_hvg"))  stop("--task must be within, cross or hvg_to_hvg")
+if (!task %in% c("within", "cross"))  stop("--task must be within or cross")
 dir.create(lists_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(out_dir,   recursive = TRUE, showWarnings = FALSE)
 
@@ -184,18 +184,6 @@ if (mode == "lists") {
         # a gene must not be both the question and the answer
         target_genes <- setdiff(hvg_non_tf, input_genes)
         hvg_written <- hvg_non_tf
-    } else if (task == "hvg_to_hvg") {
-        # input side gets its own non-TF HVGs, chosen on the INPUT matrix with the same VST
-        # rule and the same training cells; the two lists need not match in content or size
-        sin <- CreateSeuratObject(counts = t(as.matrix(Xtr[, keep_in, drop = FALSE])))
-        sin <- NormalizeData(sin, verbose = FALSE)
-        sin <- FindVariableFeatures(sin, selection.method = "vst",
-                                    nfeatures = min(n_hvg, length(keep_in)), verbose = FALSE)
-        input_genes  <- setdiff(VariableFeatures(sin), tf_in_input)
-        target_genes <- hvg_non_tf
-        hvg_written  <- hvg_non_tf
-        cat(sprintf("[INFO] input HVGs on training cells: %d non-TF input genes\n",
-                    length(input_genes)))
     } else {
         # cross predicts the RNA expression of the SAME genes whose ATAC activity it is
         # given, so there is one list, not two. Subsetting hvg_non_tf keeps HVG order;

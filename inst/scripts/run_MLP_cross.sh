@@ -16,8 +16,8 @@ source "$CONFIG_FILE"
 : "${HIDDEN1:=256}" "${HIDDEN2:=128}" "${LR:=0.0001}" "${BATCH:=64}" "${DROPOUT:=0.1}"
 : "${REUSE_LISTS_DIR:=}" "${TARGET_NORM:=no_norm}" "${TARGET_TRANS:=no_trans}"
 # PREP_TASK picks the gene selection in prep_mlp_data.R: cross (Task 2, shared gene list),
-# within (Tasks 3/4, input TFs -> target non-TF HVGs), hvg_to_hvg (Task 5).
-: "${PREP_TASK:=cross}" "${OUTPUT_SUFFIX=}"
+# within (Tasks 3/4, input TFs -> target non-TF HVGs); Task 5 reuses cross in reverse.
+: "${PREP_TASK:=cross}" "${OUTPUT_SUFFIX=}" "${METHOD_LABEL:=mlp_atac_to_rna}"
 
 OUTPUT_DIR="${READ_DIR}/MLP_cross_${V1}_to_${V2}${OUTPUT_SUFFIX}"
 LISTS_DIR="${OUTPUT_DIR}/gene_lists"
@@ -108,6 +108,7 @@ for this_trans in "${trans_factor[@]}"; do
             --input_test  "${OUT_DIR}/input_test.feather" \
             --target_test "${OUT_DIR}/target_test.feather" \
             --out_dir     "${OUT_DIR}/predictions" \
+            --method_label "$METHOD_LABEL" \
             --compare_path "$COMPARE"
 
         conda deactivate

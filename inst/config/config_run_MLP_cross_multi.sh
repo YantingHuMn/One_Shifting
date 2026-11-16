@@ -9,6 +9,7 @@ V1="${sample_name}_${mlp_in:-ATAC}"
 V2="${sample_name}_${mlp_out:-RNA}"
 PREP_TASK="${mlp_prep:-cross}"
 OUTPUT_SUFFIX="${mlp_tag:-}"
+METHOD_LABEL="${mlp_label:-mlp_atac_to_rna_same_genes}"
 
 # Held fixed while the input transformation sweeps, so the sweep measures the effect on
 # the input representation alone.
