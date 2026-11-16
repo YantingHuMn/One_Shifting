@@ -24,7 +24,7 @@ task_id=${SLURM_ARRAY_TASK_ID:-0}
 case "$task_id" in
     0) mlp_kind="within"; export mlp_modality="RNA"  ;;
     1) mlp_kind="within"; export mlp_modality="ATAC" ;;
-    2) mlp_kind="cross";  export mlp_modality=""     mlp_label="mlp_atac_to_rna_same_genes" ;;
+    2) mlp_kind="cross";  export mlp_in="ATAC" mlp_out="RNA" mlp_prep="cross" mlp_tag="_same_genes" mlp_label="mlp_atac_to_rna_same_genes" ;;
     3) mlp_kind="cross";  export mlp_in="RNA"  mlp_out="ATAC" mlp_prep="within" mlp_tag="_TF_to_HVG"    mlp_label="mlp_rna_tf_to_atac_hvg" ;;
     4) mlp_kind="cross";  export mlp_in="ATAC" mlp_out="RNA"  mlp_prep="within" mlp_tag="_TF_to_HVG"    mlp_label="mlp_atac_tf_to_rna_hvg" ;;
     5) mlp_kind="cross";  export mlp_in="RNA"  mlp_out="ATAC" mlp_prep="cross"  mlp_tag="_same_genes"   mlp_label="mlp_rna_to_atac_same_genes" ;;

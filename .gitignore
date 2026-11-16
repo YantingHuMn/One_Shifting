@@ -10,3 +10,4 @@ submit_scVI_DCA_Saver*
 submit_UMAP*
 submit_MLP*
 submit_ATAC*
+myproject/__pycache__/*

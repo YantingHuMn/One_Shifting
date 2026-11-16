@@ -35,7 +35,7 @@ mkdir -p $OUTPUT_DIR
 
 all_trans_factor=("no_trans" "count+1" "sqrt" "sqrt+1" "log2" "log2(count+2)")
 trans_factor=("${all_trans_factor[@]}") # full run
-# trans_factor=("sqrt+1" "log2" "log2(count+2)") # resume
+# trans_factor=("log2(count+2)") # resume
 # norm_factor=("no_norm" 1000000 100000 10000 1000 "standardize")
 norm_factor=("no_norm" 1000000 100000 10000 1000) # ReLU not allow standardize
 norm_factor_string=$(IFS=','; echo "${norm_factor[*]}")

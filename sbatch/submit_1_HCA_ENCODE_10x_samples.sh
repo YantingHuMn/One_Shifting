@@ -194,7 +194,7 @@ for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
                 --time=3-00:00:00 \
                 --mem=32G \
                 --cpus-per-task=4 \
-                --array=2-5 \
+                --array=3-5 \
                 --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}" \
                 --output="${log_dir}/submit_${folder_name}_MLP_cross_${sample_name}_%a.out" \
                 --error="${log_dir}/submit_${folder_name}_MLP_cross_${sample_name}_%a.err" \
@@ -241,7 +241,7 @@ for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
             echo "Submitted Peak training job: ${peak_job_id1} and ${peak_job_id2}"
         fi
 
-        # Train gelu
+        # Train gelu / leaky_relu
         if has_task train_gelu || has_task train_leaky_relu; then
             echo "Submitting training array for sample_name=${sample_name}"
 
