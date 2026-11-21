@@ -30,6 +30,15 @@ if (length(args) >= 5 && !is.na(args[5]) && args[5] != "") {
     stop("args5 must be the output directory.")
 }
 
+# args6 (optional): activation. Empty or "relu" = the original bubble_plot_summary_* files;
+# "gelu" / "leaky_relu" = the <activation>_bubble_plot_summary_* files of that run.
+if (length(args) >= 6 && !is.na(args[6]) && args[6] != "") {
+    activation <- args[6]
+} else {
+    activation <- "relu"
+}
+file_prefix <- if (activation == "relu") "" else paste0(activation, "_")
+
 dir.create(OUT_DIR, recursive = TRUE, showWarnings = FALSE)
 
 input_types <- c("RNA", "ATAC")
@@ -49,13 +58,23 @@ mode_suffix_map <- c(
 # Get sample names
 # ============================================================
 
-sample_info <- bind_rows(lapply(TSV_FILES, function(TSV_FILE) {
+# args3: "all", one index list used for every TSV ("1,5"), or one list per TSV in the
+# order of args2, separated by ";" ("4,15;1,5;1").
+sample_index_list <- str_split(sample_index_arg, ";")[[1]]
+if (length(sample_index_list) > 1 && length(sample_index_list) != length(TSV_FILES)) {
+    stop("args3 has ", length(sample_index_list), " ';'-separated index lists but args2 has ",
+         length(TSV_FILES), " TSV files.")
+}
+
+sample_info <- bind_rows(lapply(seq_along(TSV_FILES), function(k) {
+    TSV_FILE <- TSV_FILES[k]
+    this_index_arg <- str_trim(sample_index_list[min(k, length(sample_index_list))])
     sample_table <- read_tsv(TSV_FILE, show_col_types = FALSE)
 
-    if (tolower(sample_index_arg) == "all") {
+    if (tolower(this_index_arg) == "all") {
         sample_indices <- seq_len(nrow(sample_table))
     } else {
-        sample_indices <- str_split(sample_index_arg, ",")[[1]]
+        sample_indices <- str_split(this_index_arg, ",")[[1]]
         sample_indices <- as.integer(sample_indices)
 
         sample_indices <- sample_indices[
@@ -84,6 +103,21 @@ sample_names <- sample_info$sample_name
 print(sample_names)
 
 
+# Function: per-sample ranks from a raw bubble summary, the same way
+# R/plot_summary_bubble_table.R builds *_table_df.csv (scVI_mse excluded, ranks within
+# each method x data_type x metric)
+rank_raw_bubble_summary <- function(df) {
+    df %>%
+        filter(tolower(method) != "scvi_mse") %>%
+        group_by(method, data_type, metric) %>%
+        mutate(
+            rank_perf = rank(-mean_performance, ties.method = "average"),
+            rank_residual = rank(mean_residual, ties.method = "average"),
+            combined_rank = rank_perf + rank_residual
+        ) %>%
+        ungroup()
+}
+
 # Function: read one table_df file
 read_one_bubble_table <- function(sample_name, sample_base_dir, input_type, corr_dir, mode_suffix) {
     corr_object <- corr_object_map[[corr_dir]]
@@ -93,18 +127,35 @@ read_one_bubble_table <- function(sample_name, sample_base_dir, input_type, corr
         paste0(sample_name, "_INPUT_", input_type)
     )
 
-    file_path <- file.path(
-        sample_dir,
-        paste0(
-            "bubble_plot_summary_",
-            corr_dir,
-            "_",
-            corr_object,
-            "_",
-            mode_suffix,
-            "_table_df.csv"
+    if (activation == "relu") {
+        file_path <- file.path(
+            sample_dir,
+            paste0(
+                "bubble_plot_summary_",
+                corr_dir,
+                "_",
+                corr_object,
+                "_",
+                mode_suffix,
+                "_table_df.csv"
+            )
         )
-    )
+    } else {
+        # no per-sample *_table_df.csv exists for these runs: read the raw summary
+        file_path <- file.path(
+            sample_dir,
+            paste0(
+                file_prefix,
+                "bubble_plot_summary_",
+                corr_dir,
+                "_",
+                corr_object,
+                "_",
+                sub("_no_scVI_mse$", "", mode_suffix),
+                ".csv"
+            )
+        )
+    }
 
     if (!file.exists(file_path)) {
         message("[Missing] ", file_path)
@@ -112,6 +163,15 @@ read_one_bubble_table <- function(sample_name, sample_base_dir, input_type, corr
     }
 
     df <- read_csv(file_path, show_col_types = FALSE)
+
+    if (activation != "relu") {
+        n_dup <- sum(duplicated(df[, c("method", "data_type", "metric", "trans")], fromLast = TRUE))
+        if (n_dup > 0) {
+            message("[Dedup] ", n_dup, " repeated row(s), keeping the last: ", file_path)
+            df <- df[!duplicated(df[, c("method", "data_type", "metric", "trans")], fromLast = TRUE), ]
+        }
+        df <- rank_raw_bubble_summary(df)
+    }
 
     df <- df %>%
         mutate(
@@ -233,6 +293,10 @@ plot_metric_bubble <- function(avg_df, metric_name, title_text, out_png) {
             bar_len = max(avg_rank, na.rm = TRUE) - avg_rank + min(avg_rank, na.rm = TRUE)
         )
 
+    # shared color-bar limits: Pearson and Spearman together, so both figures use one scale
+    diff_limits <- range(-avg_df$avg_mean_residual, na.rm = TRUE)
+    perf_limits <- range(avg_df$avg_mean_performance, na.rm = TRUE)
+
     avg_df <- avg_df %>%
         filter(tolower(metric) == metric_name)
 
@@ -240,7 +304,7 @@ plot_metric_bubble <- function(avg_df, metric_name, title_text, out_png) {
 
     x_labels <- avg_df %>%
         distinct(x_group, method) %>%
-        { setNames(.$method, .$x_group) }
+        { setNames(recode(.$method, VAE = "VAE_mse", Transformer_denoise = "Transformer_mse"), .$x_group) }
 
     block_levels <- c("Mean r_recon - r_input", "Mean performance")
 
@@ -281,10 +345,12 @@ plot_metric_bubble <- function(avg_df, metric_name, title_text, out_png) {
             alpha = 0.9
         ) + scale_color_gradient(
                 low = "#E6F0FF",
-                high = "#4E79B7"
+                high = "#4E79B7",
+                limits = diff_limits
             ) + scale_fill_gradient(
                 low = "#FAD7B1",
-                high = "#E76F51"
+                high = "#E76F51",
+                limits = perf_limits
             ) + scale_size_continuous(
                 name = "Average rank",
                 range = c(12, 1.5),
@@ -404,6 +470,7 @@ plot_metric_bubble <- function(avg_df, metric_name, title_text, out_png) {
 
 # Main
 all_aggregated <- list()
+title_tag <- if (activation == "relu") "" else paste0(" (", activation, ")")
 
 for (input_type in input_types) {
     for (data_mode in data_modes) {
@@ -411,7 +478,7 @@ for (input_type in input_types) {
         mode_suffix <- mode_suffix_map[[data_mode]]
 
         message("========================================")
-        message("Processing combined plot: ", input_type, " | ", mode_suffix)
+        message("Processing combined plot: ", input_type, " | ", mode_suffix, " | ", activation)
         message("corr_dir groups: ", paste(corr_dirs, collapse = ", "))
         message("========================================")
 
@@ -444,7 +511,7 @@ for (input_type in input_types) {
         raw_out_csv <- file.path(
             OUT_DIR,
             paste0(
-                "bubble_plot_summary_", input_type, "_col_row_",
+                file_prefix, "bubble_plot_summary_", input_type, "_col_row_",
                 mode_suffix,
                 "_across_samples_raw_table_df.csv"
             )
@@ -453,7 +520,7 @@ for (input_type in input_types) {
         avg_out_csv <- file.path(
             OUT_DIR,
             paste0(
-                "bubble_plot_summary_", input_type, "_col_row_",
+                file_prefix, "bubble_plot_summary_", input_type, "_col_row_",
                 mode_suffix,
                 "_across_samples_avg_rank_table_df.csv"
             )
@@ -462,7 +529,7 @@ for (input_type in input_types) {
         pearson_out_png <- file.path(
             OUT_DIR,
             paste0(
-                "bubble_plot_summary_", input_type, "_col_row_",
+                file_prefix, "bubble_plot_summary_", input_type, "_col_row_",
                 mode_suffix,
                 "_across_samples_avg_rank_pearson.png"
             )
@@ -471,7 +538,7 @@ for (input_type in input_types) {
         spearman_out_png <- file.path(
             OUT_DIR,
             paste0(
-                "bubble_plot_summary_", input_type, "_col_row_",
+                file_prefix, "bubble_plot_summary_", input_type, "_col_row_",
                 mode_suffix,
                 "_across_samples_avg_rank_spearman.png"
             )
@@ -484,7 +551,7 @@ for (input_type in input_types) {
             avg_df,
             metric_name = "pearson",
             title_text = paste0(
-                "Average Pearson across Samples: ", input_type
+                "Average Pearson across Samples: ", input_type, title_tag
             ),
             out_png = pearson_out_png
         )
@@ -493,7 +560,7 @@ for (input_type in input_types) {
             avg_df,
             metric_name = "spearman",
             title_text = paste0(
-                "Average Spearman across Samples: ", input_type
+                "Average Spearman across Samples: ", input_type, title_tag
             ),
             out_png = spearman_out_png
         )
@@ -513,7 +580,7 @@ combined_avg_df <- bind_rows(all_aggregated)
 
 combined_out_csv <- file.path(
     OUT_DIR,
-    "bubble_plot_summary_all_input_types_v1_reverse_v2_no_trans_across_samples_avg_rank_table_df.csv"
+    paste0(file_prefix, "bubble_plot_summary_all_input_types_v1_reverse_v2_no_trans_across_samples_avg_rank_table_df.csv")
 )
 
 write_csv(combined_avg_df, combined_out_csv)

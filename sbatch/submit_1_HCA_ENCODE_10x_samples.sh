@@ -2,7 +2,7 @@
 cd /dcs10/hongkai/data/yhu1/One_Shifting
 read_dir="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
 
-export folder_name="HCA"
+export folder_name="10x"
 
 # train, train_dropout, baseline, step2_only, train_MLP, train_Transformer_predict, train_peak, train_gelu, train_leaky_relu
 tasks="train_Transformer_predict"

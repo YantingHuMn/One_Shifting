@@ -101,6 +101,36 @@ prefix_for <- function(corr_method) {
            stop("corr_method must be pearson or spearman, got: ", corr_method))
 }
 
+# display names for figure text only; method values and file names are unchanged
+method_display <- switch(method, VAE = "VAE", DCA_mse = "DCA-MSE",
+                         Transformer_denoise = "Transformer", method)
+corr_display <- function(corr_method) {
+    switch(corr_method, pearson = "Pearson Correlation", spearman = "Spearman Correlation", corr_method)
+}
+# gradient colours from sample_scatter.R; fill is the per-bin gene count on a log10 scale
+SCATTER_FILL <- scale_fill_gradientn(
+    colours = c("#5271AE", "#70ACDE", "#F5CC7D", "#FFA660", "#D85B59"),
+    trans = "log10", name = "Genes per bin"
+)
+SCATTER_SCALE <- 0.6   # scatter panels are drawn at 0.6 x panel_in; the curve keeps panel_in
+# in-panel sample label: a long sample name is wrapped at "_" so it fits the smaller panel;
+# the trans / norm and sparsity lines below it are left as they are
+wrap_panel_label <- function(lab, width = 18) {
+    vapply(lab, function(one) {
+        parts <- strsplit(one, "\n", fixed = TRUE)[[1]]
+        tokens <- strsplit(parts[1], "(?<=_)", perl = TRUE)[[1]]
+        lines <- character(0); cur <- ""
+        for (tk in tokens) {
+            if (nchar(cur) > 0 && nchar(cur) + nchar(tk) > width) {
+                lines <- c(lines, cur); cur <- tk
+            } else {
+                cur <- paste0(cur, tk)
+            }
+        }
+        paste(c(lines, cur, parts[-1]), collapse = "\n")
+    }, character(1), USE.NAMES = FALSE)
+}
+
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 # ------------------------------------------------------------------ sample table
@@ -423,41 +453,48 @@ for (corr_method in corr_methods) {
     if (use_hexbin) p <- p + geom_hex(bins = 45) else p <- p + geom_bin_2d(bins = 45)
 
     p <- p +
-        scale_fill_gradientn(colours = c("#440154", "#31688e", "#35b779", "#fde725"),
-                             trans = "log10", name = "genes") +
+        SCATTER_FILL +
         geom_abline(slope = 1, intercept = 0, linetype = "dashed",
                     colour = "red", linewidth = 0.4) +
+        # sample information top left, the above-y=x share bottom right: both corners lie
+        # off the diagonal, where the genes concentrate
         geom_text(data = st,
-                  aes(x = -Inf, y = Inf,
-                      label = sprintf("above y=x: %.1f%%\nmean diff: %+.3f",
-                                      100 * frac_method_higher, mean_diff)),
-                  inherit.aes = FALSE, hjust = -0.06, vjust = 1.12,
-                  size = 2.4, colour = "grey20") +
+                  aes(x = AXIS_MIN, y = 1, label = wrap_panel_label(as.character(row))),
+                  inherit.aes = FALSE, hjust = 0, vjust = 1,
+                  size = 1.9, lineheight = 0.95, colour = "grey15") +
+        geom_text(data = st,
+                  aes(x = 1, y = AXIS_MIN,
+                      label = sprintf("above y=x: %.1f%%", 100 * frac_method_higher)),
+                  inherit.aes = FALSE, hjust = 1, vjust = 0,
+                  size = 1.9, colour = "grey15") +
         facet_grid(
             row ~ baseline,
-            switch = "y",
             labeller = labeller(baseline = as_labeller(baseline_labels))
         ) +
         coord_cartesian(xlim = c(AXIS_MIN, 1), ylim = c(AXIS_MIN, 1)) +
-        scale_x_continuous(breaks = c(-0.25, 0, 0.5, 1)) +
-        scale_y_continuous(breaks = c(-0.25, 0, 0.5, 1)) +
+        scale_x_continuous(breaks = c(-0.25, 0, 0.5, 1), labels = c("-0.25", "0", "0.5", "1")) +
+        scale_y_continuous(breaks = c(-0.25, 0, 0.5, 1), labels = c("-0.25", "0", "0.5", "1")) +
         labs(
-            title = sprintf("%s  |  input modality: %s  |  %s correlation per gene",
-                            folder_name, modality, corr_method),
-            subtitle = sprintf("x: published baseline    y: %s at its best transformation and normalization per sample  \n  above the dashed line favours %s",
-                               method, method),
-            x = "baseline correlation with ground truth",
-            y = sprintf("%s correlation with ground truth", method)
+            title = sprintf("%s vs baselines \u00b7 %s input \u00b7 %s reference \u00b7 %s",
+                            method_display, modality, other_modality, corr_display(corr_method)),
+            x = sprintf("Baseline reconstruction (%s)", corr_display(corr_method)),
+            y = sprintf("%s (%s)", method_display, corr_display(corr_method))
         ) +
-        theme_bw(base_size = 9) +
+        theme_bw(base_size = 8) +
         theme(
-            strip.text.y.left = element_text(angle = 0, size = 6.5, lineheight = 1.1),
-            strip.text.x = element_text(size = 8, face = "bold", lineheight = 1.05),
-            strip.placement = "outside",
+            strip.text.y = element_blank(),
+            strip.text.x = element_text(size = 7, face = "bold", lineheight = 1.05),
+            aspect.ratio = 1,
+            # x gap holds the "1" and "-0.25" tick labels of neighbouring panels apart
+            panel.spacing.x = unit(8, "pt"),
+            panel.spacing.y = unit(4, "pt"),
+            plot.margin = margin(4, 4, 4, 4),
+            axis.text = element_text(size = 6),
             panel.grid.minor = element_blank(),
-            plot.title = element_text(face = "bold"),
-            plot.subtitle = element_text(size = 7.5, colour = "grey30"),
-            legend.position = "right"
+            plot.title = element_text(face = "bold", size = 9),
+            legend.position = "right",
+            legend.title = element_text(size = 7),
+            legend.text = element_text(size = 6)
         )
 
     n_rows <- length(levels(d$row))
@@ -466,8 +503,8 @@ for (corr_method in corr_methods) {
     csv_path <- file.path(out_dir, paste0(stem, ".csv"))
 
     ggsave(png_path, p,
-           width  = 3 * panel_in + 2.4,
-           height = n_rows * panel_in + 1.6,
+           width  = 3 * SCATTER_SCALE * panel_in + 1.45,
+           height = n_rows * SCATTER_SCALE * panel_in + 0.9,
            dpi = 200, limitsize = FALSE)
     write.csv(st %>% select(-row), csv_path, row.names = FALSE)
     cat(sprintf("\n[SAVE] %s  (%d rows x 3)\n[SAVE] %s\n", png_path, n_rows, csv_path))
@@ -556,48 +593,53 @@ for (corr_method in corr_methods) {
                              slope = 1, intercept = 0)
 
             g <- g +
-                scale_fill_gradientn(colours = c("#440154", "#31688e", "#35b779", "#fde725"),
-                                     trans = "log10", name = "genes") +
+                SCATTER_FILL +
                 geom_abline(data = ab, aes(slope = slope, intercept = intercept),
                             inherit.aes = FALSE, linetype = "dashed",
                             colour = "red", linewidth = 0.4) +
                 geom_text(data = stp,
-                          aes(x = -Inf, y = Inf,
-                              label = sprintf("above y=x: %.1f%%\nmean diff: %+.3f",
-                                              100 * frac_method_higher, mean_diff)),
-                          inherit.aes = FALSE, hjust = -0.06, vjust = 1.12,
-                          size = 2.4, colour = "grey20") +
+                          aes(x = AXIS_MIN, y = 1, label = wrap_panel_label(as.character(row))),
+                          inherit.aes = FALSE, hjust = 0, vjust = 1,
+                          size = 1.7, lineheight = 0.95, colour = "grey15") +
+                geom_text(data = stp,
+                          aes(x = 1, y = AXIS_MIN,
+                              label = sprintf("above y=x: %.1f%%", 100 * frac_method_higher)),
+                          inherit.aes = FALSE, hjust = 1, vjust = 0,
+                          size = 1.7, colour = "grey15") +
                 facet_wrap(~ row, ncol = 6, drop = FALSE) +
                 coord_cartesian(xlim = c(AXIS_MIN, 1), ylim = c(AXIS_MIN, 1)) +
-                scale_x_continuous(breaks = c(-0.25, 0, 0.5, 1)) +
-                scale_y_continuous(breaks = c(-0.25, 0, 0.5, 1)) +
+                scale_x_continuous(breaks = c(-0.25, 0, 0.5, 1), labels = c("-0.25", "0", "0.5", "1")) +
+                scale_y_continuous(breaks = c(-0.25, 0, 0.5, 1), labels = c("-0.25", "0", "0.5", "1")) +
                 labs(
-                    title = sprintf("%s  |  input modality: %s  |  baseline: %s  |  %s correlation per gene%s",
-                                    folder_name, modality, bl, corr_method,
-                                    if (length(pages) > 1) sprintf("  |  page %d of %d", pg, length(pages)) else ""),
-                    subtitle = sprintf("%d/%d samples >50%% above y=x    x: %s    y: %s at its best transformation and normalization per sample",
-                                       n_above_bl, n_valid_bl, bl, method),
-                    x = "baseline correlation with ground truth",
-                    y = sprintf("%s correlation with ground truth", method)
+                    title = sprintf("%s vs %s \u00b7 %s input \u00b7 %s reference \u00b7 %s%s",
+                                    method_display, bl, modality, other_modality, corr_display(corr_method),
+                                    if (length(pages) > 1) sprintf(" \u00b7 page %d of %d", pg, length(pages)) else ""),
+                    x = sprintf("%s (%s)", bl, corr_display(corr_method)),
+                    y = sprintf("%s (%s)", method_display, corr_display(corr_method))
                 ) +
-                theme_bw(base_size = 9) +
+                theme_bw(base_size = 8) +
                 theme(
                     aspect.ratio = 1,
-                    strip.text = element_text(size = 6, lineheight = 1.1),
+                    strip.text = element_blank(),
+                    strip.background = element_blank(),
+                    panel.spacing.x = unit(8, "pt"),
+                    panel.spacing.y = unit(4, "pt"),
+                    plot.margin = margin(4, 4, 4, 4),
                     # six columns leave little room per panel, so the shared tick labels
                     # are shrunk rather than the breaks changed
                     axis.text = element_text(size = 5.5),
                     panel.grid.minor = element_blank(),
-                    plot.title = element_text(face = "bold"),
-                    plot.subtitle = element_text(size = 7.5, colour = "grey30"),
-                    legend.position = "right"
+                    plot.title = element_text(face = "bold", size = 9),
+                    legend.position = "right",
+                    legend.title = element_text(size = 7),
+                    legend.text = element_text(size = 6)
                 )
 
             sq_png <- file.path(out_dir, sprintf("%s_%s_square_6x6%s.png", stem, bl,
                                                  if (length(pages) > 1) sprintf("_page%d", pg) else ""))
             ggsave(sq_png, g,
-                   width  = 6 * panel_in + 1.8,
-                   height = 6 * panel_in + 2.2,
+                   width  = 6 * SCATTER_SCALE * panel_in + 1.3,
+                   height = 6 * SCATTER_SCALE * panel_in + 0.8,
                    dpi = 200, limitsize = FALSE)
             cat(sprintf("[SAVE] %s  (%d panels)\n", sq_png, length(keep)))
         }
@@ -627,44 +669,124 @@ if (nrow(win_rows) == 0) {
     bar_totals <- win_stats %>%
         group_by(corr_method, baseline) %>%
         summarise(n_valid = sum(n_samples), .groups = "drop")
+    # unique samples behind the bars; per-bar totals are drawn only when a bar has fewer
+    n_samples_total <- n_distinct(win_rows$sample)
+    show_totals <- any(bar_totals$n_valid != n_samples_total)
 
     # facet_wrap leaves scales fixed, so both correlations share one sample-count axis.
     bar <- ggplot(win_stats, aes(x = baseline, y = n_samples, fill = outcome)) +
-        geom_col(width = 0.68) +
+        geom_col(width = 0.62) +
         geom_text(aes(label = n_samples), position = position_stack(vjust = 0.5),
                   size = 3, colour = "white", fontface = "bold") +
-        geom_text(data = bar_totals, aes(x = baseline, y = n_valid, label = n_valid),
-                  inherit.aes = FALSE, vjust = -0.6, size = 3, colour = "grey20") +
-        scale_fill_manual(values = setNames(c("#8AA6CE", "#E3AEBE"), OUT_LEVELS), name = NULL) +
+        { if (show_totals)
+              geom_text(data = bar_totals, aes(x = baseline, y = n_valid, label = n_valid),
+                        inherit.aes = FALSE, vjust = -0.6, size = 3, colour = "grey20") } +
+        scale_fill_manual(values = setNames(c("#8AA6CE", "#E3AEBE"), OUT_LEVELS),
+                          labels = c("Improved in >50% of genes", "Improved in \u226450% of genes"),
+                          name = NULL) +
         scale_y_continuous(expand = expansion(mult = c(0, 0.12))) +
-        facet_wrap(~ corr_method, nrow = 1) +
+        facet_wrap(~ corr_method, nrow = 1,
+                   labeller = as_labeller(function(x) vapply(as.character(x), corr_display, character(1)))) +
         labs(
-            title = sprintf("%s  |  input modality: %s  |  samples where %s beats each baseline",
-                            folder_name, modality, method),
-            subtitle = sprintf("one bar per baseline and correlation; a sample counts as a win when %s is above y = x for more than half of its genes\nbar height is the number of samples with a usable result for that baseline, printed above each bar",
-                               method),
+            title = sprintf("%s vs Baseline Methods", method_display),
+            subtitle = sprintf("%s input \u00b7 %s reference \u00b7 %d samples", modality, other_modality, n_samples_total),
             x = NULL,
-            y = "samples"
+            y = "Number of samples"
         ) +
         theme_bw(base_size = 9) +
         theme(
             strip.text = element_text(size = 10, face = "bold"),
+            strip.background = element_rect(fill = "white", colour = "grey20", linewidth = 0.3),
+            panel.border = element_rect(fill = NA, colour = "grey20", linewidth = 0.3),
+            panel.background = element_rect(fill = "white", colour = NA),
+            panel.grid.major.y = element_line(colour = "grey90", linewidth = 0.3),
+            panel.spacing.x = unit(12, "pt"),
             panel.grid.minor = element_blank(),
             panel.grid.major.x = element_blank(),
             plot.title = element_text(face = "bold"),
             plot.subtitle = element_text(size = 7.5, colour = "grey30"),
-            legend.position = "bottom"
+            legend.position = "bottom",
+            legend.margin = margin(0, 0, 0, 0),
+            legend.box.spacing = unit(2, "pt"),
+            plot.margin = margin(4, 6, 4, 4)
         )
 
     bar_stem <- sprintf("%s_%s_%s_sample_wins_bar", folder_name, method, modality)
     bar_png  <- file.path(out_dir, paste0(bar_stem, ".png"))
     bar_csv  <- file.path(out_dir, paste0(bar_stem, ".csv"))
-    ggsave(bar_png, bar, width = 7.6, height = 4.6, dpi = 200, limitsize = FALSE)
+    ggsave(bar_png, bar, width = 5.7, height = 3.45, dpi = 200, limitsize = FALSE)
     write.csv(win_stats %>%
                   left_join(bar_totals, by = c("corr_method", "baseline")) %>%
                   arrange(corr_method, baseline, outcome),
               bar_csv, row.names = FALSE)
     cat(sprintf("\n[SAVE] %s\n[SAVE] %s\n", bar_png, bar_csv))
+}
+
+# ------------------------------------------------------------------ sample improvement distributions
+# Each observation is one sample's percentage of genes above y = x, not a gene.
+distribution_rows <- win_rows %>%
+    transmute(corr_method = factor(corr_method, levels = corr_methods),
+              sample = sample, baseline = factor(baseline, levels = BASELINES),
+              pct_genes_improved = 100 * frac_method_higher)
+
+if (nrow(distribution_rows) == 0) {
+    cat("\n[skip] sample distributions: no usable results\n")
+} else {
+    density_rows <- distribution_rows %>%
+        group_by(corr_method, baseline) %>%
+        filter(n() >= 2) %>%
+        ungroup()
+
+    if (nrow(density_rows) == 0) {
+        cat("\n[skip] sample distributions: density estimation needs at least two samples per group\n")
+    } else {
+        distribution_colours <- setNames(c("#FADADD", "#BFD7EA", "#A7D7A1"), BASELINES)
+        distribution <- ggplot(density_rows,
+                               aes(x = pct_genes_improved, fill = baseline, colour = baseline)) +
+            # Common bandwidth in percentage points; reflection respects the 0--100 bounds.
+            geom_density(alpha = 0.4, position = "identity", linewidth = 0.5,
+                         bw = 5, bounds = c(0, 100)) +
+            geom_vline(xintercept = 50, linetype = "dashed", colour = "grey45", linewidth = 0.4) +
+            scale_fill_manual(values = distribution_colours, drop = FALSE, name = "Baseline") +
+            scale_colour_manual(values = distribution_colours, drop = FALSE, name = "Baseline") +
+            scale_x_continuous(limits = c(0, 100), breaks = seq(0, 100, 25),
+                               expand = expansion(mult = c(0, 0))) +
+            scale_y_continuous(expand = expansion(mult = c(0, 0.08))) +
+            facet_wrap(~ corr_method, nrow = 1,
+                       labeller = as_labeller(function(x) vapply(as.character(x), corr_display, character(1)))) +
+            labs(
+                title = sprintf("%s vs Baseline Methods", method_display),
+                subtitle = sprintf("%s input \u00b7 %s reference \u00b7 %d samples",
+                                   modality, other_modality, n_distinct(distribution_rows$sample)),
+                x = "Genes with higher correlation than baseline (%)",
+                y = "Density"
+            ) +
+            theme_bw(base_size = 9) +
+            theme(
+                strip.text = element_text(size = 10, face = "bold"),
+                strip.background = element_blank(),
+                panel.border = element_blank(),
+                axis.line = element_line(colour = "grey30", linewidth = 0.3),
+                panel.grid.major.y = element_line(colour = "grey90", linewidth = 0.3),
+                panel.grid.major.x = element_blank(),
+                panel.grid.minor = element_blank(),
+                panel.spacing.x = unit(12, "pt"),
+                plot.title = element_text(face = "bold"),
+                plot.subtitle = element_text(size = 7.5, colour = "grey30"),
+                legend.position = "bottom",
+                legend.margin = margin(0, 0, 0, 0),
+                legend.box.spacing = unit(2, "pt"),
+                plot.margin = margin(4, 6, 4, 4)
+            )
+
+        distribution_stem <- sprintf("%s_%s_%s_sample_improvement_distribution", folder_name, method, modality)
+        distribution_png <- file.path(out_dir, paste0(distribution_stem, ".png"))
+        distribution_csv <- file.path(out_dir, paste0(distribution_stem, ".csv"))
+        ggsave(distribution_png, distribution, width = 5.7, height = 3.45,
+               dpi = 200, limitsize = FALSE)
+        write.csv(distribution_rows, distribution_csv, row.names = FALSE)
+        cat(sprintf("\n[SAVE] %s\n[SAVE] %s\n", distribution_png, distribution_csv))
+    }
 }
 
 # ------------------------------------------------------------------ report

@@ -43,6 +43,22 @@ MOD_LABEL="${V1#"${sample_name}_"}_to_${V2#"${sample_name}_"}${OUTPUT_SUFFIX}"
 
 trans_factor=("no_trans" "count+1" "sqrt" "sqrt+1" "log2" "log2(count+2)")
 norm_factor=("no_norm" 1000000 100000 10000 1000)
+# clear the compare CSV only when this run covers the full set of six transformations
+all_trans_factor=("no_trans" "count+1" "sqrt" "sqrt+1" "log2" "log2(count+2)")
+full_run=true
+for t in "${all_trans_factor[@]}"; do
+    found=false
+    for s in "${trans_factor[@]}"; do
+        [ "$s" = "$t" ] && found=true && break
+    done
+    [ "$found" = true ] || { full_run=false; break; }
+done
+if [ "$full_run" = true ]; then
+    echo "=== Full transformation set: removing ${COMPARE} ==="
+    rm -f "$COMPARE"
+else
+    echo "=== Partial transformation set (${trans_factor[*]}): keeping ${COMPARE} ==="
+fi
 
 RAW_IN="${READ_DIR}/${V1}/Count_Matrix_norm_by_no_norm.feather"
 RAW_TG="${READ_DIR}/${V2}/Count_Matrix_norm_by_no_norm.feather"

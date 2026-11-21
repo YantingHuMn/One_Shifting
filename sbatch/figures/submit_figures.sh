@@ -12,20 +12,22 @@ BASE_DIR="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
 # Figure 2
 folder_name="HCA"
 sample_name="MA11_heart"
-norm="1000"
+norm="10000"
 trans="log2(count+2)"
+method="Transformer_denoise"
 
 Rscript ../One_Shifting/R/figures/sample_scatter.R \
-    "${BASE_DIR}/${folder_name}/${sample_name}_INPUT_RNA/VAE/given_${sample_name}_ATAC_no_norm_no_trans/Figures_col_v1_raw__v2_raw__recon_revtrans_revnorm/d_pearson_v1_recon_reverse_trans_norm_col_scatter_v1_trans_${trans}_norm_${norm}_v2_trans_no_trans_norm_no_norm.csv" \
-    "${BASE_DIR}/Paper_Figures/One_shifting_sample_eg/${sample_name}_INPUT_RNA_VAE_col_v1_reverse_pearson_trans_${trans}_norm_${norm}_v2_trans_no_trans_norm_no_norm.png" \
+    "${BASE_DIR}/${folder_name}/${sample_name}_INPUT_RNA/${method}/given_${sample_name}_ATAC_no_norm_no_trans/Figures_col_v1_raw__v2_raw__recon_revtrans_revnorm/d_pearson_v1_recon_reverse_trans_norm_col_scatter_v1_trans_${trans}_norm_${norm}_v2_trans_no_trans_norm_no_norm.csv" \
+    "${BASE_DIR}/Paper_Figures/One_shifting_sample_eg/${sample_name}_INPUT_RNA_${method}_col_v1_reverse_pearson_trans_${trans}_norm_${norm}_v2_trans_no_trans_norm_no_norm.png" \
     "Pearson" \
     "${norm}" \
     "${trans}" \
     "${sample_name}"
 
+norm="1000000"
 Rscript ../One_Shifting/R/figures/sample_scatter.R \
-    "${BASE_DIR}/${folder_name}/${sample_name}_INPUT_RNA/VAE/given_${sample_name}_ATAC_no_norm_no_trans/Figures_col_v1_raw__v2_raw__recon_revtrans_revnorm/g_spearman_v1_recon_reverse_trans_norm_col_scatter_v1_trans_${trans}_norm_${norm}_v2_trans_no_trans_norm_no_norm.csv" \
-    "${BASE_DIR}/Paper_Figures/One_shifting_sample_eg/${sample_name}_INPUT_RNA_VAE_col_v1_reverse_spearman_trans_${trans}_norm_${norm}_v2_trans_no_trans_norm_no_norm.png" \
+    "${BASE_DIR}/${folder_name}/${sample_name}_INPUT_RNA/${method}/given_${sample_name}_ATAC_no_norm_no_trans/Figures_col_v1_raw__v2_raw__recon_revtrans_revnorm/g_spearman_v1_recon_reverse_trans_norm_col_scatter_v1_trans_${trans}_norm_${norm}_v2_trans_no_trans_norm_no_norm.csv" \
+    "${BASE_DIR}/Paper_Figures/One_shifting_sample_eg/${sample_name}_INPUT_RNA_${method}_col_v1_reverse_spearman_trans_${trans}_norm_${norm}_v2_trans_no_trans_norm_no_norm.png" \
     "Spearman" \
     "${norm}" \
     "${trans}" \
@@ -33,16 +35,18 @@ Rscript ../One_Shifting/R/figures/sample_scatter.R \
 
 # Plot the scatter combination summary
 Rscript ../One_Shifting/R/figures/sample_trans_norm_combination.R \
-    "${BASE_DIR}/${folder_name}/${sample_name}_INPUT_RNA/VAE/given_${sample_name}_ATAC_no_norm_no_trans/Figures_col_v1_raw__v2_raw__recon_revtrans_revnorm/plots_summary_pearson_col_gene_v1_recon_reverse_trans_norm.csv" \
-    "${BASE_DIR}/Paper_Figures/One_shifting_sample_eg/${sample_name}_VAE_pearson_summary.png" \
+    "${BASE_DIR}/${folder_name}/${sample_name}_INPUT_RNA/${method}/given_${sample_name}_ATAC_no_norm_no_trans/Figures_col_v1_raw__v2_raw__recon_revtrans_revnorm/plots_summary_pearson_col_gene_v1_recon_reverse_trans_norm.csv" \
+    "${BASE_DIR}/Paper_Figures/One_shifting_sample_eg/${sample_name}_${method}_pearson_summary.png" \
     "Pearson" \
-    "${sample_name}"    
+    "${sample_name}" \
+    "Transformer"   
 
 Rscript ../One_Shifting/R/figures/sample_trans_norm_combination.R \
-    "${BASE_DIR}/${folder_name}/${sample_name}_INPUT_RNA/VAE/given_${sample_name}_ATAC_no_norm_no_trans/Figures_col_v1_raw__v2_raw__recon_revtrans_revnorm/plots_summary_spearman_col_gene_v1_recon_reverse_trans_norm.csv" \
-    "${BASE_DIR}/Paper_Figures/One_shifting_sample_eg/${sample_name}_VAE_spearman_summary.png" \
+    "${BASE_DIR}/${folder_name}/${sample_name}_INPUT_RNA/${method}/given_${sample_name}_ATAC_no_norm_no_trans/Figures_col_v1_raw__v2_raw__recon_revtrans_revnorm/plots_summary_spearman_col_gene_v1_recon_reverse_trans_norm.csv" \
+    "${BASE_DIR}/Paper_Figures/One_shifting_sample_eg/${sample_name}_${method}_spearman_summary.png" \
     "Spearman" \
-    "${sample_name}"    
+    "${sample_name}" \
+    "Transformer"
 
 
 # Average bubble plot
@@ -53,6 +57,24 @@ Rscript ../One_Shifting/R/figures/average_rna_atac_bubble_plot.R \
     "all" \
     "col" \
     "${BASE_DIR}/Paper_Figures/One_shifting_sample_eg"
+
+
+# Gelu Leaky_relu
+Rscript ../One_Shifting/R/figures/average_rna_atac_bubble_plot.R \
+    "$BASE_DIR" \
+    "$tsv" \
+    "4,15;1,5;1" \
+    "col" \
+    "${BASE_DIR}/Paper_Figures/gelu_leaky_relu" \
+    "gelu"
+
+Rscript ../One_Shifting/R/figures/average_rna_atac_bubble_plot.R \
+    "$BASE_DIR" \
+    "$tsv" \
+    "4,15;1,5;1" \
+    "col" \
+    "${BASE_DIR}/Paper_Figures/gelu_leaky_relu" \
+    "leaky_relu"
 
 
 
@@ -73,39 +95,27 @@ for modality in RNA ATAC; do
     done
 done
 
-
-
-
-
-
-
-
-
-
-## Plot with baseline (single sample)
-Rscript ../One_Shifting/R/figures/sample_scvi_dca_saver.R \
-    "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/VAE/given_KTBpool11_ATAC_no_norm_no_trans/Figures_col_v1_reverse_v2_no_trans/d_pearson_v1_reverse_col_scatter_v1_trans_log2(count+2)_norm_1000000_v2_trans_no_trans_norm_no_norm.csv" \
-    "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/scVI/Figures_col/d_pearson_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
-    "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/DCA/Figures_col/d_pearson_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
-    "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/SAVER/Figures_col/d_pearson_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
-    "/dcs07/hongkai/data/yhu1/One_Shifting_Results/Paper_Figures/KTBpool11_baseline_pearson_summary.png" \
-    "Pearson" \
-    "KTBpool11"      
-
-
-Rscript ../One_Shifting/R/figures/sample_scvi_dca_saver.R \
-    "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/VAE/given_KTBpool11_ATAC_no_norm_no_trans/Figures_col_v1_reverse_v2_no_trans/g_spearman_v1_reverse_col_scatter_v1_trans_log2(count+2)_norm_1000_v2_trans_no_trans_norm_no_norm.csv" \
-    "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/scVI/Figures_col/g_spearman_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
-    "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/DCA/Figures_col/g_spearman_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
-    "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/SAVER/Figures_col/g_spearman_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
-    "/dcs07/hongkai/data/yhu1/One_Shifting_Results/Paper_Figures/KTBpool11_baseline_spearman_summary.png" \
-    "Spearman" \
-    "KTBpool11"           
-
-python /dcs10/hongkai/data/yhu1/One_Shifting/myproject/rank_curve_real_data.py \
-    --data_path1 "/dcs10/hongkai/data/yhu1/One_Shifting_Results/10x/10k_PBMC_Multiome_nextgem_Chromium_Controller_INPUT_ATAC/10k_PBMC_Multiome_nextgem_Chromium_Controller_ATAC/Count_Matrix_norm_by_no_norm.feather" \
-    --data_path2 "/dcs10/hongkai/data/yhu1/One_Shifting_Results/10x/10k_PBMC_Multiome_nextgem_Chromium_Controller_INPUT_ATAC/10k_PBMC_Multiome_nextgem_Chromium_Controller_RNA/Count_Matrix_norm_by_no_norm.feather" \
-    --out /dcs10/hongkai/data/yhu1/One_Shifting_Results/10x/10k_PBMC_Multiome_nextgem_Chromium_Controller_INPUT_ATAC/AAA_rank_curve_ATAC_norm_no_norm.csv
+# ## Plot with baseline (single sample)
+# Rscript ../One_Shifting/R/figures/sample_scvi_dca_saver.R \
+#     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/VAE/given_KTBpool11_ATAC_no_norm_no_trans/Figures_col_v1_reverse_v2_no_trans/d_pearson_v1_reverse_col_scatter_v1_trans_log2(count+2)_norm_1000000_v2_trans_no_trans_norm_no_norm.csv" \
+#     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/scVI/Figures_col/d_pearson_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
+#     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/DCA/Figures_col/d_pearson_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
+#     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/SAVER/Figures_col/d_pearson_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
+#     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/Paper_Figures/KTBpool11_baseline_pearson_summary.png" \
+#     "Pearson" \
+#     "KTBpool11"      
+# Rscript ../One_Shifting/R/figures/sample_scvi_dca_saver.R \
+#     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/VAE/given_KTBpool11_ATAC_no_norm_no_trans/Figures_col_v1_reverse_v2_no_trans/g_spearman_v1_reverse_col_scatter_v1_trans_log2(count+2)_norm_1000_v2_trans_no_trans_norm_no_norm.csv" \
+#     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/scVI/Figures_col/g_spearman_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
+#     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/DCA/Figures_col/g_spearman_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
+#     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/HCA/KTBpool11_INPUT_RNA/SAVER/Figures_col/g_spearman_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
+#     "/dcs07/hongkai/data/yhu1/One_Shifting_Results/Paper_Figures/KTBpool11_baseline_spearman_summary.png" \
+#     "Spearman" \
+#     "KTBpool11"           
+# python /dcs10/hongkai/data/yhu1/One_Shifting/myproject/rank_curve_real_data.py \
+#     --data_path1 "/dcs10/hongkai/data/yhu1/One_Shifting_Results/10x/10k_PBMC_Multiome_nextgem_Chromium_Controller_INPUT_ATAC/10k_PBMC_Multiome_nextgem_Chromium_Controller_ATAC/Count_Matrix_norm_by_no_norm.feather" \
+#     --data_path2 "/dcs10/hongkai/data/yhu1/One_Shifting_Results/10x/10k_PBMC_Multiome_nextgem_Chromium_Controller_INPUT_ATAC/10k_PBMC_Multiome_nextgem_Chromium_Controller_RNA/Count_Matrix_norm_by_no_norm.feather" \
+#     --out /dcs10/hongkai/data/yhu1/One_Shifting_Results/10x/10k_PBMC_Multiome_nextgem_Chromium_Controller_INPUT_ATAC/AAA_rank_curve_ATAC_norm_no_norm.csv
 
 
 
@@ -139,4 +149,25 @@ done
 
 
 
+# Dropout
+BASE_DIR="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
+for method in VAE DCA_mse Transformer_denoise; do
+    for performance_type in absolute relative; do
+        Rscript ../One_Shifting/R/figures/plot_dropout_sparsity_performance.R \
+            "$BASE_DIR" \
+            "./data/dropout_samples.tsv" \
+            "$method" \
+            "${BASE_DIR}/Paper_Figures/dropout_sparsity/${method}" \
+            "pearson,spearman" \
+            "" \
+            "${performance_type}"
+    done
+done
 
+
+# MLP
+Rscript ../One_Shifting/R/figures/combine_prediction_tasks.R \
+    "/dcs11/hongkai/data/yhu1/One_Shifting_Results" \
+    "/dcs11/hongkai/data/yhu1/One_Shifting_Results/Paper_Figures/prediction"
+
+    
