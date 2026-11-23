@@ -92,8 +92,12 @@ python -c "import torch; torch.cuda.empty_cache(); del torch; print('GPU cleared
 conda deactivate
 
 if [ $status -eq 0 ]; then
+    touch "$DONE_FILE"
     echo "=== Done: ${METHOD_DIR}/report.txt ==="
+elif [ $status -eq 3 ]; then
+    echo "[WARNING] Some combinations failed; provisional results saved in ${METHOD_DIR}. No completion marker was created." >&2
+    exit 0
 else
-    echo "[FATAL] ShiftFormer exited with $status (2 = stopped for user, 1 = incomplete/provisional); see ${METHOD_DIR}" >&2
+    echo "[FATAL] ShiftFormer exited with $status (2 = stopped for user); see ${METHOD_DIR}" >&2
     exit $status
 fi

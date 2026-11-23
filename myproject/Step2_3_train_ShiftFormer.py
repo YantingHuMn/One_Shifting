@@ -31,4 +31,16 @@ except shiftformer.StopForUser as e:
 
 result.save(args.out_dir)
 print(result.report)
-sys.exit(0 if result.final else 1)
+
+if result.final:
+    sys.exit(0)
+
+if result.n_successful > 0:
+    print(
+        "[WARNING] Some combinations failed; saved results are provisional.",
+        file=sys.stderr
+    )
+    sys.exit(3)
+
+print("[FATAL] No combinations completed successfully.", file=sys.stderr)
+sys.exit(1)
