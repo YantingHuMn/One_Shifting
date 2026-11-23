@@ -2,7 +2,7 @@
 cd /dcs10/hongkai/data/yhu1/One_Shifting
 read_dir="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
 
-export folder_name="HCA"
+export folder_name="10x"
 
 # choose_combination: Transformer_denoise transformation x normalization selection (ShiftFormer package)
 tasks="choose_combination"
@@ -58,7 +58,7 @@ for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
                 --gres=gpu:1
                 --time=3-00:00:00
                 --mem=128G
-                --cpus-per-task=1
+                --cpus-per-task=3
                 --array=0-1
                 --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}"
                 --output="${log_dir}/submit_${folder_name}_ShiftFormer_${dropout_keep_par}_${sample_name}_%a.out"
