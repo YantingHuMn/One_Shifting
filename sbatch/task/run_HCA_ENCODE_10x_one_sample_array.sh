@@ -26,7 +26,8 @@ if (( ${#methods[@]} == 0 )); then
     exit 1
 fi
 
-export activation="${activation:-relu}"
+# empty -> run script picks the per-method default (relu for VAE/DCA_mse, gelu for Transformer_denoise)
+export activation="${activation:-}"
 export sample_name
 export folder_name
 export dropout_keep_par

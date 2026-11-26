@@ -5,13 +5,13 @@ dropout_keep_par="$2"
 if [ -z "$CONFIG_FILE" ] || [ -z "$dropout_keep_par" ]; then
     echo "Usage: bash run_ShiftFormer_choose_combination.sh <config_file> <dropout_keep_par>"
     echo "  config_file      : e.g. inst/config/config_run_multi_RNA_HCA_10x_ENCODE.sh"
-    echo "  dropout_keep_par : kept fraction in (0, 1], e.g. 0.7, 0.9, 1 (1 = no dropout)"
+    echo "  dropout_keep_par : positive multiplier of each cell's library, e.g. 0.7, 0.9, 1, 1.2 (1 = no dropout)"
     exit 1
 fi
 
-# keep fraction: numeric, 0 < p <= 1; canonical form so 0.90 / 0.9 and 1.0 / 1 share one folder
-if ! awk -v p="$dropout_keep_par" 'BEGIN { exit !(p ~ /^[0-9]*\.?[0-9]+$/ && p + 0 > 0 && p + 0 <= 1) }'; then
-    echo "[FAIL] dropout_keep_par='$dropout_keep_par' must be a number in (0, 1]"
+# keep fraction: numeric, p > 0 (p > 1 resamples a larger total); canonical form so 0.90 / 0.9 and 1.0 / 1 share one folder
+if ! awk -v p="$dropout_keep_par" 'BEGIN { exit !(p ~ /^[0-9]*\.?[0-9]+$/ && p + 0 > 0) }'; then
+    echo "[FAIL] dropout_keep_par='$dropout_keep_par' must be a positive number"
     exit 1
 fi
 dropout_keep_par=$(awk -v p="$dropout_keep_par" 'BEGIN { printf "%g", p + 0 }')

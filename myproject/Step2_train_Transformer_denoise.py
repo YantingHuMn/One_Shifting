@@ -32,6 +32,12 @@ def _check_count_matrix(df, name, check_zero=True, allow_zero_rows=False):
         )
 
 
+# Hidden-layer activations. Encoder FFN takes a string for gelu/relu (PyTorch built-ins,
+# keeps the original gelu path identical) and a callable for leaky_relu.
+_ENCODER_ACT = {'gelu': 'gelu', 'relu': 'relu', 'leaky_relu': F.leaky_relu}
+_HIDDEN_ACT = {'gelu': nn.GELU, 'relu': nn.ReLU, 'leaky_relu': nn.LeakyReLU}
+
+
 class TransformerAutoencoder(nn.Module):
     """
     Transformer-based autoencoder: V1 -> V1 denoising.
@@ -44,8 +50,13 @@ class TransformerAutoencoder(nn.Module):
     5. Project back to input dimension (same as input)
     """
     def __init__(self, input_dim, n_tokens=64, d_model=128,
-                 nhead=4, num_layers=2, dim_feedforward=256, dropout=0.1):
+                 nhead=4, num_layers=2, dim_feedforward=256, dropout=0.1,
+                 activation='gelu'):
         super(TransformerAutoencoder, self).__init__()
+
+        if activation not in _ENCODER_ACT:
+            raise ValueError(f"Unknown activation: {activation}. Choose from {list(_ENCODER_ACT)}")
+        self.activation = activation
 
         self.input_dim = input_dim
         self.n_tokens = n_tokens
@@ -69,7 +80,7 @@ class TransformerAutoencoder(nn.Module):
             dim_feedforward=dim_feedforward,
             dropout=dropout,
             batch_first=True,
-            activation='gelu'
+            activation=_ENCODER_ACT[activation]
         )
         self.transformer_encoder = nn.TransformerEncoder(
             encoder_layer, num_layers=num_layers
@@ -78,7 +89,7 @@ class TransformerAutoencoder(nn.Module):
         # Output projection: flatten transformer output -> input_dim
         self.output_proj = nn.Sequential(
             nn.Linear(n_tokens * d_model, dim_feedforward),
-            nn.GELU(),
+            _HIDDEN_ACT[activation](),
             nn.Dropout(dropout),
             nn.Linear(dim_feedforward, input_dim),
             nn.ReLU()  # Non-negative outputs for count data
@@ -456,7 +467,7 @@ def outer_cv_inner_holdout(
     epochs_inner, epochs_outer, inner_val_frac, seed,
     early_stop=False, patience=10, min_delta=0.0, check_every=1, outer_es_val_frac=0.1,
     n_splits=10, weight_strategy='fixed', zero_weight_grid=[1.0], nonzero_weight_grid=[5.0],
-    save_dir=None, eval_metric='val_loss', normalization=None):
+    save_dir=None, eval_metric='val_loss', normalization=None, activation='gelu'):
 
     if save_dir is None:
         raise ValueError("save_dir must be provided")
@@ -540,7 +551,8 @@ def outer_cv_inner_holdout(
         model = TransformerAutoencoder(
             input_dim=input_dim, n_tokens=cfg["n_tokens"], d_model=cfg["d_model"],
             nhead=cfg["nhead"], num_layers=cfg["num_layers"],
-            dim_feedforward=cfg["dim_feedforward"], dropout=cfg["dropout"]).to(device)
+            dim_feedforward=cfg["dim_feedforward"], dropout=cfg["dropout"],
+            activation=activation).to(device)
         optimizer = optim.Adam(model.parameters(), lr=cfg["lr"])
         # DCA and scVI carry BatchNorm1d, which raises in train mode on a batch of one.
         # should_drop_last_train() drops a trailing batch only when it is smaller than
@@ -729,6 +741,7 @@ def outer_cv_inner_holdout(
             "batch_size": final_cfg["batch_size"],
             "zero_weight": final_cfg["zero_weight"],
             "nonzero_weight": final_cfg["nonzero_weight"],
+            "activation": str(activation),
             "weight_strategy": weight_strategy,
             "eval_metric": eval_metric,
             "final_best_epoch": int(final_best_epoch),
@@ -854,7 +867,8 @@ def main(args):
         nonzero_weight_grid=nonzero_weight_grid,
         save_dir=save_dir,
         normalization=args.normalization,
-        eval_metric=args.eval_metric
+        eval_metric=args.eval_metric,
+        activation=args.activation
     )
 
     if args.out_summary:
@@ -904,6 +918,10 @@ if __name__ == "__main__":
                         help="Feedforward dimension (e.g., 128,256,512)")
     parser.add_argument('--dropout_grid', type=str, default="0.0,0.1",
                         help="Dropout rate (e.g., 0.0,0.1,0.2)")
+    parser.add_argument('--activation', type=str, default='gelu',
+                        choices=['gelu', 'relu', 'leaky_relu'],
+                        help='Hidden-layer activation (encoder FFN + output_proj hidden layer); '
+                             'final output layer always uses relu')
     parser.add_argument('--lr_grid', type=str, default="0.0001")
     parser.add_argument('--batch_size_grid', type=str, default="64")
     parser.add_argument('--weight_strategy', type=str, default='fixed',

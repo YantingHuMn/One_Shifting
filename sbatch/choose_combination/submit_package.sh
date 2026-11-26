@@ -2,14 +2,14 @@
 cd /dcs10/hongkai/data/yhu1/One_Shifting
 read_dir="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
 
-export folder_name="10x"
+export folder_name="ENCODE"
 
 # choose_combination: Transformer_denoise transformation x normalization selection (ShiftFormer package)
 tasks="choose_combination"
 has_task () { [[ ",${tasks// /}," == *",$1,"* ]]; }
 
 # Kept fraction of each cell's library; 1 = no dropout (raw matrix used as the dropout input).
-dropout_keep_par_values=(0.7 0.8 0.9 1) # keep
+dropout_keep_par_values=(0.7 0.8 0.9 1 1.2 2 3 4) # keep
 
 # DRY_RUN=1 bash submit_package.sh -> print the sbatch commands without submitting
 DRY_RUN="${DRY_RUN:-0}"
@@ -57,7 +57,7 @@ for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
                 --partition=gpu
                 --gres=gpu:1
                 --time=3-00:00:00
-                --mem=128G
+                --mem=50G
                 --cpus-per-task=3
                 --array=0-1
                 --export=ALL,folder_name="${folder_name}",sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}"

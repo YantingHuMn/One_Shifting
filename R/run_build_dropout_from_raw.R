@@ -5,7 +5,7 @@
 # Parameter:
 #   raw_path : raw Count_Matrix_norm_by_no_norm.feather
 #   out_path : output feather path for the dropout matrix
-#   keep_par : fraction of each cell's library kept, 0 < keep_par < 1 (1 = no dropout, handled by caller)
+#   keep_par : multiplier of each cell's library, keep_par > 0 (> 1 resamples a larger total; 1 = no dropout, handled by caller)
 #   seed     : random seed set before dropout
 # Output: out_path, written to a temporary file first and then renamed (never a partial file).
 source("../One_Shifting/R/dropout_multinomial.R")
@@ -18,8 +18,8 @@ raw_path <- args[1]
 out_path <- args[2]
 keep_par <- as.numeric(args[3])
 seed     <- as.integer(args[4])
-if (is.na(keep_par) || keep_par <= 0 || keep_par >= 1) {
-    stop("keep_par must be in (0, 1). Got: ", args[3])
+if (!is.finite(keep_par) || keep_par <= 0) {
+    stop("keep_par must be a finite positive number. Got: ", args[3])
 }
 
 suppressPackageStartupMessages({

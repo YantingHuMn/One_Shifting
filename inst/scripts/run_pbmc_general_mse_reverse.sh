@@ -2,7 +2,7 @@
 CONFIG_FILE="$1"
 method="$2"
 dropout_keep_par="$3"
-activation="${4:-relu}"
+activation="${4:-}"
 
 if [ -z "$CONFIG_FILE" ] || [ -z "$method" ]; then
     echo "Usage: bash run_pipeline.sh <config_file> <method>"
@@ -13,6 +13,16 @@ fi
 
 source "$CONFIG_FILE"
 
+# Default hidden activation per method: Transformer_denoise -> gelu, others -> relu.
+# The default activation writes to the un-suffixed ${method} folder / bubble_plot_summary;
+# any other activation goes to ${method}_${activation} / ${activation}_bubble_plot_summary.
+if [ "$method" = "Transformer_denoise" ]; then
+    default_activation="gelu"
+else
+    default_activation="relu"
+fi
+activation="${activation:-$default_activation}"
+
 echo "INPUT_FILE: $INPUT_FILE"
 echo "GROUND_TRUTH_FILE: $GROUND_TRUTH_FILE"
 echo "READ_DIR: $READ_DIR"
@@ -22,11 +32,11 @@ echo "V2_norm_factor: $V2_norm_factor"
 echo "V2_trans_factor: $V2_trans_factor"
 echo "METHOD: $method"
 echo "dropout_keep_par: $dropout_keep_par"
-echo "activation='$activation'"
+echo "activation='$activation' (default for $method: $default_activation)"
 
 
 CONDITION="given_${V2}_${V2_norm_factor}_${V2_trans_factor}"
-if [ "$activation" = "relu" ]; then
+if [ "$activation" = "$default_activation" ]; then
     OUTPUT_DIR="${READ_DIR}/${method}/${CONDITION}"
 else
     OUTPUT_DIR="${READ_DIR}/${method}_${activation}/${CONDITION}"
@@ -143,7 +153,7 @@ fi
 
 
 # === delete bubble summary===
-if [ "$activation" = "relu" ]; then
+if [ "$activation" = "$default_activation" ]; then
     BUBBLE_PREFIX="bubble_plot_summary"
     BUBBLE_TAG=""
 else
@@ -185,7 +195,7 @@ elif [ "$method" = "Transformer_denoise" ]; then
 fi
 
 ACT_ARGS=""
-if [ "$method" = "VAE" ] || [ "$method" = "DCA_mse" ]; then
+if [ "$method" = "VAE" ] || [ "$method" = "DCA_mse" ] || [ "$method" = "Transformer_denoise" ]; then
     ACT_ARGS="--activation $activation"
 fi
 

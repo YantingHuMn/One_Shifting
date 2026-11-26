@@ -309,6 +309,12 @@ plot_metric_bubble <- function(avg_df, metric_name, title_text, out_png) {
     block_levels <- c("Mean r_recon - r_input", "Mean performance")
 
     plot_df <- avg_df %>%
+        group_by(x_group) %>%
+        mutate(
+            bubble_rank_residual = rank(avg_rank_residual, ties.method = "first", na.last = "keep"),
+            bubble_rank_perf = rank(avg_rank_perf, ties.method = "first", na.last = "keep")
+        ) %>%
+        ungroup() %>%
         mutate(
             trans = factor(trans, levels = rev(perf_order)),
             x_group = factor(x_group, levels = x_order),
@@ -330,14 +336,14 @@ plot_metric_bubble <- function(avg_df, metric_name, title_text, out_png) {
     ) + geom_point(
             data = plot_df_diff,
             aes(
-                size = avg_rank_residual,
+                size = bubble_rank_residual,
                 color = avg_mean_r_diff
             ),
             alpha = 0.9
         ) + geom_point(
             data = plot_df_perf,
             aes(
-                size = avg_rank_perf,
+                size = bubble_rank_perf,
                 fill = avg_mean_performance
             ),
             shape = 21,
@@ -352,9 +358,10 @@ plot_metric_bubble <- function(avg_df, metric_name, title_text, out_png) {
                 high = "#E76F51",
                 limits = perf_limits
             ) + scale_size_continuous(
-                name = "Average rank",
+                name = "Rank within method",
                 range = c(12, 1.5),
-                breaks = function(x) seq(min(x), max(x), length.out = 5),
+                limits = c(1, 6),
+                breaks = 1:6,
                 labels = function(x) rep("", length(x))
             ) + scale_x_discrete(
                 labels = x_labels,
@@ -380,7 +387,7 @@ plot_metric_bubble <- function(avg_df, metric_name, title_text, out_png) {
                     order = 3,
                     keyheight = unit(0.18, "in"),
                     keywidth = unit(0.18, "in"),
-                    override.aes = list(size = c(5, 4, 3, 2, 1))
+                    override.aes = list(size = c(6, 5, 4, 3, 2, 1))
                 )
             ) + labs(
                 title = title_text,

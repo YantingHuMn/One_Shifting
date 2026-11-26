@@ -96,12 +96,12 @@ for modality in RNA ATAC; do
 done
 
 # ## Plot with baseline (single sample)
-trans="sqrt+1"
-norm="1000000"
+trans="log2(count+2)"
+norm="1000"
 input="RNA"
 ref="ATAC"
-sample="10k_PBMC_Multiome_nextgem_Chromium_Controller"
-folder="10x"
+sample="KTBpool11"
+folder="HCA"
 Rscript ../One_Shifting/R/figures/sample_scvi_dca_saver.R \
     "/dcs11/hongkai/data/yhu1/One_Shifting_Results/${folder}/${sample}_INPUT_${input}/Transformer_denoise/given_${sample}_${ref}_no_norm_no_trans/Figures_col_v1_raw__v2_raw__recon_revtrans_revnorm/d_pearson_v1_recon_reverse_trans_norm_col_scatter_v1_trans_${trans}_norm_${norm}_v2_trans_no_trans_norm_no_norm.csv" \
     "/dcs11/hongkai/data/yhu1/One_Shifting_Results/${folder}/${sample}_INPUT_${input}/scVI/Figures_col/d_pearson_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \
@@ -111,8 +111,6 @@ Rscript ../One_Shifting/R/figures/sample_scvi_dca_saver.R \
     "Pearson" \
     "${sample}"     
 
-trans="log2(count+2)"
-norm="1000000"
 Rscript ../One_Shifting/R/figures/sample_scvi_dca_saver.R \
     "/dcs11/hongkai/data/yhu1/One_Shifting_Results/${folder}/${sample}_INPUT_${input}/Transformer_denoise/given_${sample}_${ref}_no_norm_no_trans/Figures_col_v1_raw__v2_raw__recon_revtrans_revnorm/g_spearman_v1_recon_reverse_trans_norm_col_scatter_v1_trans_${trans}_norm_${norm}_v2_trans_no_trans_norm_no_norm.csv" \
     "/dcs11/hongkai/data/yhu1/One_Shifting_Results/${folder}/${sample}_INPUT_${input}/scVI/Figures_col/g_spearman_col_scatter_v1_trans_no_trans_norm_no_norm_v2_trans_no_trans_norm_no_norm.csv" \

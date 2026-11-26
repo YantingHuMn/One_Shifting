@@ -2,10 +2,10 @@
 cd /dcs10/hongkai/data/yhu1/One_Shifting
 read_dir="/dcs11/hongkai/data/yhu1/One_Shifting_Results"
 
-export folder_name="10x"
+export folder_name="HCA"
 
-# train, train_dropout, baseline, step2_only, train_MLP, train_Transformer_predict, train_peak, train_gelu, train_leaky_relu
-tasks="train_Transformer_predict"
+# train, train_dropout, baseline, step2_only, train_MLP, train_Transformer_predict, train_peak, train_gelu, train_leaky_relu, train_transformer_relu_leaky_relu
+tasks="train_transformer_relu_leaky_relu"
 has_task () { [[ ",${tasks// /}," == *",$1,"* ]]; }
 
 dropout_keep_par_values=("")
@@ -307,6 +307,32 @@ for dropout_keep_par in "${dropout_keep_par_values[@]}"; do
                 "$train_worker_script" | awk '{print $4}')
 
             echo "Submitted training array job: ${train_job_id}"
+        fi
+
+        # Train transformer relu leaky_relu
+        if has_task train_transformer_relu_leaky_relu; then
+            echo "Submitting training array for sample_name=${sample_name}"
+
+            methods_par="Transformer_denoise"
+
+            for activation in relu leaky_relu; do
+
+                train_job_id=$(sbatch \
+                    --job-name="${folder_name}_TF_${activation}_${dropout_keep_par}_${sample_name}" \
+                    --exclude=compute-170,compute-128 \
+                    --partition=gpu \
+                    --gres=gpu:1 \
+                    --time=3-00:00:00 \
+                    --mem=64G \
+                    --cpus-per-task=2 \
+                    --array=0-3 \
+                    --export=ALL,activation="${activation}",folder_name="${folder_name}",sample_name="${sample_name}",dropout_keep_par="${dropout_keep_par}",methods_par="${methods_par}" \
+                    --output="${log_dir}/submit_${folder_name}_gpu_Transformer_denoise_${activation}_${dropout_keep_par}_${sample_name}_%a.out" \
+                    --error="${log_dir}/submit_${folder_name}_gpu_Transformer_denoise_${activation}_${dropout_keep_par}_${sample_name}_%a.err" \
+                    "$train_worker_script" | awk '{print $4}')
+
+                echo "Submitted training array job: ${train_job_id}"
+            done
         fi
     done
 

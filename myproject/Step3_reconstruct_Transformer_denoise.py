@@ -37,10 +37,20 @@ def _check_count_matrix(df, name, check_zero=True, allow_zero_rows=False):
         )
 
 
+# Must match Step2_train_Transformer_denoise.py
+_ENCODER_ACT = {'gelu': 'gelu', 'relu': 'relu', 'leaky_relu': F.leaky_relu}
+_HIDDEN_ACT = {'gelu': nn.GELU, 'relu': nn.ReLU, 'leaky_relu': nn.LeakyReLU}
+
+
 class TransformerAutoencoder(nn.Module):
     def __init__(self, input_dim, n_tokens=64, d_model=128,
-                 nhead=4, num_layers=2, dim_feedforward=256, dropout=0.1):
+                 nhead=4, num_layers=2, dim_feedforward=256, dropout=0.1,
+                 activation='gelu'):
         super(TransformerAutoencoder, self).__init__()
+
+        if activation not in _ENCODER_ACT:
+            raise ValueError(f"Unknown activation: {activation}. Choose from {list(_ENCODER_ACT)}")
+        self.activation = activation
 
         self.input_dim = input_dim
         self.n_tokens = n_tokens
@@ -58,7 +68,7 @@ class TransformerAutoencoder(nn.Module):
             dim_feedforward=dim_feedforward,
             dropout=dropout,
             batch_first=True,
-            activation='gelu'
+            activation=_ENCODER_ACT[activation]
         )
         self.transformer_encoder = nn.TransformerEncoder(
             encoder_layer, num_layers=num_layers
@@ -66,7 +76,7 @@ class TransformerAutoencoder(nn.Module):
 
         self.output_proj = nn.Sequential(
             nn.Linear(n_tokens * d_model, dim_feedforward),
-            nn.GELU(),
+            _HIDDEN_ACT[activation](),
             nn.Dropout(dropout),
             nn.Linear(dim_feedforward, input_dim),
             nn.ReLU()
@@ -204,6 +214,14 @@ def main(args):
     print(f"  architecture: n_tokens={cfg['n_tokens']}, d_model={cfg['d_model']}, "
           f"nhead={cfg['nhead']}, num_layers={cfg['num_layers']}")
 
+    # Activation comes from the training config; old configs without the field were gelu.
+    activation = cfg.get("activation", "gelu")
+    if args.activation is not None and args.activation != activation:
+        raise ValueError(
+            f"--activation {args.activation} does not match the activation saved in "
+            f"{config_path} ({activation}{'' if 'activation' in cfg else ', legacy default'})")
+    print(f"  activation: {activation}" + ("" if "activation" in cfg else " (legacy config, default)"))
+
     # Load and preprocess data
     print("\n[LOAD DATA]")
     df1_raw = pd.read_feather(args.data_path1)
@@ -252,7 +270,8 @@ def main(args):
         nhead=cfg["nhead"],
         num_layers=cfg["num_layers"],
         dim_feedforward=cfg["dim_feedforward"],
-        dropout=cfg["dropout"]
+        dropout=cfg["dropout"],
+        activation=activation
     ).to(device)
     state = torch.load(model_path, map_location=device)
     model.load_state_dict(state)
@@ -307,6 +326,10 @@ if __name__ == "__main__":
                     help="normalization label from the driver; selects "
                          "final_model_<normalization>.pt")
     ap.add_argument("--out_path", required=True, help="Output path for reconstructed data (.feather)")
+    ap.add_argument("--activation", type=str, default=None,
+                    choices=["gelu", "relu", "leaky_relu"],
+                    help="Optional check only: the activation is read from the saved config "
+                         "(legacy configs without it -> gelu); errors if this disagrees")
     ap.add_argument("--cpu", action="store_true")
     ap.add_argument("--allow_zero_rows", action="store_true",
                     help="Allow all-zero cells while retaining the fixed cell set")
